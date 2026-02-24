@@ -9,6 +9,7 @@ dependencies = [
     'tqdm',
     "typer",
     'python-dotenv',
+    'loguru',
     #'aiosmtplib',
     #'aioimaplib',
     #'asyncpg',
@@ -35,21 +36,14 @@ dependencies = [
 [project.optional-dependencies]
 
 test = [
-    'pytest>=7.0',
+    'pytest>=8.0',
     'pytest-asyncio',
-    'pytest-cov',
+    'pytest-cov>=6.0',
     'pytest-mock',
     'pytest-timeout',
     'pytest-xdist',
     'coverage[toml]',
-  #  'testcontainers',
-  #  'mypy',
-   # 'types-python-dateutil',
-    #'types-redis',
-   # 'types-PyYAML',
-   # 'types-openpyxl',
-   # 'types-python-jose',
-    #'types-passlib',
+    'scipy>=1.14',
 ]
 
 dev = [
@@ -120,6 +114,9 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 addopts = "--cov=src"
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests that run statistical validation (deselect with -m 'not slow')",
+]
 
 [tool.nbdev]
 lib_path = "src"

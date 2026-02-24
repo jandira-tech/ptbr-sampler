@@ -1,23 +1,28 @@
 import json
 import random
+from collections import Counter
 from pathlib import Path
 
 
 class BrazilianLocationSampler:
     """Brazilian location sampling class for generating realistic location data."""
 
-    def __init__(self, json_file_path: str | Path):
-        """Initialize the sampler with population data from JSON files.
+    def __init__(self, json_file_path: str | Path | dict):
+        """Initialize the sampler with population data from JSON files or a dict.
 
         Args:
-            json_file_path: Path to main JSON file with population data
+            json_file_path: Path to main JSON file with population data, or
+                a pre-loaded dictionary with the same structure.
 
         Raises:
             ValueError: If required data is missing or invalid
             FileNotFoundError: If JSON files cannot be found
         """
-        with Path(json_file_path).open(encoding='utf-8') as file:
-            self.data = json.load(file)
+        if isinstance(json_file_path, dict):
+            self.data = json_file_path
+        else:
+            with Path(json_file_path).open(encoding='utf-8') as file:
+                self.data = json.load(file)
 
         # Ensure we have required data
         if not self.data.get('cities') or not self.data.get('states'):
@@ -107,6 +112,12 @@ class BrazilianLocationSampler:
             if total > 0:
                 self.city_weights_by_state[state] = [w / total for w in self.city_weights_by_state[state]]
 
+        # Build reverse lookup: state abbreviation -> full state name
+        self.abbr_to_name: dict[str, str] = {
+            data['state_abbr']: name
+            for name, data in self.data['states'].items()
+        }
+
     def get_state(self) -> tuple[str, str]:
         """Get a random state weighted by population percentage.
 
@@ -148,6 +159,61 @@ class BrazilianLocationSampler:
         state_name, state_abbr = self.get_state()
         city_name, _ = self.get_city(state_abbr)
         return state_name, state_abbr, city_name
+
+    def batch_sample_locations(self, n: int) -> list[dict[str, str]]:
+        """Draw n location samples with batched random calls.
+
+        Mathematically identical to calling get_state_and_city() n times —
+        random.choices(k=N) produces N independent draws from the same
+        categorical distribution. Batching amortizes per-call overhead.
+
+        Args:
+            n: Number of location samples to draw.
+
+        Returns:
+            List of dicts with keys: state_name, state_abbr, city_name
+        """
+        # Stage 1: batch-draw all states (self.state_names holds full names)
+        drawn_state_names = random.choices(
+            self.state_names, weights=self.state_weights, k=n
+        )
+
+        # Map full names to abbreviations for city lookup
+        state_abbr_map = {
+            name: self.data['states'][name]['state_abbr']
+            for name in set(drawn_state_names)
+        }
+
+        # Stage 2: count per-state, batch-draw cities
+        state_name_counts = Counter(drawn_state_names)
+        city_draws: dict[str, list[str]] = {}
+
+        for state_name, count in state_name_counts.items():
+            abbr = state_abbr_map[state_name]
+            if abbr in self.city_names_by_state:
+                city_draws[state_name] = random.choices(
+                    self.city_names_by_state[abbr],
+                    weights=self.city_weights_by_state[abbr],
+                    k=count,
+                )
+            else:
+                city_draws[state_name] = ['Unknown'] * count
+
+        # Stage 3: reassemble in original order
+        state_idx: dict[str, int] = {s: 0 for s in state_name_counts}
+        results: list[dict[str, str]] = []
+
+        for state_name in drawn_state_names:
+            abbr = state_abbr_map[state_name]
+            city_name = city_draws[state_name][state_idx[state_name]]
+            state_idx[state_name] += 1
+            results.append({
+                'state_name': state_name,
+                'state_abbr': abbr,
+                'city_name': city_name,
+            })
+
+        return results
 
     def _get_random_cep_for_city(self, city_name: str) -> str:
         """Generate random CEP from city's available CEPs or CEP range.

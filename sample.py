@@ -5,11 +5,55 @@ Sample module that provides a clean API for the Brazilian Name and Location gene
 This module wraps the src.sampler.sample function and makes it easier to use programmatically.
 """
 
+from pathlib import Path
+
 from src.br_name_class import TimePeriod
 from src.sampler import sample as sampler_function
 
+# Default data paths (relative to project root, matching CLI defaults)
+_DATA_DIR = Path(__file__).parent / 'src' / 'data'
 
-def sample(q: int = 1, save_to_jsonl: str = None | None, all_data: bool = False, **kwargs) -> dict | list[dict]:
+_DEFAULTS = {
+    'qty': 1,
+    'city_only': False,
+    'state_abbr_only': False,
+    'state_full_only': False,
+    'only_cep': False,
+    'cep_without_dash': False,
+    'make_api_call': False,
+    'time_period': TimePeriod.UNTIL_2010,
+    'return_only_name': False,
+    'name_raw': False,
+    'json_path': _DATA_DIR / 'cities_with_ceps.json',
+    'names_path': _DATA_DIR / 'names_data.json',
+    'middle_names_path': _DATA_DIR / 'middle_names.json',
+    'only_surname': False,
+    'top_40': False,
+    'with_only_one_surname': False,
+    'always_middle': False,
+    'only_middle': False,
+    'always_cpf': True,
+    'always_pis': False,
+    'always_cnpj': False,
+    'always_cei': False,
+    'always_rg': True,
+    'always_phone': True,
+    'only_cpf': False,
+    'only_pis': False,
+    'only_cnpj': False,
+    'only_cei': False,
+    'only_rg': False,
+    'only_fone': False,
+    'include_issuer': True,
+    'only_document': False,
+    'surnames_path': _DATA_DIR / 'surnames_data.json',
+    'locations_path': _DATA_DIR / 'locations_data.json',
+    'save_to_jsonl': None,
+    'all_data': False,
+}
+
+
+def sample(q: int = 1, save_to_jsonl: str | None = None, all_data: bool = False, **kwargs) -> dict | list[dict]:
     """
     Generate random Brazilian name, location, and document samples.
 
@@ -61,24 +105,15 @@ def sample(q: int = 1, save_to_jsonl: str = None | None, all_data: bool = False,
         - cnpj: CNPJ number (if requested)
         - cei: CEI number (if requested)
     """
-    # Map the 'q' parameter to 'qty' expected by cli_sample
-    if 'q' in kwargs:
-        # If both q and qty are provided, use qty
-        pass
-    elif q != 1:
-        # Only set qty if q is different from default
-        kwargs['qty'] = q
+    # Build full kwargs with defaults, letting explicit kwargs override
+    merged = {**_DEFAULTS, **kwargs}
 
-    # Handle save_to_jsonl parameter
-    if save_to_jsonl:
-        kwargs['save_to_jsonl'] = save_to_jsonl
+    # Map the top-level parameters
+    merged['q'] = q
+    merged['save_to_jsonl'] = save_to_jsonl
+    merged['all_data'] = all_data
 
-    # Handle all_data parameter
-    if all_data:
-        kwargs['all_data'] = all_data
-
-    # Call the underlying sample function
-    return sampler_function(q=q, **kwargs)
+    return sampler_function(**merged)
 
 
 # Export the TimePeriod enum for convenience
