@@ -35,6 +35,6 @@ except ImportError as _cli_err:
     app = _cli_unavailable  # type: ignore[assignment]
     main = _cli_unavailable  # type: ignore[assignment]
 
-__all__ = ['TimePeriod', 'BrazilianNameSampler', 'BrazilianLocationSampler', 'app', 'main']
+__all__ = ['BrazilianLocationSampler', 'BrazilianNameSampler', 'TimePeriod', 'app', 'main']
 
 __version__ = '1.0.0'

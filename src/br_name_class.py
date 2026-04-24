@@ -285,10 +285,7 @@ class BrazilianNameSampler:
                                 j += 1
 
         if not include_surname:
-            return [
-                NameComponents(drawn_first_names[i], middle_names[i], '')
-                for i in range(n)
-            ]
+            return [NameComponents(drawn_first_names[i], middle_names[i], '') for i in range(n)]
 
         # Prepare surname pool
         source = self.top_40_surnames if top_40 else self.surname_data

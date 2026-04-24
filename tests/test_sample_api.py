@@ -16,6 +16,7 @@ def _skip_if_no_data():
         data_dir / 'names_data.json',
         data_dir / 'surnames_data.json',
         data_dir / 'middle_names.json',
+        data_dir / 'locations_data.json',
     ]
     for p in required:
         if not p.exists():

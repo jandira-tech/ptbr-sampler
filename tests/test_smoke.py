@@ -9,13 +9,23 @@ import pytest
 DATA_DIR = Path(__file__).parent.parent / 'src' / 'data'
 
 
+def test_cli_help():
+    """Verify CLI accepts --help and exits successfully."""
+    run = subprocess.run(
+        [sys.executable, '-m', 'src', '--help'],
+        capture_output=True,
+        text=True,
+    )
+    assert run.returncode == 0
+
+
 def test_imports():
     """Verify all public modules import without error."""
-    from sample import TimePeriod, sample  # noqa: F401
-    from src.br_location_class import BrazilianLocationSampler  # noqa: F401
-    from src.br_name_class import BrazilianNameSampler, NameComponents  # noqa: F401
-    from src.document_sampler import DocumentSampler  # noqa: F401
-    from src.sampler import sample as sampler_sample  # noqa: F401
+    from sample import TimePeriod, sample  # noqa: F401  # used for smoke test coverage
+    from src.br_location_class import BrazilianLocationSampler  # noqa: F401  # used for smoke test coverage
+    from src.br_name_class import BrazilianNameSampler, NameComponents  # noqa: F401  # used for smoke test coverage
+    from src.document_sampler import DocumentSampler  # noqa: F401  # used for smoke test coverage
+    from src.sampler import sample as sampler_sample  # noqa: F401  # used for smoke test coverage
 
 
 def test_time_period_enum():

@@ -116,10 +116,7 @@ class BrazilianLocationSampler:
                 self.city_weights_by_state[state] = [w / total for w in self.city_weights_by_state[state]]
 
         # Build reverse lookup: state abbreviation -> full state name
-        self.abbr_to_name: dict[str, str] = {
-            data['state_abbr']: name
-            for name, data in self.data['states'].items()
-        }
+        self.abbr_to_name: dict[str, str] = {data['state_abbr']: name for name, data in self.data['states'].items()}
 
     def get_state(self) -> tuple[str, str]:
         """Get a random state weighted by population percentage.
@@ -177,15 +174,10 @@ class BrazilianLocationSampler:
             List of dicts with keys: state_name, state_abbr, city_name
         """
         # Stage 1: batch-draw all states (self.state_names holds full names)
-        drawn_state_names = random.choices(
-            self.state_names, weights=self.state_weights, k=n
-        )
+        drawn_state_names = random.choices(self.state_names, weights=self.state_weights, k=n)
 
         # Map full names to abbreviations for city lookup
-        state_abbr_map = {
-            name: self.data['states'][name]['state_abbr']
-            for name in set(drawn_state_names)
-        }
+        state_abbr_map = {name: self.data['states'][name]['state_abbr'] for name in set(drawn_state_names)}
 
         # Stage 2: count per-state, batch-draw cities
         state_name_counts = Counter(drawn_state_names)
@@ -209,18 +201,20 @@ class BrazilianLocationSampler:
                 city_draws[state_name] = ['Unknown'] * count
 
         # Stage 3: reassemble in original order
-        state_idx: dict[str, int] = {s: 0 for s in state_name_counts}
+        state_idx: dict[str, int] = dict.fromkeys(state_name_counts, 0)
         results: list[dict[str, str]] = []
 
         for state_name in drawn_state_names:
             abbr = state_abbr_map[state_name]
             city_name = city_draws[state_name][state_idx[state_name]]
             state_idx[state_name] += 1
-            results.append({
-                'state_name': state_name,
-                'state_abbr': abbr,
-                'city_name': city_name,
-            })
+            results.append(
+                {
+                    'state_name': state_name,
+                    'state_abbr': abbr,
+                    'city_name': city_name,
+                }
+            )
 
         return results
 

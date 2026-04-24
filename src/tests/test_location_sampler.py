@@ -9,10 +9,7 @@ from src.time_period import TimePeriod
 @pytest.fixture
 def mock_location_data():
     return {
-        'common_names_percentage': {
-            period.value: {'names': {'TEST': {'percentage': 1.0}}, 'total': 1}
-            for period in TimePeriod
-        },
+        'common_names_percentage': {period.value: {'names': {'TEST': {'percentage': 1.0}}, 'total': 1} for period in TimePeriod},
         'states': {
             'São Paulo': {
                 'state_abbr': 'SP',

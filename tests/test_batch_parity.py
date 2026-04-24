@@ -5,9 +5,6 @@ from collections import Counter
 
 import pytest
 
-from src.br_location_class import BrazilianLocationSampler  # noqa: F401
-from src.br_name_class import BrazilianNameSampler, NameComponents  # noqa: F401
-
 
 @pytest.mark.slow
 class TestLocationBatchParity:
