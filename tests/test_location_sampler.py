@@ -1,5 +1,7 @@
 """Tests for the BrazilianLocationSampler class."""
 
+import json
+import logging
 import random
 
 import pytest
@@ -25,6 +27,25 @@ class TestInitialization:
     def test_abbr_to_name_built(self, mock_location_data):
         sampler = BrazilianLocationSampler(mock_location_data)
         assert sampler.abbr_to_name == {'SP': 'São Paulo', 'RJ': 'Rio de Janeiro'}
+
+    def test_init_from_path(self, mock_location_data, tmp_path):
+        """Passing a file path should load the JSON payload from disk."""
+        path = tmp_path / 'loc.json'
+        path.write_text(json.dumps(mock_location_data), encoding='utf-8')
+        sampler = BrazilianLocationSampler(path)
+        assert sampler.abbr_to_name == {'SP': 'São Paulo', 'RJ': 'Rio de Janeiro'}
+
+    def test_update_with_empty_cities_noop(self, mock_location_data):
+        sampler = BrazilianLocationSampler(mock_location_data)
+        before = dict(sampler.city_data_by_name)
+        sampler.update_cities({})
+        assert sampler.city_data_by_name == before
+
+    def test_update_with_empty_states_noop(self, mock_location_data):
+        sampler = BrazilianLocationSampler(mock_location_data)
+        before = list(sampler.state_names)
+        sampler.update_states({})
+        assert sampler.state_names == before
 
 
 class TestGetState:
@@ -110,6 +131,26 @@ class TestRandomCep:
         with pytest.raises(ValueError, match='City not found'):
             sampler._get_random_cep_for_city('Nonexistent')
 
+    def test_prefers_ceps_list_when_present(self, mock_location_data):
+        """When a city has a 'ceps' list, a CEP should be drawn from it."""
+        mock_location_data['cities']['campinas']['ceps'] = ['13001-000', '13099-999']
+        sampler = BrazilianLocationSampler(mock_location_data)
+        random.seed(0)
+        cep = sampler._get_random_cep_for_city('Campinas')
+        assert cep in ('13001-000', '13099-999')
+
+    def test_format_full_location_with_cep(self, mock_location_data):
+        """format_full_location should embed a CEP when include_cep=True."""
+        sampler = BrazilianLocationSampler(mock_location_data)
+        random.seed(1)
+        formatted = sampler.format_full_location(
+            'Campinas', 'São Paulo', 'SP', include_cep=True, cep_without_dash=False
+        )
+        # "City, State (SP), CEP"
+        assert formatted.count(', ') == 2
+        assert 'Campinas' in formatted
+        assert formatted.rsplit(', ', 1)[1].count('-') == 1
+
 
 class TestBatchSampleLocations:
     def test_returns_correct_length(self, mock_location_data):
@@ -147,6 +188,26 @@ class TestBatchSampleLocations:
             assert entry['state_name']
             assert entry['state_abbr']
             assert entry['city_name']
+
+    def test_zero_draws(self, mock_location_data):
+        """batch_sample_locations(0) should return an empty list."""
+        sampler = BrazilianLocationSampler(mock_location_data)
+        assert sampler.batch_sample_locations(0) == []
+
+    def test_batch_logs_warning_when_state_has_no_cities(self, mock_location_data, caplog):
+        """If a state lacks cities, the batch emits 'Unknown' and warns."""
+        # Register a new state (Amazonas) but never add cities for it.
+        mock_location_data['states']['Amazonas'] = {
+            'state_abbr': 'AM',
+            # Weight large enough that we are near-guaranteed to draw it.
+            'population_percentage': 100.0,
+        }
+        sampler = BrazilianLocationSampler(mock_location_data)
+        random.seed(123)
+        with caplog.at_level(logging.WARNING, logger='src.br_location_class'):
+            results = sampler.batch_sample_locations(10)
+        assert any(entry['city_name'] == 'Unknown' for entry in results)
+        assert any('No cities found' in rec.message for rec in caplog.records)
 
 
 class TestUpdateData:

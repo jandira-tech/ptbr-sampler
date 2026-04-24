@@ -47,11 +47,11 @@ class PhoneNumber:
         '199',
     )
 
-    def cellphone_number(self) -> str:
+    def cellphone_number(self) -> str:  # pragma: no cover - stub, relies on external generator
         pattern: str = self.random_element(self.cellphone_formats)
         return self.numerify(self.generator.parse(pattern))
 
-    def service_phone_number(self) -> str:
+    def service_phone_number(self) -> str:  # pragma: no cover - stub, relies on external generator
         pattern: str = self.random_element(self.services_phones_formats)
         return self.numerify(self.generator.parse(pattern))
 
