@@ -5,13 +5,13 @@ from collections import Counter
 
 import pytest
 
-from src.br_location_class import BrazilianLocationSampler
-from src.br_name_class import BrazilianNameSampler, NameComponents
+from src.br_location_class import BrazilianLocationSampler  # noqa: F401
+from src.br_name_class import BrazilianNameSampler, NameComponents  # noqa: F401
 
 
 @pytest.mark.slow
 class TestLocationBatchParity:
-    def test_batch_matches_theoretical_state_distribution(self, location_sampler):
+    def test_batch_matches_theoretical_state_distribution(self, location_sampler, seeded_random):
         """Batched state draws should match the theoretical weight distribution.
 
         Compares observed batch counts against expected counts derived from
@@ -26,20 +26,35 @@ class TestLocationBatchParity:
         batched = location_sampler.batch_sample_locations(n)
         batched_states = Counter(r['state_name'] for r in batched)
 
-        # Build expected counts from theoretical weights
+        # Build expected counts from theoretical weights (normalize first so
+        # weight * n is well-defined even when state_weights aren't exactly
+        # unit-sum due to floating-point rounding).
+        total_weight = sum(location_sampler.state_weights)
+        assert total_weight > 0, 'state weights must be positive'
+
         expected_counts = []
         observed_counts = []
-        for state_name, weight in zip(location_sampler.state_names, location_sampler.state_weights):
-            expected_counts.append(weight * n)
+        for state_name, weight in zip(
+            location_sampler.state_names, location_sampler.state_weights, strict=True
+        ):
+            expected_counts.append((weight / total_weight) * n)
             observed_counts.append(batched_states.get(state_name, 0))
 
         # Filter out states with expected < 5 (chi-squared requirement)
         filtered_obs = []
         filtered_exp = []
-        for obs, exp in zip(observed_counts, expected_counts):
+        for obs, exp in zip(observed_counts, expected_counts, strict=True):
             if exp >= 5:
                 filtered_obs.append(obs)
                 filtered_exp.append(exp)
+
+        assert filtered_obs, 'No categories passed the chi-squared expected-count cutoff.'
+
+        # Rescale expected to match observed sum (required by scipy chisquare).
+        obs_total = sum(filtered_obs)
+        exp_total = sum(filtered_exp)
+        if exp_total > 0:
+            filtered_exp = [e * obs_total / exp_total for e in filtered_exp]
 
         stat, p_value = chisquare(filtered_obs, f_exp=filtered_exp)
         assert p_value > 0.01, (
@@ -47,7 +62,7 @@ class TestLocationBatchParity:
             f'Batched sampling may not preserve weights correctly.'
         )
 
-    def test_batch_city_distribution_within_state(self, location_sampler):
+    def test_batch_city_distribution_within_state(self, location_sampler, seeded_random):
         """Within each state, batched city draws should match the weighted distribution."""
         n = 50_000
 
@@ -62,18 +77,25 @@ class TestLocationBatchParity:
                 by_state[abbr] = Counter()
             by_state[abbr][entry['city_name']] += 1
 
-        # For each state, verify cities have reasonable spread
+        # For each state with a meaningful sample size, ensure we see more than
+        # one distinct city when the state has more than one city configured.
         for abbr, city_counts in by_state.items():
             total = sum(city_counts.values())
             if total < 100:
                 continue
-            # At least one city should be present
-            assert len(city_counts) >= 1
+            available_cities = len(location_sampler.city_names_by_state.get(abbr, []))
+            if available_cities < 2:
+                # Some federative units (e.g., DF) expose a single city.
+                continue
+            assert len(city_counts) >= 2, (
+                f'Expected city spread within {abbr} but only {len(city_counts)} of '
+                f'{available_cities} cities seen.'
+            )
 
 
 @pytest.mark.slow
 class TestNameBatchParity:
-    def test_batch_matches_theoretical_first_name_distribution(self, name_sampler):
+    def test_batch_matches_theoretical_first_name_distribution(self, name_sampler, seeded_random):
         """Batched first name draws should match the theoretical weight distribution.
 
         Compares observed batch counts against expected counts derived from
@@ -115,7 +137,7 @@ class TestNameBatchParity:
             f'Name distribution mismatch: chi2={stat:.2f}, p={p_value:.4f}.'
         )
 
-    def test_batch_surname_has_prefixes(self, name_sampler):
+    def test_batch_surname_has_prefixes(self, name_sampler, seeded_random):
         """Verify that batched names include surname prefixes (da, de, dos, etc.)."""
         random.seed(42)
         results = name_sampler.batch_sample_names(500)

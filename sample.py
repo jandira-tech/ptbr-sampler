@@ -53,12 +53,14 @@ _DEFAULTS = {
 }
 
 
-def sample(q: int = 1, save_to_jsonl: str | None = None, all_data: bool = False, **kwargs) -> dict | list[dict]:
+def sample(q: int | None = None, save_to_jsonl: str | None = None, all_data: bool = False, **kwargs) -> dict | list[dict]:
     """
     Generate random Brazilian name, location, and document samples.
 
     Args:
-        q: Number of samples to generate (same as qty parameter in cli.sample)
+        q: Number of samples to generate. Overrides ``qty`` if provided.
+            When ``q`` is None, falls back to ``qty`` from kwargs (or the
+            default of 1).
         save_to_jsonl: Path to save generated samples as JSONL
         all_data: Include all possible data in the generated samples
         **kwargs: Additional parameters passed directly to cli.sample
@@ -108,7 +110,8 @@ def sample(q: int = 1, save_to_jsonl: str | None = None, all_data: bool = False,
     # Build full kwargs with defaults, letting explicit kwargs override
     merged = {**_DEFAULTS, **kwargs}
 
-    # Map the top-level parameters
+    # Map the top-level parameters. ``q`` only overrides ``qty`` when provided
+    # explicitly so callers can still pass ``qty=N`` via kwargs.
     merged['q'] = q
     merged['save_to_jsonl'] = save_to_jsonl
     merged['all_data'] = all_data

@@ -136,7 +136,7 @@ class BrazilianNameSampler:
 
             # Normalize weights to ensure they sum to 1.0
             total_weight = sum(weights)
-            if total_weight <= 0:
+            if total_weight <= 0:  # pragma: no cover - unreachable: weights only appended when >0
                 return ''
 
             normalized_weights = [w / total_weight for w in weights]

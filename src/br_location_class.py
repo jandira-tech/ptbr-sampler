@@ -1,7 +1,10 @@
 import json
+import logging
 import random
 from collections import Counter
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class BrazilianLocationSampler:
@@ -197,6 +200,12 @@ class BrazilianLocationSampler:
                     k=count,
                 )
             else:
+                logger.warning(
+                    "No cities found for state '%s' (%s); emitting 'Unknown' for %d draw(s).",
+                    state_name,
+                    abbr,
+                    count,
+                )
                 city_draws[state_name] = ['Unknown'] * count
 
         # Stage 3: reassemble in original order
@@ -236,11 +245,13 @@ class BrazilianLocationSampler:
         if city_data.get('ceps'):
             return random.choice(city_data['ceps'])
 
-        # Fall back to generating from CEP range if available
+        # Fall back to generating from CEP range if available.
         if city_data.get('cep_range_begins') and city_data.get('cep_range_ends'):
             range_start = int(city_data['cep_range_begins'].replace('-', ''))
             range_end = int(city_data['cep_range_ends'].replace('-', ''))
-            return str(random.randint(range_start, range_end))
+            # Always zero-pad to 8 digits so leading zeros aren't lost when
+            # the numeric range straddles value<10_000_000 (e.g., starts "01").
+            return f'{random.randint(range_start, range_end):08d}'
 
     def _format_cep(self, cep: str, with_dash: bool = True) -> str:
         """Format CEP string with optional dash.
