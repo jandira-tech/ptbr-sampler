@@ -1,10 +1,10 @@
 import json
 
 # Load the files
-with open('src/data/locations_data_normalized.json', encoding='utf-8') as f:
+with open('ptbr_sampler/data/locations_data_normalized.json', encoding='utf-8') as f:
     normalized_data = json.load(f)
 
-with open('src/data/cities_with_ceps.json', encoding='utf-8') as f:
+with open('ptbr_sampler/data/cities_with_ceps.json', encoding='utf-8') as f:
     ceps_data = json.load(f)
 
 # Print the top-level keys in each file

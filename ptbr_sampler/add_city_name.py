@@ -1,8 +1,8 @@
 import json
 
 # Define file paths
-input_file = 'src/data/locations_data_normalized.json'
-output_file = 'src/data/locations_data_updated.json'
+input_file = 'ptbr_sampler/data/locations_data_normalized.json'
+output_file = 'ptbr_sampler/data/locations_data_updated.json'
 
 # Read the JSON file
 print(f'Reading data from {input_file}...')

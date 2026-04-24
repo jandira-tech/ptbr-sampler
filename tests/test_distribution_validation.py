@@ -20,11 +20,11 @@ pytest.importorskip('scipy.stats')
 from scipy.stats import chisquare, ks_2samp
 
 from scripts import ingest_to_parquet
-from src.sampling.alias import AliasTable
-from src.sampling.store import PartitionSpec, PartitionStore
+from ptbr_sampler.sampling.alias import AliasTable
+from ptbr_sampler.sampling.store import PartitionSpec, PartitionStore
 
 
-DATA_DIR = Path(__file__).parent.parent / 'src' / 'data'
+DATA_DIR = Path(__file__).parent.parent / 'ptbr_sampler' / 'data'
 PARQUET_DIR = DATA_DIR / 'parquet'
 
 

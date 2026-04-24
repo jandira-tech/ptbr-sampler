@@ -32,7 +32,7 @@ class PartitionSpec:
     """A conditioning tuple identifying a single partition on disk.
 
     ``root`` is the root of the partitioned dataset (for example
-    ``src/data/parquet/first_names``). ``filters`` is the ordered mapping of
+    ``ptbr_sampler/data/parquet/first_names``). ``filters`` is the ordered mapping of
     partition keys to their values (``{'uf': 'SP', 'decade': '1990',
     'sex': 'F'}``). The on-disk path is ``root/<k1>=<v1>/<k2>=<v2>/.../part.parquet``.
     """

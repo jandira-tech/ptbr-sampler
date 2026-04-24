@@ -4,12 +4,12 @@ import random
 
 import pytest
 
-from src.utils import cei as cei_mod
-from src.utils import cnpj as cnpj_mod
-from src.utils import cpf as cpf_mod
-from src.utils import phone as phone_mod
-from src.utils import pis as pis_mod
-from src.utils import util as util_mod
+from ptbr_sampler.utils import cei as cei_mod
+from ptbr_sampler.utils import cnpj as cnpj_mod
+from ptbr_sampler.utils import cpf as cpf_mod
+from ptbr_sampler.utils import phone as phone_mod
+from ptbr_sampler.utils import pis as pis_mod
+from ptbr_sampler.utils import util as util_mod
 
 
 class TestUtil:

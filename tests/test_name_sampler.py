@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.br_name_class import BrazilianNameSampler, NameComponents, TimePeriod
+from ptbr_sampler.br_name_class import BrazilianNameSampler, NameComponents, TimePeriod
 
 
 def _minimal_middle_names_payload() -> dict:

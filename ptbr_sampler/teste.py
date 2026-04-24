@@ -5,9 +5,9 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from src.br_location_class import BrazilianLocationSampler
-from src.br_name_class import BrazilianNameSampler, NameComponents, TimePeriod
-from src.document_sampler import DocumentSampler
+from ptbr_sampler.br_location_class import BrazilianLocationSampler
+from ptbr_sampler.br_name_class import BrazilianNameSampler, NameComponents, TimePeriod
+from ptbr_sampler.document_sampler import DocumentSampler
 
 app = typer.Typer(help='Brazilian Location, Name and Document Sampler CLI')
 console = Console()

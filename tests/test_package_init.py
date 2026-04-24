@@ -1,37 +1,49 @@
-"""Tests for the src package __init__: exports and CLI fallback."""
+"""Tests for the ptbr_sampler package __init__: exports and CLI entrypoints."""
 
 import pytest
 
 
 def test_expected_exports():
-    import src
+    import ptbr_sampler
 
-    for name in ('TimePeriod', 'BrazilianNameSampler', 'BrazilianLocationSampler', 'app', 'main'):
-        assert name in src.__all__
-        assert hasattr(src, name)
+    for name in (
+        'TimePeriod',
+        'BrazilianNameSampler',
+        'BrazilianLocationSampler',
+        'NameComponents',
+        'app',
+        'main',
+    ):
+        assert name in ptbr_sampler.__all__
+        assert hasattr(ptbr_sampler, name)
 
 
 def test_version_present():
-    import src
+    import ptbr_sampler
 
-    assert hasattr(src, '__version__')
-    assert src.__version__
+    assert hasattr(ptbr_sampler, '__version__')
+    assert ptbr_sampler.__version__
 
 
-def test_cli_fallback_raises_descriptive_error():
-    """When src.cli cannot be imported, app()/main() raise a clear ImportError.
+def test_cli_entrypoints_callable():
+    """``app`` and ``main`` are Typer callables now that the package rename
+    has eliminated the legacy import fallback shim."""
+    import ptbr_sampler
 
-    In this repo src.cli imports a separate ``ptbr_sampler`` package that
-    isn't present, so ``from src.cli import app, main`` fails and the
-    package-level proxy is installed.
-    """
-    import src
+    assert callable(ptbr_sampler.app)
+    assert callable(ptbr_sampler.main)
 
-    # The proxy is a real callable, not None.
-    assert src.app is not None
-    assert src.main is not None
 
-    with pytest.raises(ImportError, match='The Claude Code CLI entrypoints'):
-        src.app()
-    with pytest.raises(ImportError, match='The Claude Code CLI entrypoints'):
-        src.main()
+def test_help_runs_without_error():
+    """Calling ``ptbr --help`` exits cleanly via ``python -m ptbr_sampler``."""
+    import subprocess
+    import sys
+
+    run = subprocess.run(
+        [sys.executable, '-m', 'ptbr_sampler', '--help'],
+        capture_output=True,
+        text=True,
+    )
+    assert run.returncode == 0, run.stderr
+    assert 'generate' in run.stdout
+    assert 'sample' in run.stdout

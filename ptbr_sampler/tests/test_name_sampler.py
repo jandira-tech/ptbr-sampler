@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.name_sampler import SURNAME_PREFIXES, BrazilianNameSampler
-from src.time_period import TimePeriod
+from ptbr_sampler.name_sampler import SURNAME_PREFIXES, BrazilianNameSampler
+from ptbr_sampler.time_period import TimePeriod
 
 
 @pytest.fixture

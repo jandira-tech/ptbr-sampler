@@ -10,7 +10,7 @@ def _skip_if_no_data():
     """Skip if data files are missing."""
     from pathlib import Path
 
-    data_dir = Path(__file__).parent.parent / 'src' / 'data'
+    data_dir = Path(__file__).parent.parent / 'ptbr_sampler' / 'data'
     required = [
         data_dir / 'cities_with_ceps.json',
         data_dir / 'names_data.json',

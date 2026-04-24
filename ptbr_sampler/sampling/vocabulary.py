@@ -1,6 +1,6 @@
 """Given-name whitelist used to clean middle-name tokens.
 
-``src/data/middle_names.json`` mixes second given names with surnames such as
+``ptbr_sampler/data/middle_names.json`` mixes second given names with surnames such as
 ``Araújo``, ``Borges``, ``Bezerra``; administrative artifacts such as
 ``Cancelado``; and a bare hyphen ``-``. No alias table fixes dirty tokens.
 This module builds a whitelist from the repository's first-name file and

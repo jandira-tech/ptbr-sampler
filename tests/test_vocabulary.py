@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from src.sampling.vocabulary import CANONICAL_SURNAMES, GivenNameVocabulary, _fold
+from ptbr_sampler.sampling.vocabulary import CANONICAL_SURNAMES, GivenNameVocabulary, _fold
 
 
 def _write(tmp_path: Path, body: dict, name: str) -> Path:

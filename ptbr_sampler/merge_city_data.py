@@ -1,9 +1,9 @@
 import json
 
 # Define file paths
-normalized_file = 'src/data/locations_data.json'
-ceps_file = 'src/data/cities_with_ceps.json'
-output_file = 'src/data/cities_merged.json'
+normalized_file = 'ptbr_sampler/data/locations_data.json'
+ceps_file = 'ptbr_sampler/data/cities_with_ceps.json'
+output_file = 'ptbr_sampler/data/cities_merged.json'
 
 print(f'Reading normalized data from {normalized_file}...')
 with open(normalized_file, encoding='utf-8') as f:

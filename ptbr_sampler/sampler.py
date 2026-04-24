@@ -11,8 +11,8 @@ from pathlib import Path
 
 import aiofiles
 
-from src.utils.address_for_offline import AddressProvider_for_offline
-from src.utils.phone import generate_phone_number
+from ptbr_sampler.utils.address_for_offline import AddressProvider_for_offline
+from ptbr_sampler.utils.phone import generate_phone_number
 
 from .br_location_class import BrazilianLocationSampler
 from .br_name_class import BrazilianNameSampler, NameComponents, TimePeriod
@@ -385,10 +385,17 @@ def sample(
             names_json = copy.deepcopy(_load_json_cached(names_path))
             name_data.update(names_json)
 
+        # Wire the sampler to the bundled partitioned Parquet tree when
+        # present — that's the critical-path reader described in
+        # ``docs/architecture.md``. The JSON dict above is still kept so
+        # attributes like ``top_40_surnames`` remain populated for callers
+        # that opt out of the Parquet partitions.
+        _parquet_root = Path(__file__).resolve().parent / 'data' / 'parquet'
         name_sampler = BrazilianNameSampler(
             name_data,  # Pass the combined data
             middle_names_path,
             None,  # No need for names_path as we've already loaded it
+            parquet_root=_parquet_root if _parquet_root.exists() else None,
         )
 
         # Initialize results list and parallel state/city tracking so the

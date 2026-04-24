@@ -1,10 +1,10 @@
 """Brazilian document number generator using utility functions."""
 
-from src.br_rg_class import BrazilianRG
-from src.utils.cei import random_cei
-from src.utils.cnpj import random_cnpj
-from src.utils.cpf import random_cpf
-from src.utils.pis import random_pis
+from ptbr_sampler.br_rg_class import BrazilianRG
+from ptbr_sampler.utils.cei import random_cei
+from ptbr_sampler.utils.cnpj import random_cnpj
+from ptbr_sampler.utils.cpf import random_cpf
+from ptbr_sampler.utils.pis import random_pis
 
 
 class DocumentSampler:

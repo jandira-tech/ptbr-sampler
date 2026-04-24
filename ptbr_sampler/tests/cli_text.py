@@ -1,7 +1,7 @@
 import pytest
 from rich.table import Table
 
-from src.cli import create_results_table
+from ptbr_sampler.cli import create_results_table
 
 
 def assert_table_row_content(table: Table, expected_rows: list[tuple[str, ...]]) -> None:

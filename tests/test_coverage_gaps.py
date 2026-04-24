@@ -4,14 +4,14 @@ import random
 
 import pytest
 
-from src.br_location_class import BrazilianLocationSampler
-from src.br_name_class import BrazilianNameSampler
-from src.utils import cei as cei_mod
-from src.utils import cnpj as cnpj_mod
-from src.utils import cpf as cpf_mod
-from src.utils import phone as phone_mod
-from src.utils import pis as pis_mod
-from src.utils import util as util_mod
+from ptbr_sampler.br_location_class import BrazilianLocationSampler
+from ptbr_sampler.br_name_class import BrazilianNameSampler
+from ptbr_sampler.utils import cei as cei_mod
+from ptbr_sampler.utils import cnpj as cnpj_mod
+from ptbr_sampler.utils import cpf as cpf_mod
+from ptbr_sampler.utils import phone as phone_mod
+from ptbr_sampler.utils import pis as pis_mod
+from ptbr_sampler.utils import util as util_mod
 
 
 class TestMiddleNameZeroWeightBranch:
@@ -109,11 +109,11 @@ class TestValidateDocumentShortRejection:
 class TestAddressProviderFirstNameFallback:
     def test_first_name_returns_string(self, tmp_path, monkeypatch):
         """first_name delegates to non_weighted_random_name; cover line 683."""
-        from src.utils.address_for_offline import AddressProvider_for_offline
+        from ptbr_sampler.utils.address_for_offline import AddressProvider_for_offline
 
         # Point the default names path to something non-existent so the
         # fallback kicks in deterministically.
-        monkeypatch.chdir(tmp_path)  # Ensure 'src/data/names_data.json' doesn't exist
+        monkeypatch.chdir(tmp_path)  # Ensure 'ptbr_sampler/data/names_data.json' doesn't exist
         ap = AddressProvider_for_offline()
         result = ap.first_name()
         assert isinstance(result, str)

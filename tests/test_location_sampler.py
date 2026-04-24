@@ -6,7 +6,7 @@ import random
 
 import pytest
 
-from src.br_location_class import BrazilianLocationSampler
+from ptbr_sampler.br_location_class import BrazilianLocationSampler
 
 
 class TestInitialization:

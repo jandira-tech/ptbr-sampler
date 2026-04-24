@@ -1,9 +1,9 @@
-"""Convert the legacy JSON data files under ``src/data/`` into the
+"""Convert the legacy JSON data files under ``ptbr_sampler/data/`` into the
 partitioned Parquet layout described in ``docs/architecture.md``.
 
 Running the script writes::
 
-    src/data/parquet/
+    ptbr_sampler/data/parquet/
     ├── first_names/period=<period>/part.parquet
     ├── surnames/scope=national/part.parquet
     ├── middle_names/part.parquet
@@ -16,7 +16,7 @@ names). This makes it trivial to drop-in IBGE 2022 data conditioned on
 
 Usage::
 
-    python -m scripts.ingest_to_parquet --out src/data/parquet
+    python -m scripts.ingest_to_parquet --out ptbr_sampler/data/parquet
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from typing import Iterable
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from src.sampling.vocabulary import GivenNameVocabulary
+from ptbr_sampler.sampling.vocabulary import GivenNameVocabulary
 
 
 _SCHEMA = pa.schema(
@@ -175,8 +175,8 @@ def ingest_states(src: Path, out_root: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--data-dir', default='src/data', type=Path)
-    parser.add_argument('--out', default='src/data/parquet', type=Path)
+    parser.add_argument('--data-dir', default='ptbr_sampler/data', type=Path)
+    parser.add_argument('--out', default='ptbr_sampler/data/parquet', type=Path)
     parser.add_argument(
         '--skip-middle-names-filter',
         action='store_true',

@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from src.br_name_class import TimePeriod
+from ptbr_sampler.br_name_class import TimePeriod
 
-DATA_DIR = Path(__file__).parent.parent / 'src' / 'data'
+DATA_DIR = Path(__file__).parent.parent / 'ptbr_sampler' / 'data'
 
 
 @pytest.fixture(scope='session')
@@ -23,7 +23,7 @@ def locations_data() -> dict:
 @pytest.fixture(scope='session')
 def location_sampler():
     """Session-scoped location sampler instance using real data."""
-    from src.br_location_class import BrazilianLocationSampler
+    from ptbr_sampler.br_location_class import BrazilianLocationSampler
 
     path = DATA_DIR / 'cities_with_ceps.json'
     if not path.exists():
@@ -34,7 +34,7 @@ def location_sampler():
 @pytest.fixture(scope='session')
 def name_sampler():
     """Session-scoped name sampler instance using real data."""
-    from src.br_name_class import BrazilianNameSampler
+    from ptbr_sampler.br_name_class import BrazilianNameSampler
 
     surnames_path = DATA_DIR / 'surnames_data.json'
     names_path = DATA_DIR / 'names_data.json'

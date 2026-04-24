@@ -5,7 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from src.sampling.alias import AliasTable, build_alias, draw
+from ptbr_sampler.sampling.alias import AliasTable, build_alias, draw
 
 
 class TestBuildAlias:

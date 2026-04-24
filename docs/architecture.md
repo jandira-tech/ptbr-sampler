@@ -28,6 +28,14 @@ Read via `pyarrow.dataset` with filter pushdown — only the partitions actually
 referenced by the conditioning tuple are materialised. The rest stays on disk.
 The same files can be queried ad-hoc through DuckDB without re-ingestion.
 
+`BrazilianNameSampler` consults the Parquet store before falling back to the
+JSON payload. In practice the production entry point
+(`ptbr_sampler.sampler.sample`) is wired to the bundled tree, so every first
+name, surname, and middle-name draw is materialised from a Parquet partition
+on first use. Pass `parquet_root=None` (or construct with a bespoke dict) to
+force JSON-only mode — that's the path exercised by `mock_name_data` unit
+tests that need to override the distribution.
+
 JSON is fine up to ~10 MB. Above that, Python dict overhead alone (≈240 B per
 entry) eats you before the raw numbers do. The 2022 Census surname data
 conditioned by UF × period is several hundred MB as JSON but under ~50 MB as

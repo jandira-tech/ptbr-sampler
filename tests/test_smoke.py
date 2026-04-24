@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-DATA_DIR = Path(__file__).parent.parent / 'src' / 'data'
+DATA_DIR = Path(__file__).parent.parent / 'ptbr_sampler' / 'data'
 
 
 def test_cli_help():
     """Verify CLI accepts --help and exits successfully."""
     run = subprocess.run(
-        [sys.executable, '-m', 'src', '--help'],
+        [sys.executable, '-m', 'ptbr_sampler', '--help'],
         capture_output=True,
         text=True,
     )
@@ -22,15 +22,15 @@ def test_cli_help():
 def test_imports():
     """Verify all public modules import without error."""
     from sample import TimePeriod, sample  # noqa: F401  # used for smoke test coverage
-    from src.br_location_class import BrazilianLocationSampler  # noqa: F401  # used for smoke test coverage
-    from src.br_name_class import BrazilianNameSampler, NameComponents  # noqa: F401  # used for smoke test coverage
-    from src.document_sampler import DocumentSampler  # noqa: F401  # used for smoke test coverage
-    from src.sampler import sample as sampler_sample  # noqa: F401  # used for smoke test coverage
+    from ptbr_sampler.br_location_class import BrazilianLocationSampler  # noqa: F401  # used for smoke test coverage
+    from ptbr_sampler.br_name_class import BrazilianNameSampler, NameComponents  # noqa: F401  # used for smoke test coverage
+    from ptbr_sampler.document_sampler import DocumentSampler  # noqa: F401  # used for smoke test coverage
+    from ptbr_sampler.sampler import sample as sampler_sample  # noqa: F401  # used for smoke test coverage
 
 
 def test_time_period_enum():
     """Verify TimePeriod enum has expected members."""
-    from src.br_name_class import TimePeriod
+    from ptbr_sampler.br_name_class import TimePeriod
 
     assert len(TimePeriod) == 9
     assert TimePeriod.UNTIL_2010.value == 'ate2010'
@@ -74,7 +74,7 @@ def test_sample_returns_list_for_multiple():
 
 def test_document_sampler_generates():
     """DocumentSampler produces valid document strings."""
-    from src.document_sampler import DocumentSampler
+    from ptbr_sampler.document_sampler import DocumentSampler
 
     ds = DocumentSampler()
     cpf = ds.generate_cpf()
@@ -94,7 +94,7 @@ def test_document_sampler_generates():
 @pytest.mark.usefixtures('_skip_if_no_data')
 def test_location_sampler_basic():
     """BrazilianLocationSampler loads and returns a state."""
-    from src.br_location_class import BrazilianLocationSampler
+    from ptbr_sampler.br_location_class import BrazilianLocationSampler
 
     sampler = BrazilianLocationSampler(DATA_DIR / 'cities_with_ceps.json')
     state_name, state_abbr = sampler.get_state()
@@ -104,7 +104,7 @@ def test_location_sampler_basic():
 
 def test_name_components_creation():
     """NameComponents dataclass with slots works correctly."""
-    from src.br_name_class import NameComponents
+    from ptbr_sampler.br_name_class import NameComponents
 
     nc = NameComponents('João', 'Pedro', 'Silva')
     assert nc.first_name == 'João'
@@ -114,6 +114,6 @@ def test_name_components_creation():
 
 def test_json_cache_module_attribute():
     """Verify the JSON cache exists at module level in sampler."""
-    from src.sampler import _json_cache
+    from ptbr_sampler.sampler import _json_cache
 
     assert isinstance(_json_cache, dict)

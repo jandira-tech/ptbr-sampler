@@ -20,8 +20,11 @@ from typing import Any, Iterable
 
 import numpy as np
 
-from src.sampling.alias import AliasTable
-from src.sampling.store import alias_from_mapping
+from ptbr_sampler.sampling.alias import AliasTable
+from ptbr_sampler.sampling.store import PartitionSpec, PartitionStore, alias_from_mapping
+
+
+_DEFAULT_PARQUET_ROOT = Path(__file__).resolve().parent / 'data' / 'parquet'
 
 
 class TimePeriod(str, Enum):
@@ -75,19 +78,75 @@ class BrazilianNameSampler:
         'RIBEIRO': [('do', 0.6)],
     }
 
+    @classmethod
+    def from_bundled_parquet(
+        cls,
+        middle_names_path: str | Path | None = None,
+        surnames_path: str | Path | None = None,
+        names_path: str | Path | None = None,
+        lru_size: int = 32,
+    ) -> 'BrazilianNameSampler':
+        """Construct a sampler wired to the bundled partitioned Parquet tree.
+
+        The JSON files are still used to seed ``surname_data`` /
+        ``name_data`` / ``middle_names_data`` dicts (the public attributes
+        a couple of tests introspect), but every alias table comes from
+        Parquet via :class:`PartitionStore`. This is what
+        :func:`ptbr_sampler.sampler.sample` uses by default.
+        """
+        data_dir = Path(__file__).resolve().parent / 'data'
+        surnames_file = Path(surnames_path) if surnames_path else data_dir / 'surnames_data.json'
+        names_file = Path(names_path) if names_path else data_dir / 'names_data.json'
+        middle_file = Path(middle_names_path) if middle_names_path else data_dir / 'middle_names.json'
+
+        with surnames_file.open(encoding='utf-8') as f:
+            surnames_payload = json.load(f)
+        with names_file.open(encoding='utf-8') as f:
+            names_payload = json.load(f)
+
+        combined = {'surnames': surnames_payload['surnames']}
+        combined.update(names_payload)
+
+        return cls(
+            combined,
+            middle_names_path=middle_file if middle_file.exists() else None,
+            names_path=None,
+            parquet_root=_DEFAULT_PARQUET_ROOT,
+            lru_size=lru_size,
+        )
+
     def __init__(
         self,
         json_file_path: str | Path | dict,
         middle_names_path: str | Path | None = None,
         names_path: str | Path | None = None,
+        parquet_root: str | Path | None = None,
+        lru_size: int = 32,
     ):
         """Initialize the name sampler with population data.
+
+        The alias tables can be served from **either**:
+
+        * the partitioned Parquet layout under ``parquet_root`` (preferred
+          for production — see :meth:`from_bundled_parquet` and
+          ``docs/architecture.md``), or
+        * the legacy in-memory dicts (used by unit tests that pass bespoke
+          mock data and by callers that haven't migrated).
+
+        When ``parquet_root`` is given and the partition file for a
+        requested condition exists, it takes precedence. Otherwise the JSON
+        dict is consulted. This keeps every ``mock_name_data`` test working
+        without forcing Parquet on callers that didn't ask for it.
 
         Args:
             json_file_path: Path to JSON file or pre-loaded data dictionary
                 with surname data.
             middle_names_path: Path to middle names JSON file.
             names_path: Path to first names JSON file.
+            parquet_root: Root of the partitioned Parquet layout. ``None``
+                disables Parquet entirely and forces the JSON path.
+            lru_size: Upper bound on how many Parquet partitions are kept
+                resident in the alias-table cache.
         """
         if isinstance(json_file_path, (str, Path)):
             with Path(json_file_path).open(encoding='utf-8') as file:
@@ -119,6 +178,18 @@ class BrazilianNameSampler:
         self._surname_alias: AliasTable | None = None
         self._top_40_alias: AliasTable | None = None
         self._middle_name_alias: AliasTable | None = None
+
+        # Wire the partitioned Parquet store. The store is consulted before
+        # the legacy JSON path — this is the change that actually puts the
+        # Parquet layout on the critical path of every draw. Opt-in: pass
+        # ``parquet_root`` explicitly (or use :meth:`from_bundled_parquet`).
+        self.parquet_root: Path | None = None
+        self._partition_store: PartitionStore | None = None
+        if parquet_root is not None:
+            candidate_root = Path(parquet_root)
+            if candidate_root.exists():
+                self.parquet_root = candidate_root
+                self._partition_store = PartitionStore(max_entries=lru_size)
 
     # ------------------------------------------------------------------
     # Data loading / validation
@@ -175,33 +246,72 @@ class BrazilianNameSampler:
     # Lazy alias-table builders
     # ------------------------------------------------------------------
 
+    def _load_from_parquet(self, spec: PartitionSpec) -> AliasTable | None:
+        """Load an alias table from a Parquet partition if the store is live."""
+        if self._partition_store is None:
+            return None
+        try:
+            return self._partition_store.get(spec)
+        except (FileNotFoundError, ValueError):
+            # Partition missing from disk — fall back to the JSON path.
+            return None
+
     def _first_names_table(self, time_period: TimePeriod) -> AliasTable:
         key = time_period.value
         cached = self._first_name_alias.get(key)
         if cached is not None:
             return cached
+
+        if self.parquet_root is not None:
+            spec = PartitionSpec.of(self.parquet_root / 'first_names', period=key)
+            table = self._load_from_parquet(spec)
+            if table is not None:
+                self._first_name_alias[key] = table
+                return table
+
+        # JSON fallback — the legacy path, still exercised by tests that pass
+        # bespoke ``mock_name_data`` dictionaries without a Parquet tree.
         period_data = self.name_data[key]
         table = alias_from_mapping(period_data['names'])
         self._first_name_alias[key] = table
         return table
 
     def _surnames_table(self) -> AliasTable:
-        if self._surname_alias is None:
-            source = {k: v for k, v in self.surname_data.items() if k != 'top_40'}
-            self._surname_alias = alias_from_mapping(source)
+        if self._surname_alias is not None:
+            return self._surname_alias
+
+        if self.parquet_root is not None:
+            spec = PartitionSpec.of(self.parquet_root / 'surnames', scope='national')
+            table = self._load_from_parquet(spec)
+            if table is not None:
+                self._surname_alias = table
+                return table
+
+        source = {k: v for k, v in self.surname_data.items() if k != 'top_40'}
+        self._surname_alias = alias_from_mapping(source)
         return self._surname_alias
 
     def _top_40_table(self) -> AliasTable:
-        if self._top_40_alias is None:
-            if not self.top_40_surnames:
-                # Fall back to full table so downstream code never crashes.
-                return self._surnames_table()
-            self._top_40_alias = alias_from_mapping(self.top_40_surnames)
+        if self._top_40_alias is not None:
+            return self._top_40_alias
+        # No Parquet partition for ``top_40`` — it's a convenience subset that
+        # lives alongside the JSON data.
+        if not self.top_40_surnames:
+            return self._surnames_table()
+        self._top_40_alias = alias_from_mapping(self.top_40_surnames)
         return self._top_40_alias
 
     def _middle_names_table(self) -> AliasTable | None:
         if self._middle_name_alias is not None:
             return self._middle_name_alias
+
+        if self.parquet_root is not None:
+            spec = PartitionSpec(root=self.parquet_root / 'middle_names', filters=())
+            table = self._load_from_parquet(spec)
+            if table is not None:
+                self._middle_name_alias = table
+                return table
+
         if not self.middle_names_data:
             return None
         second_names = self.middle_names_data.get('second_names', {})

@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.location_sampler import BrazilianLocationSampler
-from src.time_period import TimePeriod
+from ptbr_sampler.location_sampler import BrazilianLocationSampler
+from ptbr_sampler.time_period import TimePeriod
 
 
 @pytest.fixture

@@ -6,9 +6,14 @@ from typing import Any
 
 import typer
 from loguru import logger
-from ptbr_sampler.name_generator import NameComponents, TimePeriod
+from ptbr_sampler.br_name_class import NameComponents, TimePeriod
 from ptbr_sampler.sampler import sample as sampler_sample
 from rich.console import Console
+
+# Default data files ship inside the installed package. Resolve them relative
+# to ``__file__`` so ``ptbr generate`` works regardless of the current working
+# directory.
+_PACKAGE_DATA = Path(__file__).resolve().parent / 'data'
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
@@ -101,29 +106,37 @@ INCLUDE_ISSUER = typer.Option(
     True, '--include-issuer', '-ii', help='Include issuer in RG (default: True)', rich_help_panel='Document Options'
 )
 
-# Data source options
+# Data source options — default to the package-bundled JSON files.
 JSON_PATH = typer.Option(
-    'src/data/cities_with_ceps.json',
+    str(_PACKAGE_DATA / 'cities_with_ceps.json'),
     '--json-path',
     '-j',
     help='Path to the cities and CEPs data JSON file',
     rich_help_panel='Data Source Options',
 )
 NAMES_PATH = typer.Option(
-    'src/data/names_data.json', '--names-path', '-np', help='Path to the first names data JSON file', rich_help_panel='Data Source Options'
+    str(_PACKAGE_DATA / 'names_data.json'),
+    '--names-path',
+    '-np',
+    help='Path to the first names data JSON file',
+    rich_help_panel='Data Source Options',
 )
 MIDDLE_NAMES_PATH = typer.Option(
-    'src/data/middle_names.json',
+    str(_PACKAGE_DATA / 'middle_names.json'),
     '--middle-names-path',
     '-mnp',
     help='Path to the middle names JSON file',
     rich_help_panel='Data Source Options',
 )
 SURNAMES_PATH = typer.Option(
-    'src/data/surnames_data.json', '--surnames-path', '-sp', help='Path to the surnames JSON file', rich_help_panel='Data Source Options'
+    str(_PACKAGE_DATA / 'surnames_data.json'),
+    '--surnames-path',
+    '-sp',
+    help='Path to the surnames JSON file',
+    rich_help_panel='Data Source Options',
 )
 LOCATIONS_PATH = typer.Option(
-    'src/data/locations_data.json',
+    str(_PACKAGE_DATA / 'locations_data.json'),
     '--locations-path',
     '-lp',
     help='Path to the locations data JSON file',
@@ -290,7 +303,7 @@ def create_results_table(
     return table
 
 
-@app.command()
+@app.command(name='sample')
 def sample(
     qty: int = DEFAULT_QTY,
     city_only: bool = CITY_ONLY,
@@ -692,6 +705,45 @@ def sample(
         logger.error(f'Error in sample generation: {e}')
         console.print(f'[red]Error: {e!s}[/red]')
         raise typer.Exit(code=1) from e
+
+
+# Expose the same command under the friendlier ``generate`` name so that
+# ``ptbr generate`` and ``ptbr sample`` both work.
+app.command(name='generate', help='Alias for ``sample``: generate Brazilian profiles.')(sample)
+
+
+@app.command(name='sources', help='Show the origin of each bundled dataset.')
+def sources(
+    kind: str = typer.Option(None, '--kind', '-k', help='Filter by data kind (substring match).'),
+) -> None:
+    """Print the data-origin catalogue defined in ``ptbr_sampler/data_origins.py``.
+
+    Mirrors ``docs/data-origins.md``. Use ``--kind`` to filter by type.
+    """
+    from ptbr_sampler.data_origins import DATA_ORIGINS
+
+    console.print('[bold]ptbr-sampler — data origins[/bold]\n')
+    for origin in DATA_ORIGINS:
+        if kind and kind.casefold() not in origin.kind.casefold():
+            continue
+        console.print(f'[bold cyan]{origin.kind}[/bold cyan]')
+        console.print(f'  {origin.summary}')
+        if origin.dimensions:
+            console.print(f'  [dim]Dimensions:[/dim] {", ".join(origin.dimensions)}')
+        if origin.files:
+            console.print('  [dim]Files:[/dim]')
+            for path, exists in origin.file_status():
+                mark = '[green]✓[/green]' if exists else '[yellow]missing[/yellow]'
+                console.print(f'    {mark} {path}')
+        if origin.primary_url:
+            console.print(f'  [dim]Primary source:[/dim] {origin.primary_url}')
+        if origin.notes:
+            console.print(f'  [dim]Notes:[/dim] {origin.notes}')
+        console.print()
+
+    console.print(
+        '[dim]Full write-up: docs/data-origins.md  ·  external bibliography: docs/sources/bibliography.md[/dim]'
+    )
 
 
 def main() -> None:

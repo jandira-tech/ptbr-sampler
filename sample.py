@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""
-Sample module that provides a clean API for the Brazilian Name and Location generator.
+"""Sample module providing a clean API for the Brazilian data generator.
 
-This module wraps the src.sampler.sample function and makes it easier to use programmatically.
+Thin wrapper around :func:`ptbr_sampler.sampler.sample` that makes it easier
+to use programmatically (sensible defaults, single-keyword ``q`` alias,
+unwrapped dict return when ``q == 1``).
 """
 
 from pathlib import Path
 
-from src.br_name_class import TimePeriod
-from src.sampler import sample as sampler_function
+from ptbr_sampler.br_name_class import TimePeriod
+from ptbr_sampler.sampler import sample as sampler_function
 
-# Default data paths (relative to project root, matching CLI defaults)
-_DATA_DIR = Path(__file__).parent / 'src' / 'data'
+# Default data paths — bundled inside the installed package.
+_DATA_DIR = Path(__file__).parent / 'ptbr_sampler' / 'data'
 
 _DEFAULTS = {
     'qty': 1,

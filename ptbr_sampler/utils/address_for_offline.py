@@ -682,7 +682,7 @@ class AddressProvider_for_offline:
         # Use the non_weighted_random_name method to get a random first name
         return self.non_weighted_random_name()
 
-    def non_weighted_random_name(self, names_path: str = 'src/data/names_data.json') -> str:
+    def non_weighted_random_name(self, names_path: str = 'ptbr_sampler/data/names_data.json') -> str:
         """
         Returns a random name from the names data file without weighting.
 

@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from src.time_period import TimePeriod
+from ptbr_sampler.time_period import TimePeriod
 
 
 @pytest.fixture

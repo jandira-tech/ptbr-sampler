@@ -100,7 +100,7 @@ class TestNameBatchParity:
         """
         from scipy.stats import chisquare
 
-        from src.br_name_class import TimePeriod
+        from ptbr_sampler.br_name_class import TimePeriod
 
         n = 20_000
 
