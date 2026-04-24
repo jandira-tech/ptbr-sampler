@@ -515,31 +515,27 @@ def sample(
                 if progress_callback and i % max(1, actual_qty // 100) == 0:
                     progress_callback(i + 1, 'Generating names')
         else:
-            # Full sample generation with location, name, and documents
-            # Use batch methods for bulk draws when generating multiple samples
-            if actual_qty > 1:
-                batch_locations = location_sampler.batch_sample_locations(actual_qty)
-                batch_names = name_sampler.batch_sample_names(
-                    actual_qty,
-                    time_period=time_period,
-                    raw=name_raw,
-                    include_surname=True,
-                    top_40=top_40,
-                    with_only_one_surname=with_only_one_surname,
-                    always_middle=always_middle,
-                )
-            else:
-                batch_locations = None
-                batch_names = None
+            # Full sample generation with location, name, and documents.
+            # The batch path is now unconditional: ``k=1`` and ``k=N`` go
+            # through the same vectorised alias lookup. ``--batch`` is a
+            # flush-to-disk cadence (see ``save_to_jsonl`` below), not a
+            # sampling-strategy switch.
+            batch_locations = location_sampler.batch_sample_locations(actual_qty)
+            batch_names = name_sampler.batch_sample_names(
+                actual_qty,
+                time_period=time_period,
+                raw=name_raw,
+                include_surname=True,
+                top_40=top_40,
+                with_only_one_surname=with_only_one_surname,
+                always_middle=always_middle,
+            )
 
             for i in range(actual_qty):
                 documents = {}
 
-                if batch_locations is not None:
-                    loc = batch_locations[i]
-                    state_name, state_abbr, city_name = loc['state_name'], loc['state_abbr'], loc['city_name']
-                else:
-                    state_name, state_abbr, city_name = location_sampler.get_state_and_city()
+                loc = batch_locations[i]
+                state_name, state_abbr, city_name = loc['state_name'], loc['state_abbr'], loc['city_name']
 
                 state_city_info.append((state_name, state_abbr, city_name))
 
@@ -574,19 +570,7 @@ def sample(
                     ddd = city_data.get('ddd', None)
                     documents['phone'] = generate_phone_number(ddd)
 
-                # Use batched name if available, otherwise single draw
-                if batch_names is not None:
-                    name_components = batch_names[i]
-                else:
-                    name_components = name_sampler.get_random_name(
-                        time_period=time_period,
-                        raw=name_raw,
-                        include_surname=True,
-                        top_40=top_40,
-                        with_only_one_surname=with_only_one_surname,
-                        always_middle=always_middle,
-                        return_components=True,
-                    )
+                name_components = batch_names[i]
 
                 results.append((location, name_components, documents))
 

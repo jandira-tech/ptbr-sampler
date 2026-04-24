@@ -13,6 +13,10 @@ dependencies = [
     'rich>=14.0.0',
     'richer>=0.1.6',
     'aiofiles>=24.1.0',
+    # Vectorised sampling primitives (see docs/architecture.md).
+    'numpy>=2.0',
+    # Partitioned Parquet store under src/data/parquet.
+    'pyarrow>=17.0',
 ]
 
 [project.optional-dependencies]
