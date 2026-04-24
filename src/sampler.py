@@ -5,6 +5,7 @@ Core functionality for generating Brazilian name, location, and document samples
 """
 
 import asyncio
+import copy
 import json
 from pathlib import Path
 
@@ -16,6 +17,22 @@ from src.utils.phone import generate_phone_number
 from .br_location_class import BrazilianLocationSampler
 from .br_name_class import BrazilianNameSampler, NameComponents, TimePeriod
 from .document_sampler import DocumentSampler
+
+# Module-level JSON cache to avoid re-parsing on repeated sample() calls.
+_json_cache: dict[str, dict] = {}
+
+
+def _load_json_cached(path: str | Path) -> dict:
+    """Load JSON data from a file, returning a cached copy after first load.
+
+    The returned dict is shared — callers that need to mutate it should
+    copy it first.
+    """
+    key = str(Path(path).resolve())
+    if key not in _json_cache:
+        with Path(path).open(encoding='utf-8') as f:
+            _json_cache[key] = json.load(f)
+    return _json_cache[key]
 
 
 def parse_result(
@@ -339,34 +356,34 @@ def sample(
         only_document = False
 
     try:
-        # Initialize samplers only once
-        location_sampler = BrazilianLocationSampler(json_path)
+        # Initialize samplers — use cached JSON to avoid re-parsing on repeated calls.
+        # Deep-copy every cached payload before mutating/consuming so the shared
+        # cache entry is never touched.
+        location_json = _load_json_cached(json_path)
+        location_sampler = BrazilianLocationSampler(copy.deepcopy(location_json))
         doc_sampler = DocumentSampler()
 
         # Load location data if provided - do this only once
         if locations_path:
             try:
-                with Path(locations_path).open(encoding='utf-8') as f:
-                    locations_data = json.load(f)
-                    # Use locations data if available
-                    if 'cities' in locations_data:
-                        location_sampler.update_cities(locations_data['cities'])
-                    if 'states' in locations_data:
-                        location_sampler.update_states(locations_data['states'])
+                locations_data = copy.deepcopy(_load_json_cached(locations_path))
+                # Use locations data if available
+                if 'cities' in locations_data:
+                    location_sampler.update_cities(locations_data['cities'])
+                if 'states' in locations_data:
+                    location_sampler.update_states(locations_data['states'])
             except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
                 # Log but continue with default data
                 print(f'Warning: Could not use locations_path data: {e}')
 
-        # Load surnames data for name sampler
-        with Path(surnames_path).open(encoding='utf-8') as f:
-            surnames_data = json.load(f)
+        # Load surnames data for name sampler (cached)
+        surnames_data = copy.deepcopy(_load_json_cached(surnames_path))
 
         # Create complete data for name sampler
         name_data = {'surnames': surnames_data['surnames']}
         if names_path:
-            with Path(names_path).open(encoding='utf-8') as f:
-                names_data = json.load(f)
-                name_data.update(names_data)
+            names_json = copy.deepcopy(_load_json_cached(names_path))
+            name_data.update(names_json)
 
         name_sampler = BrazilianNameSampler(
             name_data,  # Pass the combined data
@@ -374,8 +391,10 @@ def sample(
             None,  # No need for names_path as we've already loaded it
         )
 
-        # Initialize results list
+        # Initialize results list and parallel state/city tracking so the
+        # address phase can reuse the same draws without a second batch.
         results: list[tuple[str, NameComponents, dict[str, str]]] = []
+        state_city_info: list[tuple[str, str, str]] = []
 
         if only_document:
             # Document-only generation with proper state handling
@@ -384,6 +403,7 @@ def sample(
 
                 # Generate location first to get proper state for RG
                 state_name, state_abbr, city_name = location_sampler.get_state_and_city()
+                state_city_info.append((state_name, state_abbr, city_name))
 
                 # Generate all requested documents
                 if always_cpf or only_cpf:
@@ -417,6 +437,7 @@ def sample(
 
                 # Generate location first to get proper state for RG
                 state_name, state_abbr, city_name = location_sampler.get_state_and_city()
+                state_city_info.append((state_name, state_abbr, city_name))
                 if only_cpf:
                     documents['cpf'] = doc_sampler.generate_cpf()
                 if only_pis:
@@ -449,6 +470,7 @@ def sample(
 
                 # Generate location first to get proper state and DDD
                 state_name, state_abbr, city_name = location_sampler.get_state_and_city()
+                state_city_info.append((state_name, state_abbr, city_name))
 
                 if only_surname:
                     name_components = NameComponents(
@@ -494,13 +516,32 @@ def sample(
                     progress_callback(i + 1, 'Generating names')
         else:
             # Full sample generation with location, name, and documents
+            # Use batch methods for bulk draws when generating multiple samples
+            if actual_qty > 1:
+                batch_locations = location_sampler.batch_sample_locations(actual_qty)
+                batch_names = name_sampler.batch_sample_names(
+                    actual_qty,
+                    time_period=time_period,
+                    raw=name_raw,
+                    include_surname=True,
+                    top_40=top_40,
+                    with_only_one_surname=with_only_one_surname,
+                    always_middle=always_middle,
+                )
+            else:
+                batch_locations = None
+                batch_names = None
+
             for i in range(actual_qty):
                 documents = {}
 
-                # No need to reload location data - already loaded once at the beginning
+                if batch_locations is not None:
+                    loc = batch_locations[i]
+                    state_name, state_abbr, city_name = loc['state_name'], loc['state_abbr'], loc['city_name']
+                else:
+                    state_name, state_abbr, city_name = location_sampler.get_state_and_city()
 
-                # Generate location first to ensure proper state handling
-                state_name, state_abbr, city_name = location_sampler.get_state_and_city()
+                state_city_info.append((state_name, state_abbr, city_name))
 
                 # Format location string
                 if city_only:
@@ -527,26 +568,25 @@ def sample(
                 if always_cei or only_cei:
                     documents['cei'] = doc_sampler.generate_cei()
                 if always_rg or only_rg:
-                    # Always use the state from our location for RG generation
                     documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer)}'
                 if always_phone or only_fone:
-                    # Get the DDD from the city data
                     city_data = location_sampler.city_data_by_name.get(city_name, {})
                     ddd = city_data.get('ddd', None)
                     documents['phone'] = generate_phone_number(ddd)
 
-                # Generate name components if needed
-                name_components = None
-
-                name_components = name_sampler.get_random_name(
-                    time_period=time_period,
-                    raw=name_raw,
-                    include_surname=True,
-                    top_40=top_40,
-                    with_only_one_surname=with_only_one_surname,
-                    always_middle=always_middle,
-                    return_components=True,
-                )
+                # Use batched name if available, otherwise single draw
+                if batch_names is not None:
+                    name_components = batch_names[i]
+                else:
+                    name_components = name_sampler.get_random_name(
+                        time_period=time_period,
+                        raw=name_raw,
+                        include_surname=True,
+                        top_40=top_40,
+                        with_only_one_surname=with_only_one_surname,
+                        always_middle=always_middle,
+                        return_components=True,
+                    )
 
                 results.append((location, name_components, documents))
 
@@ -556,18 +596,16 @@ def sample(
 
         # Collect all CEPs that will be used
         all_ceps = []
-        all_state_city_info = []
+        all_state_city_info = list(state_city_info)
 
         # Update progress to indicate we're starting address generation
         if progress_callback:
             progress_callback(actual_qty // 2, 'Preparing address data')  # Show approximately half-way progress
 
-        # For all types of generation
+        # Reuse state_city_info from the primary generation phase so RG state,
+        # phone DDD, and the final output location remain consistent.
         for i in range(actual_qty):
-            # Generate a new state and city
-            state_name, state_abbr, city_name = location_sampler.get_state_and_city()
-
-            all_state_city_info.append((state_name, state_abbr, city_name))
+            state_name, state_abbr, city_name = all_state_city_info[i]
 
             # Get a random CEP for the city
             cep = location_sampler._get_random_cep_for_city(city_name)
@@ -628,9 +666,11 @@ def sample(
             if progress_callback:
                 progress_callback(actual_qty * 95 // 100, 'Saving to JSONL file')
 
+            # parsed_results is always assembled as a list above; the type
+            # check and else branch are kept for defense-in-depth.
             if isinstance(parsed_results, list):
                 asyncio.run(save_to_jsonl_file(parsed_results, save_to_jsonl, append=append_to_jsonl))
-            else:
+            else:  # pragma: no cover - defensive branch; parsed_results is always a list
                 asyncio.run(save_to_jsonl_file([parsed_results], save_to_jsonl, append=append_to_jsonl))
 
         # Final progress update to indicate completion

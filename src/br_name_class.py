@@ -20,7 +20,7 @@ class TimePeriod(str, Enum):
     UNTIL_2010 = 'ate2010'
 
 
-@dataclass
+@dataclass(slots=True)
 class NameComponents:
     """Structure to hold the components of a Brazilian name"""
 
@@ -136,7 +136,7 @@ class BrazilianNameSampler:
 
             # Normalize weights to ensure they sum to 1.0
             total_weight = sum(weights)
-            if total_weight <= 0:
+            if total_weight <= 0:  # pragma: no cover - unreachable: weights only appended when >0
                 return ''
 
             normalized_weights = [w / total_weight for w in weights]
@@ -206,6 +206,120 @@ class BrazilianNameSampler:
             name_parts.append(middle_name)
         name_parts.append(surname)
         return ' '.join(name_parts)
+
+    def batch_sample_names(
+        self,
+        n: int,
+        time_period: TimePeriod = TimePeriod.UNTIL_2010,
+        raw: bool = False,
+        include_surname: bool = True,
+        top_40: bool = False,
+        with_only_one_surname: bool = False,
+        always_middle: bool = False,
+    ) -> list[NameComponents]:
+        """Draw n name samples with batched random calls.
+
+        Batches the main random.choices draws for first names, middle names,
+        and surnames to amortize per-call overhead. The prefix logic remains
+        per-entry due to its conditional branching complexity.
+
+        Args:
+            n: Number of name samples to draw.
+            time_period: Time period for first name selection.
+            raw: Return names in uppercase format.
+            include_surname: Whether to include surnames.
+            top_40: Use only top 40 surnames.
+            with_only_one_surname: Use single surname instead of two.
+            always_middle: Always include a middle name.
+
+        Returns:
+            List of NameComponents dataclass instances.
+        """
+        # Prepare first name pool
+        period_data = self.name_data[time_period.value]
+        names_data = period_data['names']
+        first_name_pool = list(names_data.keys())
+        first_name_weights = [info['percentage'] for info in names_data.values()]
+
+        # Batch draw first names
+        drawn_first_names = random.choices(first_name_pool, weights=first_name_weights, k=n)
+        if raw:
+            drawn_first_names = [name.upper() for name in drawn_first_names]
+
+        # Batch middle name decisions and draws
+        middle_names: list[str | None] = [None] * n
+        if self.middle_names_data:
+            threshold = self.middle_names_data['percentage_with_second'] / 100
+
+            # Prepare middle name pool once
+            second_names = self.middle_names_data.get('second_names', {})
+            mn_pool: list[str] = []
+            mn_weights: list[float] = []
+            for name, data in second_names.items():
+                try:
+                    pct = float(data['percentage'])
+                    if pct > 0:
+                        mn_pool.append(name)
+                        mn_weights.append(pct)
+                except (ValueError, TypeError):
+                    continue
+
+            if mn_pool:
+                total_w = sum(mn_weights)
+                mn_weights = [w / total_w for w in mn_weights]
+
+                if always_middle:
+                    drawn_middles = random.choices(mn_pool, weights=mn_weights, k=n)
+                    for i in range(n):
+                        middle_names[i] = drawn_middles[i].upper() if raw else drawn_middles[i]
+                else:
+                    # Batch random decisions
+                    decisions = [random.random() < threshold for _ in range(n)]
+                    need_count = sum(decisions)
+                    if need_count > 0:
+                        drawn_middles = random.choices(mn_pool, weights=mn_weights, k=need_count)
+                        j = 0
+                        for i in range(n):
+                            if decisions[i]:
+                                middle_names[i] = drawn_middles[j].upper() if raw else drawn_middles[j]
+                                j += 1
+
+        if not include_surname:
+            return [NameComponents(drawn_first_names[i], middle_names[i], '') for i in range(n)]
+
+        # Prepare surname pool
+        source = self.top_40_surnames if top_40 else self.surname_data
+        surname_pool: list[str] = []
+        surname_weights: list[float] = []
+        for surname, info in source.items():
+            if surname != 'top_40':
+                surname_pool.append(surname)
+                surname_weights.append(info['percentage'])
+
+        # Batch draw surnames (2 per sample unless single surname)
+        drawn_surnames1 = random.choices(surname_pool, weights=surname_weights, k=n)
+        if not with_only_one_surname:
+            drawn_surnames2 = random.choices(surname_pool, weights=surname_weights, k=n)
+
+        # Assemble results (prefix application stays per-entry)
+        results: list[NameComponents] = []
+        for i in range(n):
+            s1 = drawn_surnames1[i].upper() if raw else drawn_surnames1[i]
+            s1 = self._apply_prefix(s1, allow_prefix=True)
+
+            if with_only_one_surname:
+                surname = s1
+            else:
+                s2 = drawn_surnames2[i].upper() if raw else drawn_surnames2[i]
+                if s2.upper() in ('JUNIOR', 'JR'):
+                    s2 = 'JR' if raw else 'Jr.'
+                else:
+                    s2 = self._apply_prefix(s2, allow_prefix=False)
+                surname = f'{s1} {s2}'
+
+            results.append(NameComponents(drawn_first_names[i], middle_names[i], surname))
+
+        return results
 
     def get_random_surname(self, top_40: bool = False, raw: bool = False, with_only_one_surname: bool = False) -> str:
         """
