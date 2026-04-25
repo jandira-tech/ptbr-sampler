@@ -196,6 +196,26 @@ class TestAliasFromMapping:
         t = alias_from_mapping(mapping)
         assert t.labels[0] == '123'
 
+    def test_skips_non_mapping_top_level_value(self):
+        """Top-level non-Mapping values must be skipped, not raise."""
+        mapping = {
+            'NotADict': 'just-a-string',
+            'Good': {'count': 1, 'percentage': 1.0},
+        }
+        t = alias_from_mapping(mapping)
+        assert len(t) == 1
+        assert t.labels[0] == 'Good'
+
+    def test_invalid_count_treated_as_zero(self):
+        """Non-numeric count falls back to 0 and the entry is filtered when pct also zero."""
+        mapping = {
+            'Bad': {'count': 'not-a-number', 'percentage': 0.0},
+            'Good': {'count': 2, 'percentage': 2.0},
+        }
+        t = alias_from_mapping(mapping)
+        assert len(t) == 1
+        assert t.labels[0] == 'Good'
+
 
 # ---------------------------------------------------------------------------
 # store.py — PartitionStore constructor validation and cache-hit path
@@ -445,6 +465,84 @@ class TestTop40FallbackToSurnames:
         # mock data top_40 has Silva and Santos
         labels = set(table.labels.tolist())
         assert labels == {'Silva', 'Santos'}
+
+    def test_top_40_table_cached_on_second_call(self):
+        """The top_40 table is cached — second call returns the same object."""
+        data = _minimal_name_data()
+        sampler = BrazilianNameSampler(data)
+        t1 = sampler._top_40_table()
+        t2 = sampler._top_40_table()
+        assert t1 is t2
+
+
+class TestShouldAddMiddleName:
+    def test_returns_false_without_data(self):
+        data = _minimal_name_data()
+        sampler = BrazilianNameSampler(data)
+        assert sampler._should_add_middle_name() is False
+
+    def test_returns_bool_with_data(self, tmp_path: Path):
+        payload = {
+            'percentage_with_second': 100.0,
+            'second_names': {
+                'Augusto': {'count': 1, 'percentage': 100.0},
+            },
+        }
+        mp = tmp_path / 'middles.json'
+        mp.write_text(json.dumps(payload), encoding='utf-8')
+        data = _minimal_name_data()
+        sampler = BrazilianNameSampler(data, middle_names_path=mp)
+        # 100% probability — should always be True.
+        assert sampler._should_add_middle_name() is True
+
+
+class TestGetRandomMiddleName:
+    def test_no_middle_data_returns_empty(self):
+        data = _minimal_name_data()
+        sampler = BrazilianNameSampler(data)
+        assert sampler._get_random_middle_name() == ''
+
+    def test_with_data_returns_string(self, tmp_path: Path):
+        payload = {
+            'percentage_with_second': 100.0,
+            'second_names': {
+                'Augusto': {'count': 1, 'percentage': 100.0},
+            },
+        }
+        mp = tmp_path / 'middles.json'
+        mp.write_text(json.dumps(payload), encoding='utf-8')
+        data = _minimal_name_data()
+        sampler = BrazilianNameSampler(data, middle_names_path=mp)
+        result = sampler._get_random_middle_name()
+        assert result == 'Augusto'
+
+    def test_table_none_returns_empty(self):
+        """When middle table cannot be built, returns empty string."""
+        data = _minimal_name_data()
+        sampler = BrazilianNameSampler(data)
+        sampler.middle_names_data = {
+            'percentage_with_second': 100.0,
+            'second_names': {
+                'Zero': {'count': 0, 'percentage': 0.0},
+            },
+        }
+        assert sampler._get_random_middle_name() == ''
+
+    def test_get_random_middle_name_wraps_loader_errors(self, monkeypatch):
+        """A loader error (KeyError/ValueError/TypeError) is wrapped in ValueError."""
+        data = _minimal_name_data()
+        sampler = BrazilianNameSampler(data)
+        sampler.middle_names_data = {
+            'percentage_with_second': 100.0,
+            'second_names': {'Augusto': {'count': 1, 'percentage': 100.0}},
+        }
+
+        def boom(self):  # noqa: ARG001 - signature must match the bound method
+            raise TypeError('oops')
+
+        monkeypatch.setattr(BrazilianNameSampler, '_middle_names_table', boom)
+        with pytest.raises(ValueError, match='Error processing middle names data'):
+            sampler._get_random_middle_name()
 
 
 class TestMiddleNamesTableEdge:

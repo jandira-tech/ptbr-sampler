@@ -199,3 +199,32 @@ class TestPartitionStore:
         assert len(store) == 1
         store.clear()
         assert spec not in store
+
+    def test_partition_with_no_count_or_weight_raises(self, tmp_path: Path):
+        """A partition file lacking both count and weight columns must raise."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        spec = PartitionSpec.of(tmp_path / 'orphan', uf='SP')
+        spec.path().parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(pa.table({'name': ['a', 'b', 'c']}), spec.path())
+
+        store = PartitionStore()
+        with pytest.raises(ValueError, match='neither positive counts nor weight column'):
+            store.get(spec)
+
+    def test_partition_with_only_weight_column_loads(self, tmp_path: Path):
+        """A partition file with only weight (no count) is loaded via from_weights."""
+        import pyarrow as pa
+        import pyarrow.parquet as pq
+
+        spec = PartitionSpec.of(tmp_path / 'weighted', uf='SP')
+        spec.path().parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(
+            pa.table({'name': ['a', 'b'], 'weight': [0.7, 0.3]}),
+            spec.path(),
+        )
+
+        store = PartitionStore()
+        table = store.get(spec)
+        assert set(str(s) for s in table.labels) == {'a', 'b'}

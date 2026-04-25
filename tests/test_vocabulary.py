@@ -132,3 +132,31 @@ class TestFilterMapping:
         mapping = {'Alice': 'not-a-dict'}
         kept = v.filter_mapping(mapping)  # type: ignore[arg-type]
         assert kept == {}
+
+
+class TestVocabularyDunders:
+    def test_len_counts_folded_entries(self):
+        v = GivenNameVocabulary.from_iterable(['Alice', 'Bob'])
+        assert len(v) == 2
+
+    def test_len_collapses_diacritic_variants(self):
+        v = GivenNameVocabulary.from_iterable(['João', 'Joao'])
+        # Both fold to ``joao`` so the length is 1.
+        assert len(v) == 1
+
+
+class TestFilter:
+    def test_filter_returns_only_clean_given_names(self):
+        v = GivenNameVocabulary.from_iterable(['Alice', 'Bob'])
+        kept = v.filter(['Alice', 'Bob', 'Silva', '-', 'X'])
+        assert set(kept) == {'Alice', 'Bob'}
+
+
+class TestFromIterableCanonicalDefault:
+    def test_canonical_blocklist_applied_by_default(self):
+        """from_iterable always seeds the surname blocklist with canonical surnames."""
+        v = GivenNameVocabulary.from_iterable(['Alice', 'Silva'])
+        assert 'Alice' in v
+        # ``Silva`` is canonical and must never be accepted as a given name,
+        # even if it appears in the names iterable.
+        assert 'Silva' not in v
