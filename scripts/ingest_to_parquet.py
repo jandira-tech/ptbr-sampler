@@ -12,7 +12,7 @@ Running the script writes::
 The layout intentionally carries partition keys even when the current JSON
 files only supply a single slice (e.g. national surnames and sex-mixed first
 names). This makes it trivial to drop-in IBGE 2022 data conditioned on
-``(uf × decade × sex)`` without changing the code reading the partitions.
+``(uf x decade x sex)`` without changing the code reading the partitions.
 
 Usage::
 
@@ -55,10 +55,11 @@ def _write_partition(out_dir: Path, names: list[str], counts: list[int], weights
 
 
 def _normalise(pcts: Iterable[float]) -> list[float]:
-    total = sum(p for p in pcts if p > 0)
+    values = [float(p) for p in pcts]
+    total = sum(p for p in values if p > 0)
     if total <= 0:
-        return [0.0 for _ in pcts]
-    return [float(p) / total for p in pcts]
+        return [0.0 for _ in values]
+    return [p / total for p in values]
 
 
 def ingest_first_names(src: Path, out_root: Path) -> dict[str, int]:
@@ -115,9 +116,7 @@ def ingest_surnames(src: Path, out_root: Path) -> int:
     return len(labels)
 
 
-def ingest_middle_names(
-    src: Path, out_root: Path, vocabulary: GivenNameVocabulary | None
-) -> tuple[int, int]:
+def ingest_middle_names(src: Path, out_root: Path, vocabulary: GivenNameVocabulary | None) -> tuple[int, int]:
     """Write the cleaned second-names table.
 
     Returns ``(kept_rows, dropped_rows)``.
@@ -174,8 +173,9 @@ def ingest_states(src: Path, out_root: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--data-dir', default='ptbr_sampler/data', type=Path)
-    parser.add_argument('--out', default='ptbr_sampler/data/parquet', type=Path)
+    default_data_dir = Path(__file__).resolve().parents[1] / 'ptbr_sampler' / 'data'
+    parser.add_argument('--data-dir', default=default_data_dir, type=Path)
+    parser.add_argument('--out', default=default_data_dir / 'parquet', type=Path)
     parser.add_argument(
         '--skip-middle-names-filter',
         action='store_true',

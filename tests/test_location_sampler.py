@@ -227,7 +227,7 @@ class TestUpdateData:
 
     def test_update_cities_invalid_raises(self, mock_location_data):
         sampler = BrazilianLocationSampler(mock_location_data)
-        with pytest.raises(ValueError, match='cities_data must be a dictionary'):
+        with pytest.raises(TypeError, match='cities_data must be a dictionary'):
             sampler.update_cities('not a dict')
 
     def test_update_states(self, mock_location_data):
@@ -243,7 +243,7 @@ class TestUpdateData:
 
     def test_update_states_invalid_raises(self, mock_location_data):
         sampler = BrazilianLocationSampler(mock_location_data)
-        with pytest.raises(ValueError, match='states_data must be a dictionary'):
+        with pytest.raises(TypeError, match='states_data must be a dictionary'):
             sampler.update_states(42)
 
 

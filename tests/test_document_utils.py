@@ -1,6 +1,4 @@
-"""Tests for document-number utilities in src/utils: cpf, cnpj, pis, cei, util, phone."""
-
-import random
+"""Tests for document-number utilities in ptbr_sampler/utils."""
 
 import pytest
 

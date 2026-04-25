@@ -44,10 +44,10 @@ class BrazilianLocationSampler:
             cities_data: Dictionary containing city data to update or add
 
         Raises:
-            ValueError: If cities_data is not a valid dictionary
+            TypeError: If cities_data is not a valid dictionary
         """
         if not isinstance(cities_data, dict):
-            raise ValueError('cities_data must be a dictionary')
+            raise TypeError('cities_data must be a dictionary')
 
         # Update the cities data
         if cities_data:
@@ -66,10 +66,10 @@ class BrazilianLocationSampler:
             states_data: Dictionary containing state data to update or add
 
         Raises:
-            ValueError: If states_data is not a valid dictionary
+            TypeError: If states_data is not a valid dictionary
         """
         if not isinstance(states_data, dict):
-            raise ValueError('states_data must be a dictionary')
+            raise TypeError('states_data must be a dictionary')
 
         # Update the states data
         if states_data:

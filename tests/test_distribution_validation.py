@@ -9,7 +9,6 @@ Marked ``slow`` — deselect with ``-m 'not slow'`` for fast iteration.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import numpy as np
@@ -19,26 +18,28 @@ pytest.importorskip('scipy.stats')
 
 from scipy.stats import chisquare, ks_2samp
 
-from scripts import ingest_to_parquet
 from ptbr_sampler.sampling.alias import AliasTable
 from ptbr_sampler.sampling.store import PartitionSpec, PartitionStore
-
+from scripts import ingest_to_parquet
 
 DATA_DIR = Path(__file__).parent.parent / 'ptbr_sampler' / 'data'
 PARQUET_DIR = DATA_DIR / 'parquet'
 
 
-def _ensure_parquet():
-    if not (PARQUET_DIR / 'surnames' / 'scope=national' / 'part.parquet').exists():
-        ingest_to_parquet.main(['--data-dir', str(DATA_DIR), '--out', str(PARQUET_DIR)])
+def _ensure_parquet(tmp_path: Path) -> Path:
+    if (PARQUET_DIR / 'surnames' / 'scope=national' / 'part.parquet').exists():
+        return PARQUET_DIR
+    out = tmp_path / 'parquet'
+    ingest_to_parquet.main(['--data-dir', str(DATA_DIR), '--out', str(out)])
+    return out
 
 
 @pytest.mark.slow
 class TestAliasTableReproducesWeights:
-    def test_first_names_ate2010(self):
-        _ensure_parquet()
+    def test_first_names_ate2010(self, tmp_path: Path):
+        parquet_dir = _ensure_parquet(tmp_path)
         store = PartitionStore(max_entries=4)
-        spec = PartitionSpec.of(PARQUET_DIR / 'first_names', period='ate2010')
+        spec = PartitionSpec.of(parquet_dir / 'first_names', period='ate2010')
         table = store.get(spec)
         rng = np.random.default_rng(314159)
         n = 100_000
@@ -69,10 +70,10 @@ class TestAliasTableReproducesWeights:
         stat, p = chisquare(obs_counts, f_exp=exp_counts)
         assert p > 0.01, f'first-name marginals diverged: chi2={stat:.1f}, p={p:.4f}'
 
-    def test_surnames_empirical_silva_share(self):
-        _ensure_parquet()
+    def test_surnames_empirical_silva_share(self, tmp_path: Path):
+        parquet_dir = _ensure_parquet(tmp_path)
         store = PartitionStore(max_entries=2)
-        spec = PartitionSpec.of(PARQUET_DIR / 'surnames', scope='national')
+        spec = PartitionSpec.of(parquet_dir / 'surnames', scope='national')
         table = store.get(spec)
         rng = np.random.default_rng(271828)
         draws = table.sample(100_000, rng)
@@ -90,10 +91,10 @@ class TestAliasVsReferenceDistribution:
     Both should produce the same categorical distribution, so the KS test on
     the rank-indexed empirical CDFs should fail to reject."""
 
-    def test_first_names_match_reference_numpy(self):
-        _ensure_parquet()
+    def test_first_names_match_reference_numpy(self, tmp_path: Path):
+        parquet_dir = _ensure_parquet(tmp_path)
         store = PartitionStore(max_entries=2)
-        spec = PartitionSpec.of(PARQUET_DIR / 'first_names', period='ate2000')
+        spec = PartitionSpec.of(parquet_dir / 'first_names', period='ate2000')
         table = store.get(spec)
         rng = np.random.default_rng(42)
 

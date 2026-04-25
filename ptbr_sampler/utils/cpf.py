@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-
-
 import random
 import re
 
@@ -33,15 +30,12 @@ def validate_cpf(cpf, autopad=True):
 
     digits = [int(k) for k in cpf]  # identifier digits
     # validate the first check digit
-    cs = (sum(w * k for w, k in zip(CPF_WEIGHTS, digits[:-2])) % 11) % 10
+    cs = (sum(w * k for w, k in zip(CPF_WEIGHTS, digits[:-2], strict=False)) % 11) % 10
     if cs != digits[-2]:
         return False  # first check digit is not correct
     # validate the second check digit
-    cs = (sum(w * k for w, k in zip(CPF_WEIGHTS, digits[1:-1])) % 11) % 10
-    if cs != digits[-1]:
-        return False  # second check digit is not correct
-    # both check digits are correct
-    return True
+    cs = (sum(w * k for w, k in zip(CPF_WEIGHTS, digits[1:-1], strict=False)) % 11) % 10
+    return cs == digits[-1]
 
 
 def cpf_check_digits(cpf):
@@ -51,10 +45,10 @@ def cpf_check_digits(cpf):
         raise ValueError(f'CPF must have at least 9 digits: {cpf}')
     digits = [int(k) for k in cpf[:10]]
     # find the first check digit
-    cs = (sum(w * k for w, k in zip(CPF_WEIGHTS, digits)) % 11) % 10
+    cs = (sum(w * k for w, k in zip(CPF_WEIGHTS, digits, strict=False)) % 11) % 10
     # find the second check digit
     digits.append(cs)
-    return cs, (sum(w * k for w, k in zip(CPF_WEIGHTS, digits[1:])) % 11) % 10
+    return cs, (sum(w * k for w, k in zip(CPF_WEIGHTS, digits[1:], strict=False)) % 11) % 10
 
 
 def format_cpf(cpf):
@@ -75,7 +69,8 @@ def pad_cpf(cpf, validate=False):
 def random_cpf(formatted=True):
     """Create a random, valid CPF identifier."""
     stem = random.randint(100000000, 999999999)
-    cpf = str(stem) + '{}{1}'.format(*cpf_check_digits(stem))
+    d1, d2 = cpf_check_digits(stem)
+    cpf = f'{stem}{d1}{d2}'
     if formatted:
         return format_cpf(cpf)
     return cpf

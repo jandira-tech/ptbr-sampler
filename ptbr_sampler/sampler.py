@@ -7,6 +7,7 @@ Core functionality for generating Brazilian name, location, and document samples
 import asyncio
 import copy
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import aiofiles
@@ -129,7 +130,11 @@ async def save_to_jsonl_file(data: list[dict], filename: str, append: bool = Tru
             await f.write(json.dumps(item, ensure_ascii=False) + '\n')
 
 
-async def get_address_data_batch(ceps: list[str], make_api_call: bool = False, progress_callback: callable | None = None) -> list[dict]:
+async def get_address_data_batch(
+    ceps: list[str],
+    make_api_call: bool = False,
+    progress_callback: Callable[[int, str], None] | None = None,
+) -> list[dict]:
     """
     Get address data for multiple CEPs, either from API or generated.
 
@@ -145,7 +150,7 @@ async def get_address_data_batch(ceps: list[str], make_api_call: bool = False, p
 
     if make_api_call:
         # Use cep_wrapper to get real data for multiple CEPs
-        from .utils.cep_wrapper import workers_for_multiple_cep
+        from .utils.cep_wrapper import workers_for_multiple_cep  # noqa: PLC0415 - optional Node-backed CEP integration stays lazy.
 
         # Format CEPs to remove dashes before API call
         formatted_ceps = [cep.replace('-', '') for cep in ceps]
@@ -277,7 +282,7 @@ def sample(
     locations_path: str | Path,
     save_to_jsonl: str | None,
     all_data: bool,
-    progress_callback: callable | None = None,
+    progress_callback: Callable[[int, str], None] | None = None,
     append_to_jsonl: bool = False,
 ) -> dict | list[dict]:
     """Generate random Brazilian samples with comprehensive information.

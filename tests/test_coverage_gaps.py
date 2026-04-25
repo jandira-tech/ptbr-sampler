@@ -2,8 +2,6 @@
 
 import random
 
-import pytest
-
 from ptbr_sampler.br_location_class import BrazilianLocationSampler
 from ptbr_sampler.br_name_class import BrazilianNameSampler
 from ptbr_sampler.utils import cei as cei_mod
@@ -27,16 +25,14 @@ class TestMiddleNameZeroWeightBranch:
         }
         assert sampler._get_random_middle_name() == ''
 
-    def test_error_in_middle_name_processing_wraps(self, mock_name_data):
-        """An unexpected exception bubbles up as ValueError with a clear message."""
+    def test_count_only_middle_name_mapping_is_supported(self, mock_name_data):
+        """Count-only alias mappings remain usable in mutated test fixtures."""
         sampler = BrazilianNameSampler(mock_name_data)
-        # Rig middle_names_data so the loop raises a KeyError.
         sampler.middle_names_data = {
             'percentage_with_second': 50.0,
-            'second_names': {'X': {'count': 1}},  # missing 'percentage' -> KeyError
+            'second_names': {'X': {'count': 1}},
         }
-        with pytest.raises(ValueError, match='Error processing middle names data'):
-            sampler._get_random_middle_name()
+        assert sampler._get_random_middle_name() == 'X'
 
 
 class TestGetRandomLocationDefaultBranch:

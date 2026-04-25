@@ -44,18 +44,18 @@ uv sync
 
 ```bash
 # Gere um perfil completo (nome, localização, documentos)
-uv run src.cli sample --qty 1
+uv run ptbr sample --qty 1
 
 # Gere apenas documentos específicos
-uv run src.cli sample --only-cpf --only-rg --qty 3
+uv run ptbr sample --only-cpf --only-rg --qty 3
 ```
 
 ### API Python
 
 ```python
-from src.br_location_class import BrazilianLocationSampler
-from src.br_name_class import BrazilianNameSampler, TimePeriod
-from src.document_sampler import DocumentSampler
+from ptbr_sampler.br_location_class import BrazilianLocationSampler
+from ptbr_sampler.br_name_class import BrazilianNameSampler, TimePeriod
+from ptbr_sampler.document_sampler import DocumentSampler
 
 # Inicialize os amostradores
 location_sampler = BrazilianLocationSampler("data/cities_with_ceps.json")
@@ -188,11 +188,11 @@ As fichas detalhadas de cada fonte (percentuais por UF, metodologia, datas de re
 
 A versão atual substitui `dict` Python aninhado por três decisões que escalam até IBGE 2022 condicionado por `(UF × década × sexo)`:
 
-1. **Armazenamento** — Parquet particionado em `src/data/parquet/` (`first_names/period=<x>/`, `surnames/scope=national/`, `middle_names/`, `states/`). Leituras via `pyarrow.dataset` com *filter pushdown* — apenas as partições efetivamente usadas são materializadas. A camada de ingestão está em [`scripts/ingest_to_parquet.py`](scripts/ingest_to_parquet.py).
-2. **Primitiva de amostragem** — método de *alias* de Walker/Vose em [`src/sampling/alias.py`](src/sampling/alias.py): O(m) para construir, **O(1) por amostra**, totalmente vetorizado em NumPy. `k=1` e `k=100.000` têm a mesma estrutura de custo por amostra.
-3. **Carregamento preguiçoso com LRU** — [`src/sampling/store.py`](src/sampling/store.py) encapsula partições atrás de um cache LRU limitado; condições quentes (SP/MG/RJ) permanecem residentes, condições frias paginam do disco.
+1. **Armazenamento** — Parquet particionado em `ptbr_sampler/data/parquet/` (`first_names/period=<x>/`, `surnames/scope=national/`, `middle_names/`, `states/`). Leituras via `pyarrow.dataset` com *filter pushdown* — apenas as partições efetivamente usadas são materializadas. A camada de ingestão está em [`scripts/ingest_to_parquet.py`](scripts/ingest_to_parquet.py).
+2. **Primitiva de amostragem** — método de *alias* de Walker/Vose em [`ptbr_sampler/sampling/alias.py`](ptbr_sampler/sampling/alias.py): O(m) para construir, **O(1) por amostra**, totalmente vetorizado em NumPy. `k=1` e `k=100.000` têm a mesma estrutura de custo por amostra.
+3. **Carregamento preguiçoso com LRU** — [`ptbr_sampler/sampling/store.py`](ptbr_sampler/sampling/store.py) encapsula partições atrás de um cache LRU limitado; condições quentes (SP/MG/RJ) permanecem residentes, condições frias paginam do disco.
 
-O arquivo `middle_names.json` é filtrado contra uma *whitelist* de nomes próprios mantida em [`src/sampling/vocabulary.py`](src/sampling/vocabulary.py), descartando vazamento de sobrenomes (`Araújo`, `Borges`, `Bezerra`, …), o marcador `Cancelado` e tokens não-nominais (`-`). A validação estatística por `scipy.stats.chisquare` e `ks_2samp` vive em [`tests/test_distribution_validation.py`](tests/test_distribution_validation.py).
+O arquivo `middle_names.json` é filtrado contra uma *whitelist* de nomes próprios mantida em [`ptbr_sampler/sampling/vocabulary.py`](ptbr_sampler/sampling/vocabulary.py), descartando vazamento de sobrenomes (`Araújo`, `Borges`, `Bezerra`, …), o marcador `Cancelado` e tokens não-nominais (`-`). A validação estatística por `scipy.stats.chisquare` e `ks_2samp` vive em [`tests/test_distribution_validation.py`](tests/test_distribution_validation.py).
 
 Para gerar a camada Parquet a partir dos JSONs legados:
 

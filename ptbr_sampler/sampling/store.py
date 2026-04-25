@@ -115,7 +115,7 @@ class PartitionStore:
         if not path.exists():
             raise FileNotFoundError(f'partition missing: {path}')
         try:
-            import pyarrow.dataset as ds  # Imported lazily so pyarrow is optional at import time.
+            import pyarrow.dataset as ds  # noqa: PLC0415 - keep pyarrow optional until partitions are loaded.
         except ImportError as err:  # pragma: no cover - exercised only without pyarrow
             raise RuntimeError('pyarrow is required to load partitions; install pyarrow') from err
 
@@ -125,7 +125,7 @@ class PartitionStore:
         table = dataset.to_table(columns=want)
         names = table.column('name').to_pylist()
         counts = (
-            np.asarray(table.column('count').to_pylist(), dtype=np.int64)
+            table.column('count').to_numpy(zero_copy_only=False).astype(np.int64)
             if 'count' in columns
             else np.zeros(len(names), dtype=np.int64)
         )
@@ -134,7 +134,7 @@ class PartitionStore:
         # Fall back to stored weights when the source only carries percentages.
         if 'weight' not in columns:
             raise ValueError(f'partition at {path} has neither positive counts nor weight column')
-        weights = np.asarray(table.column('weight').to_pylist(), dtype=np.float64)
+        weights = table.column('weight').to_numpy(zero_copy_only=False).astype(np.float64)
         return AliasTable.from_weights(names, weights)
 
 
@@ -160,11 +160,15 @@ def alias_from_mapping(mapping: Mapping[str, Any]) -> AliasTable:
             pct_f = float(pct) if pct is not None else 0.0
         except (TypeError, ValueError):
             pct_f = 0.0
-        if pct_f <= 0.0:
+        try:
+            cnt_i = int(cnt) if cnt is not None else 0
+        except (TypeError, ValueError):
+            cnt_i = 0
+        if pct_f <= 0.0 and (pct is not None or cnt_i <= 0):
             continue
         labels.append(str(label))
         weights.append(pct_f)
-        counts.append(int(cnt) if cnt is not None else 0)
+        counts.append(cnt_i)
     if not labels:
         raise ValueError('mapping contains no positive-weight entries')
     if have_counts and any(c > 0 for c in counts):

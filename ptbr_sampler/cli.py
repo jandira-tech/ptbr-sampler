@@ -1,4 +1,3 @@
-import os
 import sys
 from datetime import timedelta, timezone
 from pathlib import Path
@@ -7,16 +6,17 @@ from typing import Any
 import typer
 from loguru import logger
 from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+from rich.table import Table
 
 from ptbr_sampler.br_name_class import NameComponents, TimePeriod
+from ptbr_sampler.data_origins import DATA_ORIGINS
 from ptbr_sampler.sampler import sample as sampler_sample
 
 # Default data files ship inside the installed package. Resolve them relative
 # to ``__file__`` so ``ptbr generate`` works regardless of the current working
 # directory.
 _PACKAGE_DATA = Path(__file__).resolve().parent / 'data'
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
-from rich.table import Table
 
 # Configure logger
 logger.remove()  # Remove default handler
@@ -406,11 +406,11 @@ def sample(
             save_to_jsonl = 'output/output.jsonl'
 
             # Ensure output directory exists
-            output_dir = os.path.dirname(save_to_jsonl)
-            if output_dir and not os.path.exists(output_dir):
+            output_dir = Path(save_to_jsonl).parent
+            if output_dir != Path() and not output_dir.exists():
                 console.print(f'[yellow]Creating output directory: {output_dir}[/yellow]')
                 logger.info(f'Creating output directory: {output_dir}')
-                os.makedirs(output_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
 
         # Set up batch processing if enabled
         use_batches = False
@@ -492,7 +492,14 @@ def sample(
                     )
 
                     # Create a progress callback that updates both total and batch progress
-                    def progress_callback(completed: int, stage: str | None = None) -> None:
+                    def progress_callback(
+                        completed: int,
+                        stage: str | None = None,
+                        *,
+                        samples_completed: int = samples_completed,
+                        current_batch_size: int = current_batch_size,
+                        batch_num: int = batch_num,
+                    ) -> None:
                         # Calculate total progress
                         total_completed = min(samples_completed + completed, qty)
 
@@ -713,14 +720,12 @@ app.command(name='generate', help='Alias for ``sample``: generate Brazilian prof
 
 @app.command(name='sources', help='Show the origin of each bundled dataset.')
 def sources(
-    kind: str = typer.Option(None, '--kind', '-k', help='Filter by data kind (substring match).'),
+    kind: str | None = typer.Option(None, '--kind', '-k', help='Filter by data kind (substring match).'),
 ) -> None:
     """Print the data-origin catalogue defined in ``ptbr_sampler/data_origins.py``.
 
     Mirrors ``docs/data-origins.md``. Use ``--kind`` to filter by type.
     """
-    from ptbr_sampler.data_origins import DATA_ORIGINS
-
     console.print('[bold]ptbr-sampler — data origins[/bold]\n')
     for origin in DATA_ORIGINS:
         if kind and kind.casefold() not in origin.kind.casefold():
@@ -740,9 +745,7 @@ def sources(
             console.print(f'  [dim]Notes:[/dim] {origin.notes}')
         console.print()
 
-    console.print(
-        '[dim]Full write-up: docs/data-origins.md  ·  external bibliography: docs/sources/bibliography.md[/dim]'
-    )
+    console.print('[dim]Full write-up: docs/data-origins.md  ·  external bibliography: docs/sources/bibliography.md[/dim]')
 
 
 def main() -> None:

@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-
-
 import re
 from random import randint
 
@@ -75,5 +72,5 @@ def _pis_check(pis):
     """Calculate check digit from string."""
     digits = [int(k) for k in pis[:11]]
     # find check digit
-    cs = sum(w * k for w, k in zip(PIS_WEIGHTS, digits)) % 11
+    cs = sum(w * k for w, k in zip(PIS_WEIGHTS, digits, strict=False)) % 11
     return 0 if cs < 2 else 11 - cs

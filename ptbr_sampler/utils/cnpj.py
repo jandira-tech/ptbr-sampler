@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-
-
 import random
 from collections import namedtuple
 
@@ -35,17 +32,14 @@ def validate_cnpj(cnpj, autopad=True):
 
     digits = [int(k) for k in cnpj[:13]]  # identifier digits
     # validate the first check digit
-    cs = sum(w * k for w, k in zip(CNPJ_FIRST_WEIGHTS, digits[:-1])) % 11
+    cs = sum(w * k for w, k in zip(CNPJ_FIRST_WEIGHTS, digits[:-1], strict=False)) % 11
     cs = 0 if cs < 2 else 11 - cs
     if cs != int(cnpj[12]):
         return False  # first check digit is not correct
     # validate the second check digit
-    cs = sum(w * k for w, k in zip(CNPJ_SECOND_WEIGHTS, digits)) % 11
+    cs = sum(w * k for w, k in zip(CNPJ_SECOND_WEIGHTS, digits, strict=False)) % 11
     cs = 0 if cs < 2 else 11 - cs
-    if cs != int(cnpj[13]):
-        return False  # second check digit is not correct
-    # both check digits are correct
-    return True
+    return cs == int(cnpj[13])
 
 
 def cnpj_check_digits(cnpj):
@@ -55,11 +49,11 @@ def cnpj_check_digits(cnpj):
         raise ValueError(f'CNPJ must have at least 12 digits: {cnpj}')
     digits = [int(k) for k in cnpj[:13]]
     # find the first check digit
-    cs = sum(w * k for w, k in zip(CNPJ_FIRST_WEIGHTS, digits)) % 11
+    cs = sum(w * k for w, k in zip(CNPJ_FIRST_WEIGHTS, digits, strict=False)) % 11
     check = 0 if cs < 2 else 11 - cs
     # find the second check digit
     digits.append(check)
-    cs = sum(w * k for w, k in zip(CNPJ_SECOND_WEIGHTS, digits)) % 11
+    cs = sum(w * k for w, k in zip(CNPJ_SECOND_WEIGHTS, digits, strict=False)) % 11
     if cs < 2:
         return check, 0
     return check, 11 - cs

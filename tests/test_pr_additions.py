@@ -24,7 +24,6 @@ import pytest
 # ---------------------------------------------------------------------------
 # alias.py
 # ---------------------------------------------------------------------------
-
 from ptbr_sampler.sampling.alias import AliasTable, build_alias, draw
 
 
@@ -116,6 +115,16 @@ class TestAliasFromMapping:
         assert isinstance(t, AliasTable)
         assert len(t) == 2
 
+    def test_count_only_entries_are_kept(self):
+        """Count-only fixtures should use counts rather than being discarded."""
+        mapping = {
+            'A': {'count': 3},
+            'B': {'count': 1},
+        }
+        t = alias_from_mapping(mapping)
+        assert set(t.labels.tolist()) == {'A', 'B'}
+        assert t.weights[t.labels.tolist().index('A')] == pytest.approx(0.75)
+
     def test_skips_non_positive_entries(self):
         """Entries with percentage ≤ 0 are silently filtered out."""
         mapping = {
@@ -158,7 +167,7 @@ class TestAliasFromMapping:
     def test_mixed_counts_some_missing(self):
         """When any count is None, have_counts=False and weights path is used."""
         mapping = {
-            'A': {'percentage': 60.0},         # no count
+            'A': {'percentage': 60.0},  # no count
             'B': {'count': 40, 'percentage': 40.0},
         }
         t = alias_from_mapping(mapping)
@@ -188,6 +197,7 @@ class TestAliasFromMapping:
 # ---------------------------------------------------------------------------
 # store.py — PartitionStore constructor validation and cache-hit path
 # ---------------------------------------------------------------------------
+
 
 class TestPartitionStoreConstructor:
     def test_max_entries_zero_raises(self):
@@ -286,12 +296,11 @@ class TestRngFromPythonRandom:
     def test_different_seeds_different_rng(self):
         random.seed(1)
         rng1 = _rng_from_python_random()
-        val1 = rng1.integers(0, 1_000_000_000)
+        state1 = rng1.bit_generator.state
         random.seed(999_999)
         rng2 = _rng_from_python_random()
-        val2 = rng2.integers(0, 1_000_000_000)
-        # Astronomically unlikely to collide
-        assert val1 != val2
+        state2 = rng2.bit_generator.state
+        assert state1 != state2
 
 
 def _minimal_name_data() -> dict:
@@ -374,6 +383,27 @@ class TestLoadFromParquetStorePath:
         result = sampler._load_from_parquet(spec)
         assert result is None
 
+    def test_load_from_parquet_missing_pyarrow_falls_back(self):
+        class MissingPyarrowStore:
+            def get(self, spec: PartitionSpec) -> AliasTable:
+                raise RuntimeError('pyarrow is required to load partitions; install pyarrow')
+
+        data = _minimal_name_data()
+        sampler = BrazilianNameSampler(data, parquet_root=None)
+        sampler._partition_store = MissingPyarrowStore()
+        assert sampler._load_from_parquet(PartitionSpec.of('x', period='ate2010')) is None
+
+    def test_load_from_parquet_reraises_unrelated_runtime_error(self):
+        class BrokenStore:
+            def get(self, spec: PartitionSpec) -> AliasTable:
+                raise RuntimeError('boom')
+
+        data = _minimal_name_data()
+        sampler = BrazilianNameSampler(data, parquet_root=None)
+        sampler._partition_store = BrokenStore()
+        with pytest.raises(RuntimeError, match='boom'):
+            sampler._load_from_parquet(PartitionSpec.of('x', period='ate2010'))
+
 
 class TestTop40FallbackToSurnames:
     def test_empty_top_40_falls_back_to_full_surnames(self):
@@ -451,6 +481,7 @@ class TestFirstNamesTableLazy:
         # Both are AliasTable instances but different objects (different cache keys)
         assert isinstance(t1, AliasTable)
         assert isinstance(t2, AliasTable)
+        assert t1 is not t2
 
     def test_surnames_table_cached(self):
         """_surnames_table returns the same object on repeated calls."""
@@ -503,8 +534,8 @@ class TestFromBundledParquet:
         """The bundled Parquet data tree exists, so parquet_root should be set."""
         sampler = BrazilianNameSampler.from_bundled_parquet()
         # The bundled Parquet partitions ship with the package
-        if sampler.parquet_root is not None:
-            assert sampler.parquet_root.exists()
+        assert sampler.parquet_root is not None
+        assert sampler.parquet_root.exists()
 
 
 class TestAssembleSurname:
@@ -545,9 +576,7 @@ class TestApplyPrefixRawMode:
             # When prefixed, the prefix token should be upper-case
             parts = result.split()
             if len(parts) > 1:
-                assert parts[0].isupper() or parts[0] in ('DOS', 'DE', 'DA', 'DO', 'E', "D'"), (
-                    f'Unexpected prefix case in {result!r}'
-                )
+                assert parts[0].isupper() or parts[0] in ('DOS', 'DE', 'DA', 'DO', 'E', "D'"), f'Unexpected prefix case in {result!r}'
                 seen_prefixed = True
         assert seen_prefixed, 'Expected to see at least one prefixed result'
 
@@ -651,23 +680,28 @@ class TestDataOriginDimensions:
 # __init__.py — additional edge cases
 # ---------------------------------------------------------------------------
 
+
 class TestPackageInit:
     def test_version_is_string(self):
         import ptbr_sampler
+
         assert isinstance(ptbr_sampler.__version__, str)
 
     def test_version_contains_dots(self):
         import ptbr_sampler
+
         # Minimal semver-like check
         parts = ptbr_sampler.__version__.split('.')
         assert len(parts) >= 2
 
     def test_time_period_accessible_from_package(self):
         from ptbr_sampler import TimePeriod
+
         assert TimePeriod.UNTIL_2010.value == 'ate2010'
 
     def test_name_components_accessible_from_package(self):
         from ptbr_sampler import NameComponents
+
         nc = NameComponents('João', None, 'Silva')
         assert nc.first_name == 'João'
         assert nc.middle_name is None
@@ -678,25 +712,29 @@ class TestPackageInit:
 # __main__.py — importable and wired to cli.main
 # ---------------------------------------------------------------------------
 
+
 class TestMainModule:
     def test_main_module_importable(self):
         """python -m ptbr_sampler should be importable without raising."""
-        import importlib
         import ptbr_sampler.__main__ as m
+
         assert hasattr(m, 'main')
 
     def test_main_is_callable(self):
         from ptbr_sampler.__main__ import main
+
         assert callable(main)
 
     def test_main_module_runs_help(self):
         """Running python -m ptbr_sampler --help should exit cleanly."""
         import subprocess
         import sys
+
         run = subprocess.run(
             [sys.executable, '-m', 'ptbr_sampler', '--help'],
             capture_output=True,
             text=True,
+            timeout=15,
         )
         assert run.returncode == 0
 
@@ -705,15 +743,18 @@ class TestMainModule:
 # cli.py — package-relative paths and generate alias
 # ---------------------------------------------------------------------------
 
+
 class TestCliPackagePaths:
     def test_generate_command_is_listed_in_help(self):
         """The ``generate`` alias is registered as a command."""
         import subprocess
         import sys
+
         run = subprocess.run(
             [sys.executable, '-m', 'ptbr_sampler', '--help'],
             capture_output=True,
             text=True,
+            timeout=15,
         )
         assert 'generate' in run.stdout
 
@@ -721,10 +762,12 @@ class TestCliPackagePaths:
         """The ``sample`` command is registered."""
         import subprocess
         import sys
+
         run = subprocess.run(
             [sys.executable, '-m', 'ptbr_sampler', '--help'],
             capture_output=True,
             text=True,
+            timeout=15,
         )
         assert 'sample' in run.stdout
 
@@ -732,16 +775,19 @@ class TestCliPackagePaths:
         """The ``sources`` command is registered."""
         import subprocess
         import sys
+
         run = subprocess.run(
             [sys.executable, '-m', 'ptbr_sampler', '--help'],
             capture_output=True,
             text=True,
+            timeout=15,
         )
         assert 'sources' in run.stdout
 
     def test_package_data_dir_points_inside_package(self):
         """The CLI resolves data files relative to the installed package."""
         from ptbr_sampler import cli
+
         # _PACKAGE_DATA should be an absolute path inside the package
         assert cli._PACKAGE_DATA.is_absolute()
         assert cli._PACKAGE_DATA.name == 'data'
@@ -749,6 +795,7 @@ class TestCliPackagePaths:
     def test_package_data_dir_exists(self):
         """The resolved data directory actually exists."""
         from ptbr_sampler import cli
+
         assert cli._PACKAGE_DATA.exists()
 
 
@@ -756,11 +803,19 @@ class TestCliPackagePaths:
 # Regression: TimePeriod enum values
 # ---------------------------------------------------------------------------
 
+
 class TestTimePeriodEnum:
     def test_all_period_values(self):
         expected_values = {
-            'ate1930', 'ate1940', 'ate1950', 'ate1960', 'ate1970',
-            'ate1980', 'ate1990', 'ate2000', 'ate2010',
+            'ate1930',
+            'ate1940',
+            'ate1950',
+            'ate1960',
+            'ate1970',
+            'ate1980',
+            'ate1990',
+            'ate2000',
+            'ate2010',
         }
         actual = {p.value for p in TimePeriod}
         assert actual == expected_values
@@ -777,6 +832,7 @@ class TestTimePeriodEnum:
 # ---------------------------------------------------------------------------
 # Regression: NameComponents dataclass
 # ---------------------------------------------------------------------------
+
 
 class TestNameComponentsDataclass:
     def test_none_middle_name(self):

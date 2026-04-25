@@ -44,18 +44,18 @@ uv sync
 
 ```bash
 # Generate a complete profile (name, location, documents)
-uv run src.cli sample --qty 1
+uv run ptbr sample --qty 1
 
 # Generate specific documents only
-uv run src.cli sample --only-cpf --only-rg --qty 3
+uv run ptbr sample --only-cpf --only-rg --qty 3
 ```
 
 ### Python API
 
 ```python
-from src.br_location_class import BrazilianLocationSampler
-from src.br_name_class import BrazilianNameSampler, TimePeriod
-from src.document_sampler import DocumentSampler
+from ptbr_sampler.br_location_class import BrazilianLocationSampler
+from ptbr_sampler.br_name_class import BrazilianNameSampler, TimePeriod
+from ptbr_sampler.document_sampler import DocumentSampler
 
 # Initialize samplers
 location_sampler = BrazilianLocationSampler("data/cities_with_ceps.json")
@@ -191,23 +191,23 @@ methodology, reference dates):
 The current release replaces nested Python dicts with three decisions that
 scale up to IBGE 2022 data conditioned on `(UF × decade × sex)`:
 
-1. **Storage.** Partitioned Parquet under `src/data/parquet/`
+1. **Storage.** Partitioned Parquet under `ptbr_sampler/data/parquet/`
    (`first_names/period=<x>/`, `surnames/scope=national/`, `middle_names/`,
    `states/`). Reads go through `pyarrow.dataset` with filter pushdown —
    only the partitions actually touched are materialised. Ingestion script:
    [`scripts/ingest_to_parquet.py`](scripts/ingest_to_parquet.py).
 2. **Sampling primitive.** Walker/Vose alias method in
-   [`src/sampling/alias.py`](src/sampling/alias.py): O(m) build, **O(1)
+   [`ptbr_sampler/sampling/alias.py`](ptbr_sampler/sampling/alias.py): O(m) build, **O(1)
    per draw**, fully vectorised over NumPy. `k=1` and `k=100_000` have the
    same cost structure per sample.
 3. **Lazy-load bounded LRU.**
-   [`src/sampling/store.py`](src/sampling/store.py) wraps partitions behind
+   [`ptbr_sampler/sampling/store.py`](ptbr_sampler/sampling/store.py) wraps partitions behind
    a bounded LRU cache. Hot conditions (SP/MG/RJ) stay resident, cold ones
    page from disk on first touch.
 
 The `middle_names.json` file is filtered through a given-names whitelist
 maintained in
-[`src/sampling/vocabulary.py`](src/sampling/vocabulary.py), stripping
+[`ptbr_sampler/sampling/vocabulary.py`](ptbr_sampler/sampling/vocabulary.py), stripping
 surname leakage (`Araújo`, `Borges`, `Bezerra`, …), the administrative
 token `Cancelado`, and non-name artefacts (`-`). Statistical validation
 via `scipy.stats.chisquare` / `ks_2samp` lives in

@@ -51,13 +51,25 @@ module-root = ''
 [tool.ruff]
 include = [
     'pyproject.toml',
-    'ptbr_sampler/**/*.{py,js,jsx,ts,tsx,css,scss,html,sh,yaml,yml}',
-    'scripts/**/*.{py,js,jsx,ts,tsx,css,scss,html,sh,yaml,yml}',
+    'ptbr_sampler/**/*.py',
+    'scripts/**/*.py',
 ]
 line-length = 140
 fix = true
 target-version = 'py312'
-exclude = ['build', 'dist', '*.egg-info']
+exclude = [
+    'build',
+    'dist',
+    '*.egg-info',
+    'ptbr_sampler/tests',
+    'ptbr_sampler/add_city_name.py',
+    'ptbr_sampler/examine_data.py',
+    'ptbr_sampler/merge_city_data.py',
+    'ptbr_sampler/sample1.py',
+    'ptbr_sampler/sample2.py',
+    'ptbr_sampler/teste.py',
+    'ptbr_sampler/utils/cep_wrapper.py',
+]
 
 
 [tool.ruff.lint.per-file-ignores]

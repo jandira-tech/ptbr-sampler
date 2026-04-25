@@ -16,7 +16,7 @@ import random
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 
@@ -61,7 +61,7 @@ def _rng_from_python_random() -> np.random.Generator:
 
 class BrazilianNameSampler:
     # Dictionary mapping surnames to their prefixes and weights.
-    SURNAME_PREFIXES = {
+    SURNAME_PREFIXES: ClassVar[dict[str, list[tuple[str, float]]]] = {
         'SANTOS': [('dos', 0.85), ('de', 0.05)],
         'SILVA': [('da', 0.85), ('e', 0.05)],
         'NASCIMENTO': [('do', 0.9)],
@@ -166,9 +166,7 @@ class BrazilianNameSampler:
         self.surname_data = data['surnames']
         self.top_40_surnames = data['surnames'].get('top_40', {})
 
-        self.middle_names_data = (
-            self._load_middle_names(middle_names_path) if middle_names_path else None
-        )
+        self.middle_names_data = self._load_middle_names(middle_names_path) if middle_names_path else None
         self._validate_data()
 
         # Alias-table caches. Built lazily on first use so construction
@@ -211,9 +209,7 @@ class BrazilianNameSampler:
                 raise ValueError(f'Missing names data for time period: {period.value}')
 
             if not isinstance(period_data['names'], dict):
-                raise TypeError(
-                    f'Invalid names data format for time period: {period.value}'
-                )
+                raise TypeError(f'Invalid names data format for time period: {period.value}')
 
         if not isinstance(self.surname_data, dict):
             raise TypeError('Invalid surname data format')
@@ -221,15 +217,11 @@ class BrazilianNameSampler:
         if self.middle_names_data:
             required_keys = {'second_names', 'percentage_with_second'}
             if not required_keys.issubset(self.middle_names_data.keys()):
-                raise ValueError(
-                    'Invalid middle names data structure. Missing required keys.'
-                )
+                raise ValueError('Invalid middle names data structure. Missing required keys.')
 
             second_names = self.middle_names_data['second_names']
             if not isinstance(second_names, dict):
-                raise TypeError(
-                    "Invalid middle names data structure. 'second_names' must be a dictionary"
-                )
+                raise TypeError("Invalid middle names data structure. 'second_names' must be a dictionary")
 
             if not second_names:
                 raise ValueError("Middle names data contains no entries in 'second_names'")
@@ -237,9 +229,7 @@ class BrazilianNameSampler:
             for name, data in second_names.items():
                 required_keys = {'count', 'percentage'}
                 if not required_keys.issubset(data.keys()):
-                    raise ValueError(
-                        f'Invalid middle name entry structure for {name}. Missing required keys.'
-                    )
+                    raise ValueError(f'Invalid middle name entry structure for {name}. Missing required keys.')
 
     # ------------------------------------------------------------------
     # Lazy alias-table builders
@@ -253,6 +243,10 @@ class BrazilianNameSampler:
             return self._partition_store.get(spec)
         except (FileNotFoundError, ValueError):
             # Partition missing from disk — fall back to the JSON path.
+            return None
+        except RuntimeError as err:
+            if 'pyarrow is required to load partitions' not in str(err):
+                raise
             return None
 
     def _first_names_table(self, time_period: TimePeriod) -> AliasTable:
@@ -339,11 +333,6 @@ class BrazilianNameSampler:
         if not self.middle_names_data or 'second_names' not in self.middle_names_data:
             return ''
         try:
-            for data in self.middle_names_data['second_names'].values():
-                # Surface malformed entries the same way the legacy loop did
-                # (``percentage`` missing raised ``KeyError`` which became a
-                # ``ValueError`` at the outer boundary).
-                _ = data['percentage']
             table = self._middle_names_table()
         except (KeyError, ValueError, TypeError) as err:
             raise ValueError(f'Error processing middle names data: {err}') from err
@@ -464,18 +453,12 @@ class BrazilianNameSampler:
 
         first_table = self._first_names_table(time_period)
         first_draws = first_table.sample(n, rng)
-        first_names = [
-            (str(name).upper() if raw else str(name)) for name in first_draws
-        ]
+        first_names = [(str(name).upper() if raw else str(name)) for name in first_draws]
 
-        middle_names: list[str | None] = self._draw_middle_names(
-            n, raw=raw, always_middle=always_middle, rng=rng
-        )
+        middle_names: list[str | None] = self._draw_middle_names(n, raw=raw, always_middle=always_middle, rng=rng)
 
         if not include_surname:
-            return [
-                NameComponents(first_names[i], middle_names[i], '') for i in range(n)
-            ]
+            return [NameComponents(first_names[i], middle_names[i], '') for i in range(n)]
 
         surname_table = self._top_40_table() if top_40 else self._surnames_table()
         surname_draws_a = surname_table.sample(n, rng)
@@ -520,8 +503,8 @@ class BrazilianNameSampler:
             return middle_names
 
         threshold = float(self.middle_names_data['percentage_with_second']) / 100.0
-        decisions = [random.random() < threshold for _ in range(n)]
-        need = sum(decisions)
+        decisions = rng.random(n) < threshold
+        need = int(np.count_nonzero(decisions))
         if need == 0:
             return middle_names
         draws = table.sample(need, rng)
@@ -575,11 +558,7 @@ class BrazilianNameSampler:
                     compound_prefix = 'E' if is_raw else 'e'
                     return f'{surname} {compound_prefix}'
                 if compound_chance < 0.15:
-                    compound_prefix = (
-                        ('DA' if random.random() < 0.7 else 'DO')
-                        if is_raw
-                        else ('da' if random.random() < 0.7 else 'do')
-                    )
+                    compound_prefix = ('DA' if random.random() < 0.7 else 'DO') if is_raw else ('da' if random.random() < 0.7 else 'do')
                     return f'{surname} {compound_prefix}'
 
             prefix_options = self.SURNAME_PREFIXES[surname_upper]
@@ -592,16 +571,8 @@ class BrazilianNameSampler:
                 if rand <= cumulative:
                     final_prefix = candidate_prefix
                     if final_prefix in ['da', 'do'] and random.random() < 0.08:
-                        final_prefix = (
-                            ('DOS' if final_prefix == 'do' else 'DAS')
-                            if is_raw
-                            else ('dos' if final_prefix == 'do' else 'das')
-                        )
-                    elif (
-                        final_prefix == 'de'
-                        and surname[0].lower() in 'aeiou'
-                        and random.random() < 0.7
-                    ):
+                        final_prefix = ('DOS' if final_prefix == 'do' else 'DAS') if is_raw else ('dos' if final_prefix == 'do' else 'das')
+                    elif final_prefix == 'de' and surname[0].lower() in 'aeiou' and random.random() < 0.7:
                         final_prefix = "D'" if is_raw else "d'"
                         return f'{final_prefix}{surname}'
                     else:

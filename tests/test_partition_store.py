@@ -8,10 +8,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from scripts import ingest_to_parquet
 from ptbr_sampler.sampling.alias import AliasTable
 from ptbr_sampler.sampling.store import PartitionSpec, PartitionStore
-
+from scripts import ingest_to_parquet
 
 _TINY_NAMES = {
     'common_names_percentage': {
@@ -61,18 +60,10 @@ _TINY_LOCATIONS = {
 
 @pytest.fixture
 def tiny_data_dir(tmp_path: Path) -> Path:
-    (tmp_path / 'names_data.json').write_text(
-        json.dumps(_TINY_NAMES), encoding='utf-8'
-    )
-    (tmp_path / 'surnames_data.json').write_text(
-        json.dumps(_TINY_SURNAMES), encoding='utf-8'
-    )
-    (tmp_path / 'middle_names.json').write_text(
-        json.dumps(_TINY_MIDDLES), encoding='utf-8'
-    )
-    (tmp_path / 'locations_data.json').write_text(
-        json.dumps(_TINY_LOCATIONS), encoding='utf-8'
-    )
+    (tmp_path / 'names_data.json').write_text(json.dumps(_TINY_NAMES), encoding='utf-8')
+    (tmp_path / 'surnames_data.json').write_text(json.dumps(_TINY_SURNAMES), encoding='utf-8')
+    (tmp_path / 'middle_names.json').write_text(json.dumps(_TINY_MIDDLES), encoding='utf-8')
+    (tmp_path / 'locations_data.json').write_text(json.dumps(_TINY_LOCATIONS), encoding='utf-8')
     return tmp_path
 
 
@@ -83,9 +74,7 @@ class TestPartitionSpec:
 
     def test_multi_key(self, tmp_path: Path):
         spec = PartitionSpec.of(tmp_path / 'first_names', uf='SP', decade='1990', sex='F')
-        assert spec.path() == (
-            tmp_path / 'first_names' / 'uf=SP' / 'decade=1990' / 'sex=F' / 'part.parquet'
-        )
+        assert spec.path() == (tmp_path / 'first_names' / 'uf=SP' / 'decade=1990' / 'sex=F' / 'part.parquet')
 
     def test_key_stable_for_equal_specs(self, tmp_path: Path):
         a = PartitionSpec.of(tmp_path, uf='SP', decade='1990')
@@ -94,6 +83,23 @@ class TestPartitionSpec:
 
 
 class TestIngestion:
+    def test_normalise_accepts_iterators(self):
+        assert ingest_to_parquet._normalise(iter([1.0, 2.0, 3.0])) == pytest.approx([1 / 6, 2 / 6, 3 / 6])
+
+    def test_main_defaults_are_module_relative(self, monkeypatch: pytest.MonkeyPatch, tiny_data_dir: Path, tmp_path: Path):
+        out = tmp_path / 'parquet'
+        original_parse = ingest_to_parquet.argparse.ArgumentParser.parse_args
+
+        def parse_args(self, args=None, namespace=None):
+            parsed = original_parse(self, [], namespace)
+            assert parsed.data_dir.is_absolute()
+            assert parsed.out.is_absolute()
+            assert parsed.out == parsed.data_dir / 'parquet'
+            return original_parse(self, ['--data-dir', str(tiny_data_dir), '--out', str(out)], namespace)
+
+        monkeypatch.setattr(ingest_to_parquet.argparse.ArgumentParser, 'parse_args', parse_args)
+        ingest_to_parquet.main([])
+
     def test_round_trip(self, tiny_data_dir: Path, tmp_path: Path):
         out = tmp_path / 'parquet'
         ingest_to_parquet.main(['--data-dir', str(tiny_data_dir), '--out', str(out)])
@@ -127,9 +133,7 @@ class TestIngestion:
         assert 'Silva' not in kept
         assert '-' not in kept
 
-    def test_skip_filter_flag_keeps_contamination(
-        self, tiny_data_dir: Path, tmp_path: Path
-    ):
+    def test_skip_filter_flag_keeps_contamination(self, tiny_data_dir: Path, tmp_path: Path):
         out = tmp_path / 'parquet'
         ingest_to_parquet.main(
             [

@@ -50,7 +50,7 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
         kind='Surnames',
         summary=(
             'National surname distribution consistent with IBGE 2022 Census '
-            'figures (Silva 16.76%, Santos ~11%). UF × period conditioning '
+            'figures (Silva 16.76%, Santos ~11%). UF x period conditioning '
             'is the largest realism gap flagged by the audit; the Parquet '
             'layout is ready to receive it.'
         ),
@@ -76,16 +76,14 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
         ),
         dimensions=('percentage_with_second', 'second_names'),
         primary_url=(
-            'https://arpenbrasil.org.br/press_releases/'
-            'ranking-nacional-apos-sete-anos-nome-feminino-lidera-preferencia-no-brasil/'
+            'https://arpenbrasil.org.br/press_releases/ranking-nacional-apos-sete-anos-nome-feminino-lidera-preferencia-no-brasil/'
         ),
         notes='See docs/sources/arpen-2024-rankings.md',
     ),
     DataOrigin(
         kind='States (UFs)',
         summary=(
-            'IBGE Estimativas da População, 1 July 2024 (Brazil = 212.6M). '
-            'Shares are population-proportional against the national total.'
+            'IBGE Estimativas da População, 1 July 2024 (Brazil = 212.6M). Shares are population-proportional against the national total.'
         ),
         files=(
             _PACKAGE_DATA / 'locations_data.json',
@@ -111,7 +109,7 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
         kind='Surname prefixes',
         summary=(
             'Hard-coded linguistic connectives (da, de, dos, do, das, e, '
-            'd\'). Authorial style prior rather than an empirical '
+            "d'). Authorial style prior rather than an empirical "
             'measurement — read as tunable.'
         ),
         files=(),
@@ -142,10 +140,7 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
     ),
     DataOrigin(
         kind='Phone numbers',
-        summary=(
-            'Anatel DDD allocation drives the area code; subscriber digits '
-            'are synthetic (mobile prefix 9 + 8 digits).'
-        ),
+        summary=('Anatel DDD allocation drives the area code; subscriber digits are synthetic (mobile prefix 9 + 8 digits).'),
         files=(),
         dimensions=('ptbr_sampler/utils/phone.py',),
         primary_url='https://www.anatel.gov.br/consumidor/tudo-sobre-telefonia-fixa/codigos-de-area',
