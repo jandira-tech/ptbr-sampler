@@ -17,7 +17,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-_ALLOWED_RE = re.compile("^[A-Za-zÀ-ÖØ-öø-ÿ'\\u2019\\- ]+$")
+_ALLOWED_RE = re.compile('^[A-Za-zÀ-ÖØ-öø-ÿ\\u0027\\u2019\\- ]+$')
 
 
 def _fold(token: str) -> str:

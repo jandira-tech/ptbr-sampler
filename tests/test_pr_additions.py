@@ -122,8 +122,9 @@ class TestAliasFromMapping:
             'B': {'count': 1},
         }
         t = alias_from_mapping(mapping)
-        assert set(t.labels.tolist()) == {'A', 'B'}
-        assert t.weights[t.labels.tolist().index('A')] == pytest.approx(0.75)
+        labels = t.labels.tolist()
+        assert set(labels) == {'A', 'B'}
+        assert t.weights[labels.index('A')] == pytest.approx(0.75)
 
     def test_skips_non_positive_entries(self):
         """Entries with percentage ≤ 0 are silently filtered out."""
@@ -475,6 +476,9 @@ class TestFirstNamesTableLazy:
     def test_first_names_table_different_periods_different_objects(self):
         """Different periods produce independently cached tables."""
         data = _minimal_name_data()
+        data['common_names_percentage'][TimePeriod.UNTIL_1930.value]['names'] = {
+            'Antônio': {'percentage': 1.0},
+        }
         sampler = BrazilianNameSampler(data)
         t1 = sampler._first_names_table(TimePeriod.UNTIL_1930)
         t2 = sampler._first_names_table(TimePeriod.UNTIL_2010)
@@ -482,6 +486,7 @@ class TestFirstNamesTableLazy:
         assert isinstance(t1, AliasTable)
         assert isinstance(t2, AliasTable)
         assert t1 is not t2
+        assert t1.labels.tolist() != t2.labels.tolist()
 
     def test_surnames_table_cached(self):
         """_surnames_table returns the same object on repeated calls."""
