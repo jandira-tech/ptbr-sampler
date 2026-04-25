@@ -47,13 +47,13 @@ def cnpj_check_digits(cnpj):
     cnpj = clean_id(cnpj)
     if len(cnpj) < 12:
         raise ValueError(f'CNPJ must have at least 12 digits: {cnpj}')
-    digits = [int(k) for k in cnpj[:13]]
-    # find the first check digit
-    cs = sum(w * k for w, k in zip(CNPJ_FIRST_WEIGHTS, digits, strict=False)) % 11
+    # Use exactly the 12 base digits so any extra input (e.g., already-attached
+    # check digits) cannot influence the computed check digits.
+    digits = [int(k) for k in cnpj[:12]]
+    cs = sum(w * k for w, k in zip(CNPJ_FIRST_WEIGHTS, digits, strict=True)) % 11
     check = 0 if cs < 2 else 11 - cs
-    # find the second check digit
     digits.append(check)
-    cs = sum(w * k for w, k in zip(CNPJ_SECOND_WEIGHTS, digits, strict=False)) % 11
+    cs = sum(w * k for w, k in zip(CNPJ_SECOND_WEIGHTS, digits, strict=True)) % 11
     if cs < 2:
         return check, 0
     return check, 11 - cs

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import json
 import random
+import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -189,10 +191,10 @@ class TestAliasFromMapping:
         assert 0.60 < frac_y < 0.73
 
     def test_string_label_coercion(self):
-        """Labels are coerced to str via str()."""
-        mapping = {'TestName': {'count': 1, 'percentage': 1.0}}
+        """Labels are coerced to str via str(), even for non-string keys."""
+        mapping = {123: {'count': 1, 'percentage': 1.0}}
         t = alias_from_mapping(mapping)
-        assert t.labels[0] == 'TestName'
+        assert t.labels[0] == '123'
 
 
 # ---------------------------------------------------------------------------
@@ -210,9 +212,16 @@ class TestPartitionStoreConstructor:
             PartitionStore(max_entries=-5)
 
     def test_default_max_entries_is_64(self):
-        """Default max is 64 — just check it doesn't raise and cache starts empty."""
+        """Default max is 64; registering 65 entries should evict the oldest."""
         store = PartitionStore()
         assert len(store) == 0
+        t = AliasTable.from_counts(['a'], [1])
+        for i in range(65):
+            store.register(PartitionSpec.of('root', slot=str(i)), t)
+        assert len(store) == 64
+        # The first-registered slot should have been evicted; the most recent kept.
+        assert PartitionSpec.of('root', slot='0') not in store
+        assert PartitionSpec.of('root', slot='64') in store
 
 
 class TestPartitionStoreCacheHit:
@@ -473,6 +482,8 @@ class TestMiddleNamesTableEdge:
         sampler = BrazilianNameSampler(data, middle_names_path=mp)
         t1 = sampler._middle_names_table()
         t2 = sampler._middle_names_table()
+        assert t1 is not None
+        assert isinstance(t1, AliasTable)
         assert t1 is t2
 
 
@@ -730,6 +741,18 @@ class TestPackageInit:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(scope='module')
+def cli_help_run() -> subprocess.CompletedProcess[str]:
+    """Run ``python -m ptbr_sampler --help`` once and share the result."""
+    return subprocess.run(
+        [sys.executable, '-m', 'ptbr_sampler', '--help'],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+
+
 class TestMainModule:
     def test_main_module_importable(self):
         """python -m ptbr_sampler should be importable without raising."""
@@ -742,18 +765,9 @@ class TestMainModule:
 
         assert callable(main)
 
-    def test_main_module_runs_help(self):
+    def test_main_module_runs_help(self, cli_help_run):
         """Running python -m ptbr_sampler --help should exit cleanly."""
-        import subprocess
-        import sys
-
-        run = subprocess.run(
-            [sys.executable, '-m', 'ptbr_sampler', '--help'],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        assert run.returncode == 0
+        assert cli_help_run.returncode == 0
 
 
 # ---------------------------------------------------------------------------
@@ -762,44 +776,20 @@ class TestMainModule:
 
 
 class TestCliPackagePaths:
-    def test_generate_command_is_listed_in_help(self):
+    def test_generate_command_is_listed_in_help(self, cli_help_run):
         """The ``generate`` alias is registered as a command."""
-        import subprocess
-        import sys
+        assert cli_help_run.returncode == 0
+        assert 'generate' in cli_help_run.stdout
 
-        run = subprocess.run(
-            [sys.executable, '-m', 'ptbr_sampler', '--help'],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        assert 'generate' in run.stdout
-
-    def test_sample_command_is_listed_in_help(self):
+    def test_sample_command_is_listed_in_help(self, cli_help_run):
         """The ``sample`` command is registered."""
-        import subprocess
-        import sys
+        assert cli_help_run.returncode == 0
+        assert 'sample' in cli_help_run.stdout
 
-        run = subprocess.run(
-            [sys.executable, '-m', 'ptbr_sampler', '--help'],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        assert 'sample' in run.stdout
-
-    def test_sources_command_is_listed_in_help(self):
+    def test_sources_command_is_listed_in_help(self, cli_help_run):
         """The ``sources`` command is registered."""
-        import subprocess
-        import sys
-
-        run = subprocess.run(
-            [sys.executable, '-m', 'ptbr_sampler', '--help'],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        assert 'sources' in run.stdout
+        assert cli_help_run.returncode == 0
+        assert 'sources' in cli_help_run.stdout
 
     def test_package_data_dir_points_inside_package(self):
         """The CLI resolves data files relative to the installed package."""

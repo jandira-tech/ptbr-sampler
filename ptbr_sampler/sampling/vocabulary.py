@@ -207,10 +207,12 @@ class GivenNameVocabulary:
         folded = frozenset(_fold(n) for n in names if _fold(n))
         if not folded:
             raise ValueError('GivenNameVocabulary requires at least one name')
-        block = frozenset()
+        # Always seed the blocklist with canonical surnames so this constructor
+        # cannot accidentally accept tokens like ``Silva`` as given names.
+        block = set(CANONICAL_SURNAMES)
         if surnames is not None:
-            block = frozenset(_fold(s) for s in surnames if _fold(s))
-        return cls(folded=folded, surname_blocklist=block)
+            block.update(_fold(s) for s in surnames if _fold(s))
+        return cls(folded=folded, surname_blocklist=frozenset(block))
 
     def __contains__(self, token: str) -> bool:  # type: ignore[override] - Accepts str instead of object to match internal folded-key usage
         folded = _fold(str(token))

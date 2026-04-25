@@ -192,7 +192,7 @@ def sample(
                         location_sampler.update_cities(locations_data['cities'])
                     if 'states' in locations_data:
                         location_sampler.update_states(locations_data['states'])
-            except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+            except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError) as e:
                 # Log but continue with default data
                 print(f'Warning: Could not use locations_path data: {e}')
 

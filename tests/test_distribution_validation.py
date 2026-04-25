@@ -95,8 +95,6 @@ class TestAliasVsReferenceDistribution:
         table = store.get(spec)
         rng = np.random.default_rng(42)
 
-        # Rank indices for KS — categorical → ordinal → continuous-ish.
-        alias_idx = np.where(np.isin(table.labels, table.labels))[0]
         # Map labels to fixed integer positions for KS input.
         pos = {lab: i for i, lab in enumerate(table.labels)}
         alias_draws = np.fromiter(
