@@ -14,8 +14,8 @@ whole batch of uniforms without Python-level loops.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import numpy as np
 
@@ -53,15 +53,15 @@ def build_alias(weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     large: deque[int] = deque(int(i) for i in np.flatnonzero(q >= 1.0))
 
     while small and large:
-        s = small.pop()
-        l = large.pop()
-        prob[s] = q[s]
-        alias[s] = l
-        q[l] = q[l] + q[s] - 1.0
-        if q[l] < 1.0:
-            small.append(l)
+        small_idx = small.pop()
+        large_idx = large.pop()
+        prob[small_idx] = q[small_idx]
+        alias[small_idx] = large_idx
+        q[large_idx] = q[large_idx] + q[small_idx] - 1.0
+        if q[large_idx] < 1.0:
+            small.append(large_idx)
         else:
-            large.append(l)
+            large.append(large_idx)
 
     # Remaining indices should have q ≈ 1; pin them to avoid f.p. drift.
     for i in large:
@@ -108,7 +108,7 @@ class AliasTable:
     alias: np.ndarray
 
     @classmethod
-    def from_counts(cls, labels: Iterable[str], counts: Iterable[int]) -> 'AliasTable':
+    def from_counts(cls, labels: Iterable[str], counts: Iterable[int]) -> AliasTable:
         labels_arr = np.asarray(list(labels), dtype=object)
         counts_arr = np.asarray(list(counts), dtype=np.int64)
         if labels_arr.shape != counts_arr.shape:
@@ -120,7 +120,7 @@ class AliasTable:
         return cls(labels=labels_arr, counts=counts_arr, weights=weights, prob=prob, alias=alias)
 
     @classmethod
-    def from_weights(cls, labels: Iterable[str], weights: Iterable[float]) -> 'AliasTable':
+    def from_weights(cls, labels: Iterable[str], weights: Iterable[float]) -> AliasTable:
         labels_arr = np.asarray(list(labels), dtype=object)
         weights_arr = np.asarray(list(weights), dtype=np.float64)
         if labels_arr.shape != weights_arr.shape:

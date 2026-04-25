@@ -18,9 +18,10 @@ optionally, ``weight`` (float32). If ``weight`` is absent it is derived from
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 
@@ -41,7 +42,7 @@ class PartitionSpec:
     filters: tuple[tuple[str, str], ...]
 
     @classmethod
-    def of(cls, root: str | Path, **filters: str) -> 'PartitionSpec':
+    def of(cls, root: str | Path, **filters: str) -> PartitionSpec:
         items = tuple((str(k), str(v)) for k, v in filters.items())
         return cls(root=Path(root), filters=items)
 

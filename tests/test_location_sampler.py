@@ -204,7 +204,7 @@ class TestBatchSampleLocations:
         }
         sampler = BrazilianLocationSampler(mock_location_data)
         random.seed(123)
-        with caplog.at_level(logging.WARNING, logger='src.br_location_class'):
+        with caplog.at_level(logging.WARNING, logger='ptbr_sampler.br_location_class'):
             results = sampler.batch_sample_locations(10)
         assert any(entry['city_name'] == 'Unknown' for entry in results)
         assert any('No cities found' in rec.message for rec in caplog.records)

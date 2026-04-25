@@ -30,7 +30,7 @@ for city_name, city_data in normalized_data['cities'].items():
     matched = False
 
     # Loop through the cities in ceps_data
-    for cep_city_key, cep_city_data in ceps_data['cities'].items():
+    for cep_city_data in ceps_data['cities'].values():
         # Check if both city_name and city_uf match using the nested field values
         if cep_city_data.get('city_name') == city_name and cep_city_data.get('city_uf') == city_uf:
             # Match found! Copy the fields

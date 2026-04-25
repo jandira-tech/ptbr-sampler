@@ -3,7 +3,7 @@
 **Publisher:** Instituto Brasileiro de Geografia e Estatística (IBGE).
 **Reference date:** 1 July 2024.
 **Relevance for ptbr-sampler:** official population weights underlying
-`src/data/locations_data.json` and the `states` / `cities` partitions of the
+`ptbr_sampler/data/locations_data.json` and the `states` / `cities` partitions of the
 Parquet layout.
 
 ## Headline

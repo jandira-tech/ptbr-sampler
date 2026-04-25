@@ -103,7 +103,7 @@ class AddressProvider_for_offline:
     building_number_formats = ('%', '%#', '%#', '%#', '%##')
 
     postcode_raw_formats = ('########',)
-    postcode_all_formats = postcode_raw_formats + ('#####-###',)
+    postcode_all_formats = (*postcode_raw_formats, '#####-###')
 
     bairros = (
         'Aarão Reis',
@@ -682,16 +682,19 @@ class AddressProvider_for_offline:
         # Use the non_weighted_random_name method to get a random first name
         return self.non_weighted_random_name()
 
-    def non_weighted_random_name(self, names_path: str = 'ptbr_sampler/data/names_data.json') -> str:
+    def non_weighted_random_name(self, names_path: str | None = None) -> str:
         """
         Returns a random name from the names data file without weighting.
 
         Args:
-            names_path: Path to the names data JSON file
+            names_path: Path to the names data JSON file. Defaults to the
+                bundled data file relative to this module.
 
         Returns:
             A random name as a string
         """
+        if names_path is None:
+            names_path = str(Path(__file__).parent.parent.joinpath('data', 'names_data.json'))
         try:
             # Load names from the file
             with Path(names_path).open(encoding='utf-8') as f:

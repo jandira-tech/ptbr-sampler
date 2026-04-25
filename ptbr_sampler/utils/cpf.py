@@ -75,7 +75,7 @@ def pad_cpf(cpf, validate=False):
 def random_cpf(formatted=True):
     """Create a random, valid CPF identifier."""
     stem = random.randint(100000000, 999999999)
-    cpf = str(stem) + '{0}{1}'.format(*cpf_check_digits(stem))
+    cpf = str(stem) + '{}{1}'.format(*cpf_check_digits(stem))
     if formatted:
         return format_cpf(cpf)
     return cpf

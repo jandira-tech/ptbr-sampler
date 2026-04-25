@@ -55,7 +55,7 @@ endpoint until the 2022-based tables replace it.
 Legacy name-frequency publication used as the primary benchmark prior to the
 2022 release. Organises frequencies "up to 1929" and by decade from 1930
 onward. Basis for the nine `ateXXXX` buckets still used in
-`src/data/names_data.json`.
+`ptbr_sampler/data/names_data.json`.
 
 - IBGE news release (PT):
   <https://agenciadenoticias.ibge.gov.br/agencia-sala-de-imprensa/2013-agencia-de-noticias/releases/9747-ibge-revela-a-origem-dos-nomes-mais-comuns-dos-brasileiros>
@@ -64,7 +64,7 @@ onward. Basis for the nine `ateXXXX` buckets still used in
 
 Official resident-population estimates for Brazil, Federation Units, and
 municipalities as of 1 July 2024. Used to derive the population-weighted
-location draws in `src/data/locations_data.json`.
+location draws in `ptbr_sampler/data/locations_data.json`.
 
 - News release (PT):
   <https://agenciadenoticias.ibge.gov.br/agencia-noticias/2012-agencia-de-noticias/noticias/41111-populacao-estimada-do-pais-chega-a-212-6-milhoes-de-habitantes-em-2024>
@@ -122,4 +122,4 @@ against IBGE boundaries during validation.
 `deep-research-report(4).md` (committed at the repo root) is the statistical
 audit that produced this bibliography. It lists every assumption in the
 sampler, rates it against the sources above, and prescribes the architectural
-changes now implemented under `src/sampling/`.
+changes now implemented under `ptbr_sampler/sampling/`.

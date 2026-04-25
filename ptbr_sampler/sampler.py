@@ -129,7 +129,7 @@ async def save_to_jsonl_file(data: list[dict], filename: str, append: bool = Tru
             await f.write(json.dumps(item, ensure_ascii=False) + '\n')
 
 
-async def get_address_data_batch(ceps: list[str], make_api_call: bool = False, progress_callback: callable = None) -> list[dict]:
+async def get_address_data_batch(ceps: list[str], make_api_call: bool = False, progress_callback: callable | None = None) -> list[dict]:
     """
     Get address data for multiple CEPs, either from API or generated.
 
@@ -277,7 +277,7 @@ def sample(
     locations_path: str | Path,
     save_to_jsonl: str | None,
     all_data: bool,
-    progress_callback: callable = None,
+    progress_callback: callable | None = None,
     append_to_jsonl: bool = False,
 ) -> dict | list[dict]:
     """Generate random Brazilian samples with comprehensive information.

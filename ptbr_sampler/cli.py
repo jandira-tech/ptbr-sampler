@@ -6,9 +6,10 @@ from typing import Any
 
 import typer
 from loguru import logger
+from rich.console import Console
+
 from ptbr_sampler.br_name_class import NameComponents, TimePeriod
 from ptbr_sampler.sampler import sample as sampler_sample
-from rich.console import Console
 
 # Default data files ship inside the installed package. Resolve them relative
 # to ``__file__`` so ``ptbr generate`` works regardless of the current working
@@ -491,7 +492,7 @@ def sample(
                     )
 
                     # Create a progress callback that updates both total and batch progress
-                    def progress_callback(completed: int, stage: str = None) -> None:
+                    def progress_callback(completed: int, stage: str | None = None) -> None:
                         # Calculate total progress
                         total_completed = min(samples_completed + completed, qty)
 
@@ -510,18 +511,17 @@ def sample(
                         progress.update(batch_task, completed=min(completed, current_batch_size))
 
                         # Update API task if relevant
-                        if api_task and stage:
-                            if 'API' in stage:
-                                progress.update(api_task, visible=True)
-                                if 'starting' in stage.lower():
-                                    logger.info(f'API calls starting for batch {batch_num}')
-                                    progress.update(api_task, completed=0.2, status='[yellow]Connecting...[/]')
-                                elif 'processing' in stage.lower():
-                                    logger.info(f'Processing API responses for batch {batch_num}')
-                                    progress.update(api_task, completed=0.6, status='[yellow]Processing...[/]')
-                                elif 'completed' in stage.lower():
-                                    logger.info(f'API calls completed for batch {batch_num}')
-                                    progress.update(api_task, completed=1.0, status='[green]Done[/]')
+                        if api_task and stage and 'API' in stage:
+                            progress.update(api_task, visible=True)
+                            if 'starting' in stage.lower():
+                                logger.info(f'API calls starting for batch {batch_num}')
+                                progress.update(api_task, completed=0.2, status='[yellow]Connecting...[/]')
+                            elif 'processing' in stage.lower():
+                                logger.info(f'Processing API responses for batch {batch_num}')
+                                progress.update(api_task, completed=0.6, status='[yellow]Processing...[/]')
+                            elif 'completed' in stage.lower():
+                                logger.info(f'API calls completed for batch {batch_num}')
+                                progress.update(api_task, completed=1.0, status='[green]Done[/]')
 
                     # Process the current batch
                     try:
@@ -620,7 +620,7 @@ def sample(
                     api_task = progress.add_task('[yellow]API calls...', visible=False, total=1.0, status='')
 
                 # Call the sample function with progress updates
-                def progress_callback(completed: int, stage: str = None) -> None:
+                def progress_callback(completed: int, stage: str | None = None) -> None:
                     # Log significant progress stages
                     if stage and completed % max(1, qty // 10) == 0:
                         logger.debug(f'Progress: {completed}/{qty} samples - {stage}')
@@ -629,18 +629,17 @@ def sample(
                     progress.update(main_task, completed=completed, status=f'[dim cyan]{stage or ""}[/]')
 
                     # Update API task if relevant
-                    if api_task and stage:
-                        if 'API' in stage:
-                            progress.update(api_task, visible=True)
-                            if 'starting' in stage.lower():
-                                logger.info('API calls starting')
-                                progress.update(api_task, completed=0.2, status='[yellow]Connecting...[/]')
-                            elif 'processing' in stage.lower():
-                                logger.info('Processing API responses')
-                                progress.update(api_task, completed=0.6, status='[yellow]Processing...[/]')
-                            elif 'completed' in stage.lower():
-                                logger.info('API calls completed')
-                                progress.update(api_task, completed=1.0, status='[green]Done[/]')
+                    if api_task and stage and 'API' in stage:
+                        progress.update(api_task, visible=True)
+                        if 'starting' in stage.lower():
+                            logger.info('API calls starting')
+                            progress.update(api_task, completed=0.2, status='[yellow]Connecting...[/]')
+                        elif 'processing' in stage.lower():
+                            logger.info('Processing API responses')
+                            progress.update(api_task, completed=0.6, status='[yellow]Processing...[/]')
+                        elif 'completed' in stage.lower():
+                            logger.info('API calls completed')
+                            progress.update(api_task, completed=1.0, status='[green]Done[/]')
 
                 # Call the sample function from the sampler module with all parameters
                 try:

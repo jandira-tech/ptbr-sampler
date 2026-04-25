@@ -97,7 +97,7 @@ class BrazilianLocationSampler:
         self.city_names_by_state = {}
         self.city_data_by_name = {}
 
-        for city_id, city_data in self.data['cities'].items():
+        for city_data in self.data['cities'].values():
             state = city_data['city_uf']
             city_name = city_data['city_name']
 

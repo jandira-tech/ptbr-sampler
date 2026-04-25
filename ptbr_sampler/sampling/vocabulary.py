@@ -13,10 +13,9 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping
-
 
 _ALLOWED_RE = re.compile(r"^[A-Za-zÀ-ÖØ-öø-ÿ'’\- ]+$")
 
@@ -81,7 +80,7 @@ class GivenNameVocabulary:
         names_data_path: str | Path,
         surnames_data_path: str | Path | None = None,
         surname_top_n: int = 1_000,
-    ) -> 'GivenNameVocabulary':
+    ) -> GivenNameVocabulary:
         """Build a vocabulary from the repository's ``names_data.json``.
 
         All period buckets contribute, so a name that ever appeared in any
@@ -121,7 +120,7 @@ class GivenNameVocabulary:
         return cls(folded=frozenset(folded), surname_blocklist=blocklist)
 
     @classmethod
-    def from_iterable(cls, names: Iterable[str], surnames: Iterable[str] | None = None) -> 'GivenNameVocabulary':
+    def from_iterable(cls, names: Iterable[str], surnames: Iterable[str] | None = None) -> GivenNameVocabulary:
         folded = frozenset(_fold(n) for n in names if _fold(n))
         if not folded:
             raise ValueError('GivenNameVocabulary requires at least one name')
@@ -130,7 +129,7 @@ class GivenNameVocabulary:
             block = frozenset(_fold(s) for s in surnames if _fold(s))
         return cls(folded=folded, surname_blocklist=block)
 
-    def __contains__(self, token: str) -> bool:  # type: ignore[override]
+    def __contains__(self, token: str) -> bool:  # type: ignore[override] - Accepts str instead of object to match internal folded-key usage
         folded = _fold(str(token))
         if folded in self.surname_blocklist:
             return False

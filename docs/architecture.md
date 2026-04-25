@@ -13,7 +13,7 @@ collapse the problem:
 ## 1. Storage — partitioned Parquet
 
 ```
-src/data/parquet/
+ptbr_sampler/data/parquet/
 ├── first_names/uf=<UF>/decade=<decade>/sex=<M|F>/part.parquet
 ├── surnames/uf=<UF>/period=<period>/part.parquet
 ├── middle_names/part.parquet
@@ -21,7 +21,7 @@ src/data/parquet/
 └── cities/part.parquet
 ```
 
-Columns in each partition: `name` (dictionary-encoded string), `count` (u32),
+Columns in each partition: `name` (dictionary-encoded string), `count` (uint64),
 `weight` (f32, pre-normalised within the partition so it sums to 1).
 
 Read via `pyarrow.dataset` with filter pushdown — only the partitions actually
@@ -49,7 +49,7 @@ weights on every call — O(m) per draw, where m is the support size. For a
 scales linearly with m.
 
 The alias method is O(m) to build once, O(1) per draw forever after, and
-fully vectorisable. See `src/sampling/alias.py` for the implementation.
+fully vectorisable. See `ptbr_sampler/sampling/alias.py` for the implementation.
 
 The cost structure is now identical for `k=1` and `k=100_000` — the property
 we want. See the scaling table in `README.md`.
@@ -62,7 +62,7 @@ partition loading in a bounded LRU keyed on the conditioning tuple. Hot
 conditions stay resident, cold ones page from disk and build their alias
 tables on first touch.
 
-See `src/sampling/store.py`.
+See `ptbr_sampler/sampling/store.py`.
 
 ## Cost profile
 
@@ -101,11 +101,11 @@ data-ingestion regressions.
 
 ## Known gaps (not fixed by the architecture)
 
-1. **Middle-name vocabulary contamination.** `src/data/middle_names.json`
+1. **Middle-name vocabulary contamination.** `ptbr_sampler/data/middle_names.json`
    contains surnames (`Araújo`, `Borges`, `Bezerra`, …), the administrative
    token `Cancelado`, and a bare `-`. No alias table fixes dirty tokens. A
    vocabulary-filtering pass against the first-name whitelist lives in
-   `src/sampling/vocabulary.py` and `scripts/clean_middle_names.py`.
+   `ptbr_sampler/sampling/vocabulary.py` and `scripts/clean_middle_names.py`.
 2. **Sex conditioning in the current first-name file.** The committed
    `names_data.json` has no sex dimension. The IBGE 2022 release does. Until
    2022-conditioned data is ingested into `first_names/uf=…/decade=…/sex=…/`,

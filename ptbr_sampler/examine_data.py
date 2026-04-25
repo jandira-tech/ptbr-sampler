@@ -52,13 +52,13 @@ else:
             print('Sample keys:', list(ceps_data.keys())[:5])
 
             # Check the first item to see its structure
-            first_key = list(ceps_data.keys())[0]
+            first_key = next(iter(ceps_data.keys()))
             print(f"\nStructure of first item '{first_key}':")
             print(json.dumps(ceps_data[first_key], indent=2, ensure_ascii=False)[:500] + '...')
 
 # Check if cities are formatted differently (e.g., case, accents)
 print('\nLooking for possible format differences:')
-normalized_first_city = list(normalized_data['cities'].keys())[0]
+normalized_first_city = next(iter(normalized_data['cities'].keys()))
 for city_key, city_data in list(ceps_data.items())[:100]:
     city_name = city_data.get('city_name', '')
     if normalized_first_city.lower() in city_name.lower() or city_name.lower() in normalized_first_city.lower():

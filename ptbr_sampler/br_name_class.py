@@ -14,20 +14,19 @@ from Python's ``random`` module on each call, so callers that rely on
 import json
 import random
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 
 from ptbr_sampler.sampling.alias import AliasTable
 from ptbr_sampler.sampling.store import PartitionSpec, PartitionStore, alias_from_mapping
 
-
 _DEFAULT_PARQUET_ROOT = Path(__file__).resolve().parent / 'data' / 'parquet'
 
 
-class TimePeriod(str, Enum):
+class TimePeriod(StrEnum):
     """Time periods available in the dataset."""
 
     UNTIL_1930 = 'ate1930'
@@ -340,7 +339,7 @@ class BrazilianNameSampler:
         if not self.middle_names_data or 'second_names' not in self.middle_names_data:
             return ''
         try:
-            for _name, data in self.middle_names_data['second_names'].items():
+            for data in self.middle_names_data['second_names'].values():
                 # Surface malformed entries the same way the legacy loop did
                 # (``percentage`` missing raised ``KeyError`` which became a
                 # ``ValueError`` at the outer boundary).

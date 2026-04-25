@@ -41,7 +41,7 @@ Any sampler that draws surnames from one pooled law will materially
 understate these regional concentrations. This is the single largest
 realism gap flagged by `deep-research-report(4).md` and the motivation for
 the `surnames/uf=<UF>/period=<period>` partition layout under
-`src/data/parquet/`.
+`ptbr_sampler/data/parquet/`.
 
 ## Period-of-birth dimension
 
@@ -52,8 +52,8 @@ captured by the 2022 Census. In the Parquet layout, `period` is a string
 partition key matching one of:
 
 ```
-ate_1930, ate_1940, ate_1950, ate_1960, ate_1970,
-ate_1980, ate_1990, ate_2000, ate_2010, pos_2010
+ate1930, ate1940, ate1950, ate1960, ate1970,
+ate1980, ate1990, ate2000, ate2010, pos2010
 ```
 
 ## Sex dimension
