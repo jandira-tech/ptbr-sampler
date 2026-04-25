@@ -194,16 +194,17 @@ class TestBatchSampleLocations:
         sampler = BrazilianLocationSampler(mock_location_data)
         assert sampler.batch_sample_locations(0) == []
 
-    def test_batch_logs_warning_when_state_has_no_cities(self, mock_location_data, caplog):
+    def test_batch_logs_warning_when_state_has_no_cities(self, mock_location_data, caplog, monkeypatch):
         """If a state lacks cities, the batch emits 'Unknown' and warns."""
         # Register a new state (Amazonas) but never add cities for it.
         mock_location_data['states']['Amazonas'] = {
             'state_abbr': 'AM',
-            # Weight large enough that we are near-guaranteed to draw it.
             'population_percentage': 100.0,
         }
         sampler = BrazilianLocationSampler(mock_location_data)
-        random.seed(123)
+        # Force every state draw to land on Amazonas so this test is deterministic
+        # rather than relying on a 99%+ probabilistic outcome.
+        monkeypatch.setattr(sampler, 'get_state', lambda: ('Amazonas', 'AM'))
         with caplog.at_level(logging.WARNING, logger='ptbr_sampler.br_location_class'):
             results = sampler.batch_sample_locations(10)
         assert any(entry['city_name'] == 'Unknown' for entry in results)
