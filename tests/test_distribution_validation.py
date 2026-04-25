@@ -23,12 +23,9 @@ from ptbr_sampler.sampling.store import PartitionSpec, PartitionStore
 from scripts import ingest_to_parquet
 
 DATA_DIR = Path(__file__).parent.parent / 'ptbr_sampler' / 'data'
-PARQUET_DIR = DATA_DIR / 'parquet'
 
 
 def _ensure_parquet(tmp_path: Path) -> Path:
-    if (PARQUET_DIR / 'surnames' / 'scope=national' / 'part.parquet').exists():
-        return PARQUET_DIR
     out = tmp_path / 'parquet'
     ingest_to_parquet.main(['--data-dir', str(DATA_DIR), '--out', str(out)])
     return out

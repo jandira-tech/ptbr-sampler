@@ -503,14 +503,14 @@ class BrazilianNameSampler:
             return middle_names
 
         threshold = float(self.middle_names_data['percentage_with_second']) / 100.0
-        decisions = rng.random(n) < threshold
-        need = int(np.count_nonzero(decisions))
+        middle_name_flags = rng.random(n) < threshold
+        need = int(np.count_nonzero(middle_name_flags))
         if need == 0:
             return middle_names
         draws = table.sample(need, rng)
         j = 0
         for i in range(n):
-            if decisions[i]:
+            if middle_name_flags[i]:
                 s = str(draws[j])
                 middle_names[i] = s.upper() if raw else s
                 j += 1

@@ -164,6 +164,7 @@ def alias_from_mapping(mapping: Mapping[str, Any]) -> AliasTable:
             cnt_i = int(cnt) if cnt is not None else 0
         except (TypeError, ValueError):
             cnt_i = 0
+        # Keep count-only fixtures while still rejecting explicit bad/zero percentages.
         if pct_f <= 0.0 and (pct is not None or cnt_i <= 0):
             continue
         labels.append(str(label))

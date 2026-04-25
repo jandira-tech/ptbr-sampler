@@ -69,8 +69,8 @@ def pad_cpf(cpf, validate=False):
 def random_cpf(formatted=True):
     """Create a random, valid CPF identifier."""
     stem = random.randint(100000000, 999999999)
-    d1, d2 = cpf_check_digits(stem)
-    cpf = f'{stem}{d1}{d2}'
+    check_digits = ''.join(str(digit) for digit in cpf_check_digits(stem))
+    cpf = f'{stem}{check_digits}'
     if formatted:
         return format_cpf(cpf)
     return cpf

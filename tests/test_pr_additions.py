@@ -302,6 +302,7 @@ class TestRngFromPythonRandom:
         rng2 = _rng_from_python_random()
         state2 = rng2.bit_generator.state
         assert state1 != state2
+        assert rng1.integers(0, 1_000_000_000) != rng2.integers(0, 1_000_000_000)
 
 
 def _minimal_name_data() -> dict:

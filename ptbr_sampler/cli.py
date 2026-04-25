@@ -491,7 +491,7 @@ def sample(
                         visible=True,
                     )
 
-                    # Create a progress callback that updates both total and batch progress
+                    # Capture the current loop values as defaults so later iterations do not affect this batch's callback.
                     def progress_callback(
                         completed: int,
                         stage: str | None = None,
