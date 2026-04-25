@@ -517,7 +517,11 @@ class TestGetRandomMiddleName:
         assert result == 'Augusto'
 
     def test_table_none_returns_empty(self):
-        """When middle table cannot be built, returns empty string."""
+        """
+        Verify _get_random_middle_name yields no middle name when the middle-name alias table cannot be built.
+        
+        Asserts that when configured second names have no positive weights, calling _get_random_middle_name() produces an empty result.
+        """
         data = _minimal_name_data()
         sampler = BrazilianNameSampler(data)
         sampler.middle_names_data = {
@@ -538,6 +542,12 @@ class TestGetRandomMiddleName:
         }
 
         def boom(self):  # noqa: ARG001 - signature must match the bound method
+            """
+            Always raises a TypeError with the message 'oops'.
+            
+            Raises:
+                TypeError: Always raised with message 'oops'.
+            """
             raise TypeError('oops')
 
         monkeypatch.setattr(BrazilianNameSampler, '_middle_names_table', boom)
@@ -841,7 +851,12 @@ class TestPackageInit:
 
 @pytest.fixture(scope='module')
 def cli_help_run() -> subprocess.CompletedProcess[str]:
-    """Run ``python -m ptbr_sampler --help`` once and share the result."""
+    """
+    Run the package's CLI help command and return the completed process result.
+    
+    Returns:
+        subprocess.CompletedProcess[str]: Completed process containing captured `stdout`, `stderr`, and `returncode`.
+    """
     return subprocess.run(
         [sys.executable, '-m', 'ptbr_sampler', '--help'],
         capture_output=True,

@@ -43,7 +43,18 @@ def validate_cnpj(cnpj, autopad=True):
 
 
 def cnpj_check_digits(cnpj):
-    """Find two check digits needed to make a CNPJ valid."""
+    """
+    Compute the two check digits for a CNPJ using its first 12 digits.
+    
+    Parameters:
+    	cnpj (str|int): CNPJ value or fragment; non-digit characters will be removed before processing.
+    
+    Returns:
+    	(first_check, second_check) (tuple[int, int]): The first and second check digits as integers.
+    
+    Raises:
+    	ValueError: If the cleaned input contains fewer than 12 digits.
+    """
     cnpj = clean_id(cnpj)
     if len(cnpj) < 12:
         raise ValueError(f'CNPJ must have at least 12 digits: {cnpj}')
