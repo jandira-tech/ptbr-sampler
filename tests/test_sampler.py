@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from src.br_name_class import TimePeriod
-from src.sampler import sample
+from ptbr_sampler.br_name_class import TimePeriod
+from ptbr_sampler.sampler import sample
 
-DATA_DIR = Path(__file__).parent.parent / 'src' / 'data'
+DATA_DIR = Path(__file__).parent.parent / 'ptbr_sampler' / 'data'
 
 # Default paths matching CLI defaults
 DEFAULT_KWARGS = {

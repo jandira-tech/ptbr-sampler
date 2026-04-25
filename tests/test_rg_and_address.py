@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from src.br_rg_class import BrazilianRG
-from src.utils.address_for_offline import AddressProvider_for_offline
+from ptbr_sampler.br_rg_class import BrazilianRG
+from ptbr_sampler.utils.address_for_offline import AddressProvider_for_offline
 
 
 class TestBrazilianRG:

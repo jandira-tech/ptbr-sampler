@@ -1,15 +1,13 @@
-"""Tests for document-number utilities in src/utils: cpf, cnpj, pis, cei, util, phone."""
-
-import random
+"""Tests for document-number utilities in ptbr_sampler/utils."""
 
 import pytest
 
-from src.utils import cei as cei_mod
-from src.utils import cnpj as cnpj_mod
-from src.utils import cpf as cpf_mod
-from src.utils import phone as phone_mod
-from src.utils import pis as pis_mod
-from src.utils import util as util_mod
+from ptbr_sampler.utils import cei as cei_mod
+from ptbr_sampler.utils import cnpj as cnpj_mod
+from ptbr_sampler.utils import cpf as cpf_mod
+from ptbr_sampler.utils import phone as phone_mod
+from ptbr_sampler.utils import pis as pis_mod
+from ptbr_sampler.utils import util as util_mod
 
 
 class TestUtil:
@@ -38,6 +36,13 @@ class TestCPF:
     def test_random_cpf_unformatted(self, seeded_random):
         generated = cpf_mod.random_cpf(formatted=False)
         assert '.' not in generated and '-' not in generated
+        assert len(generated) == 11
+        assert cpf_mod.validate_cpf(generated)
+
+    def test_random_cpf_preserves_zero_check_digits(self, monkeypatch):
+        monkeypatch.setattr(cpf_mod.random, 'randint', lambda _start, _end: 100000001)
+        generated = cpf_mod.random_cpf(formatted=False)
+        assert generated == '10000000108'
         assert cpf_mod.validate_cpf(generated)
 
     def test_validate_all_zeros_rejected(self):

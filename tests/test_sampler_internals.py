@@ -7,11 +7,11 @@ from unittest import mock
 
 import pytest
 
-from src import sampler as sampler_module
-from src.br_name_class import NameComponents
+from ptbr_sampler import sampler as sampler_module
+from ptbr_sampler.br_name_class import NameComponents
 
 
-DATA_DIR = Path(__file__).parent.parent / 'src' / 'data'
+DATA_DIR = Path(__file__).parent.parent / 'ptbr_sampler' / 'data'
 
 
 @pytest.fixture(autouse=True)
@@ -197,7 +197,7 @@ class TestGetAddressDataBatch:
             {'cep': '13000-000', 'state': 'SP', 'city': 'Campinas', 'error': 'no data'},
         ]
         with mock.patch(
-            'src.utils.cep_wrapper.workers_for_multiple_cep',
+            'ptbr_sampler.utils.cep_wrapper.workers_for_multiple_cep',
             new=mock.AsyncMock(return_value=fake_response),
         ):
             results = asyncio.run(
@@ -255,7 +255,7 @@ _DEFAULT_KWARGS_BASE = {
 
 
 def _call_sample(**overrides):
-    from src.br_name_class import TimePeriod
+    from ptbr_sampler.br_name_class import TimePeriod
 
     kwargs = {'time_period': TimePeriod.UNTIL_2010, **_DEFAULT_KWARGS_BASE, **overrides}
     return sampler_module.sample(**kwargs)
@@ -387,7 +387,7 @@ class TestSampleBranches:
     def test_api_call_messages(self):
         events: list[tuple[int, str]] = []
         with mock.patch(
-            'src.utils.cep_wrapper.workers_for_multiple_cep',
+            'ptbr_sampler.utils.cep_wrapper.workers_for_multiple_cep',
             new=mock.AsyncMock(return_value=[
                 {'cep': '01000-000', 'state': 'SP', 'city': 'SP',
                  'street': 'Rua X', 'neighborhood': 'Centro'}

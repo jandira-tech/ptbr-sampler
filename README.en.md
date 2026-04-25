@@ -2,6 +2,8 @@
 
 Generate names, addresses, CPFs, CNPJs, and other Brazilian documents that are **proportional to actual population distribution** and based **exclusively on existing, verified data**. Every generated name exists in Brazilian historical records, and locations are sampled proportionally to each region's population.
 
+Full citations live in [`docs/sources/bibliography.md`](docs/sources/bibliography.md); the sampling architecture (partitioned Parquet, Walker/Vose alias method, condition-keyed LRU) is described in [`docs/architecture.md`](docs/architecture.md). The statistical audit that motivated the current release is in [`deep-research-report(4).md`](deep-research-report(4).md).
+
 *Leia aqui em Português: [Português](README.md)*
 
 [![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
@@ -42,18 +44,18 @@ uv sync
 
 ```bash
 # Generate a complete profile (name, location, documents)
-uv run src.cli sample --qty 1
+uv run ptbr sample --qty 1
 
 # Generate specific documents only
-uv run src.cli sample --only-cpf --only-rg --qty 3
+uv run ptbr sample --only-cpf --only-rg --qty 3
 ```
 
 ### Python API
 
 ```python
-from src.br_location_class import BrazilianLocationSampler
-from src.br_name_class import BrazilianNameSampler, TimePeriod
-from src.document_sampler import DocumentSampler
+from ptbr_sampler.br_location_class import BrazilianLocationSampler
+from ptbr_sampler.br_name_class import BrazilianNameSampler, TimePeriod
+from ptbr_sampler.document_sampler import DocumentSampler
 
 # Initialize samplers
 location_sampler = BrazilianLocationSampler("data/cities_with_ceps.json")
@@ -158,6 +160,64 @@ Detailed documentation for all features and components:
 - [Testing and Validation](#testing)
 - [Installation and Dependencies](#installation)
 - [Usage Examples](#quick-start)
+
+## 📊 Sources and citations
+
+Every distribution bundled with this repository was built from primary
+Brazilian official sources. The main ones are:
+
+| Source | Scope | URL |
+|---|---|---|
+| IBGE — *Nomes no Brasil*, 2022 Census (2025 relaunch) | Names and surnames by sex, period of birth, UF, and municipality | <https://www.ibge.gov.br/apps/nomes/> |
+| IBGE News Agency (PT) | 2022 Census *Nomes no Brasil* release | <https://agenciadenoticias.ibge.gov.br/agencia-noticias/2012-agencia-de-noticias/noticias/44929-um-pais-de-marias-joses-silvas-e-santos-ibge-lanca-nova-edicao-do-nomes-no-brasil> |
+| IBGE Highlights (EN) | 2022 Census *Nomes no Brasil* release | <https://www.ibge.gov.br/en/highlights/44662-on-november-4-2025-ibge-will-release-2022-population-census-names-in-brazil.html> |
+| IBGE — Nomes API v2 | Frequency by decade and locality (2010 Census) | <https://servicodados.ibge.gov.br/api/docs/nomes?versao=2> |
+| IBGE — Population Estimates 2024 | UF and municipal totals as of 1 July 2024 | <https://agenciadenoticias.ibge.gov.br/agencia-noticias/2012-agencia-de-noticias/noticias/41111-populacao-estimada-do-pais-chega-a-212-6-milhoes-de-habitantes-em-2024> |
+| IBGE FTP DOU 2024 | Canonical per-municipality PDF table | <https://ftp.ibge.gov.br/Estimativas_de_Populacao/Estimativas_2024/estimativa_dou_2024.pdf> |
+| Arpen-Brasil | National 2024 newborn ranking | <https://arpenbrasil.org.br/press_releases/ranking-nacional-apos-sete-anos-nome-feminino-lidera-preferencia-no-brasil/> |
+| IPEA — `censobr` | 2022 Census microdata in Parquet | <https://ipeagit.github.io/censobr/> |
+| IPEA — `geobr` | Official municipal geometries | <https://ipeagit.github.io/geobr/> |
+
+Per-source write-ups with the full tables (UF-level surname percentages,
+methodology, reference dates):
+
+- [`docs/sources/bibliography.md`](docs/sources/bibliography.md) — index.
+- [`docs/sources/ibge-nomes-no-brasil-2022.md`](docs/sources/ibge-nomes-no-brasil-2022.md) — surnames by UF (`Silva` 16.76% Brazil; `Santos` 43.38% Sergipe; `Silva` 35.75% Alagoas; `Silva` 34.23% Pernambuco; > 200k surnames surveyed).
+- [`docs/sources/ibge-estimativas-populacao-2024.md`](docs/sources/ibge-estimativas-populacao-2024.md) — 212.6 million inhabitants on 1 July 2024.
+- [`docs/sources/arpen-2024-rankings.md`](docs/sources/arpen-2024-rankings.md) — national 2024 top 10: Helena, Miguel, Gael, Ravi, Theo, Heitor, Cecília, Arthur, Noah, Maitê.
+
+## 🏛️ Data and sampling architecture
+
+The current release replaces nested Python dicts with three decisions that
+scale up to IBGE 2022 data conditioned on `(UF × decade × sex)`:
+
+1. **Storage.** Partitioned Parquet under `ptbr_sampler/data/parquet/`
+   (`first_names/period=<x>/`, `surnames/scope=national/`, `middle_names/`,
+   `states/`). Reads go through `pyarrow.dataset` with filter pushdown —
+   only the partitions actually touched are materialised. Ingestion script:
+   [`scripts/ingest_to_parquet.py`](scripts/ingest_to_parquet.py).
+2. **Sampling primitive.** Walker/Vose alias method in
+   [`ptbr_sampler/sampling/alias.py`](ptbr_sampler/sampling/alias.py): O(m) build, **O(1)
+   per draw**, fully vectorised over NumPy. `k=1` and `k=100_000` have the
+   same cost structure per sample.
+3. **Lazy-load bounded LRU.**
+   [`ptbr_sampler/sampling/store.py`](ptbr_sampler/sampling/store.py) wraps partitions behind
+   a bounded LRU cache. Hot conditions (SP/MG/RJ) stay resident, cold ones
+   page from disk on first touch.
+
+The `middle_names.json` file is filtered through a given-names whitelist
+maintained in
+[`ptbr_sampler/sampling/vocabulary.py`](ptbr_sampler/sampling/vocabulary.py), stripping
+surname leakage (`Araújo`, `Borges`, `Bezerra`, …), the administrative
+token `Cancelado`, and non-name artefacts (`-`). Statistical validation
+via `scipy.stats.chisquare` / `ks_2samp` lives in
+[`tests/test_distribution_validation.py`](tests/test_distribution_validation.py).
+
+To materialise the Parquet layout from the legacy JSON files:
+
+```bash
+python -m scripts.ingest_to_parquet
+```
 
 ## 📄 License
 
