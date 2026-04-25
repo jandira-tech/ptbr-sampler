@@ -204,7 +204,7 @@ class TestBatchSampleLocations:
         sampler = BrazilianLocationSampler(mock_location_data)
         # Force every state draw to land on Amazonas so this test is deterministic
         # rather than relying on a 99%+ probabilistic outcome.
-        monkeypatch.setattr(sampler, 'get_state', lambda: ('Amazonas', 'AM'))
+        monkeypatch.setattr('ptbr_sampler.br_location_class.random.choices', lambda population, weights=None, k=1, **kwargs: ['Amazonas'] * k)
         with caplog.at_level(logging.WARNING, logger='ptbr_sampler.br_location_class'):
             results = sampler.batch_sample_locations(10)
         assert any(entry['city_name'] == 'Unknown' for entry in results)

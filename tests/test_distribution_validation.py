@@ -91,8 +91,8 @@ class TestAliasVsReferenceDistribution:
     def test_first_names_match_reference_numpy(self, tmp_path: Path):
         """
         Verifies that sampling from the AliasTable reproduces NumPy's categorical sampling for first names in period 'ate2000'.
-        
-        Draws 20,000 samples from the partitioned alias table and from numpy.random.choice using the same RNG seed, maps alias draws to integer positions, and compares the two empirical distributions with a two-sample Kolmogorov–Smirnov test; the test fails if the KS p-value is less than or equal to 0.01.
+
+        Draws 20,000 samples from the partitioned alias table and from numpy.random.choice using the same RNG seed, maps alias draws to integer positions, and compares the two empirical distributions with a two-sample Kolmogorov-Smirnov test; the test fails if the KS p-value is less than or equal to 0.01.
         """
         parquet_dir = _ensure_parquet(tmp_path)
         store = PartitionStore(max_entries=2)

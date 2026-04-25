@@ -230,12 +230,12 @@ class GivenNameVocabulary:
     def __contains__(self, token: str) -> bool:  # type: ignore[override] - Accepts str instead of object to match internal folded-key usage
         """
         Determine whether a token is an accepted given-name in this vocabulary.
-        
+
         Parameters:
             token (str): Input token to test; it will be normalized (folded) before membership checks.
-        
+
         Returns:
-            `true` if the folded token is in the vocabulary's accepted given-name set and not present in the surname blocklist, `false` otherwise.
+            `True` if the folded token is in the vocabulary's accepted given-name set and not present in the surname blocklist, `False` otherwise.
         """
         folded = _fold(str(token))
         if folded in self.surname_blocklist:
