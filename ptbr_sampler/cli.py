@@ -496,38 +496,38 @@ def sample(
                         completed: int,
                         stage: str | None = None,
                         *,
-                        samples_completed: int = samples_completed,
-                        current_batch_size: int = current_batch_size,
-                        batch_num: int = batch_num,
+                        _samples_completed: int = samples_completed,
+                        _current_batch_size: int = current_batch_size,
+                        _batch_num: int = batch_num,
                     ) -> None:
                         # Calculate total progress
-                        total_completed = min(samples_completed + completed, qty)
+                        total_completed = min(_samples_completed + completed, qty)
 
                         # Log significant progress stages
-                        if stage and completed % max(1, current_batch_size // 5) == 0:
-                            logger.debug(f'Batch {batch_num}: {completed}/{current_batch_size} samples - {stage}')
+                        if stage and completed % max(1, _current_batch_size // 5) == 0:
+                            logger.debug(f'Batch {_batch_num}: {completed}/{_current_batch_size} samples - {stage}')
 
                         # Update total progress
                         progress.update(
                             main_task,
                             completed=total_completed,
-                            status=f'[dim cyan]{stage or ""} (Batch {batch_num})[/]',
+                            status=f'[dim cyan]{stage or ""} (Batch {_batch_num})[/]',
                         )
 
                         # Update batch progress
-                        progress.update(batch_task, completed=min(completed, current_batch_size))
+                        progress.update(batch_task, completed=min(completed, _current_batch_size))
 
                         # Update API task if relevant
                         if api_task and stage and 'API' in stage:
                             progress.update(api_task, visible=True)
                             if 'starting' in stage.lower():
-                                logger.info(f'API calls starting for batch {batch_num}')
+                                logger.info(f'API calls starting for batch {_batch_num}')
                                 progress.update(api_task, completed=0.2, status='[yellow]Connecting...[/]')
                             elif 'processing' in stage.lower():
-                                logger.info(f'Processing API responses for batch {batch_num}')
+                                logger.info(f'Processing API responses for batch {_batch_num}')
                                 progress.update(api_task, completed=0.6, status='[yellow]Processing...[/]')
                             elif 'completed' in stage.lower():
-                                logger.info(f'API calls completed for batch {batch_num}')
+                                logger.info(f'API calls completed for batch {_batch_num}')
                                 progress.update(api_task, completed=1.0, status='[green]Done[/]')
 
                     # Process the current batch
