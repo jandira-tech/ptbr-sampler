@@ -4,22 +4,17 @@ import random
 
 
 def normalize_population_data(
-    input_file='src/data/locations_data.json',
-    ceps_file='src/data/cities_with_ceps.json',
-    output_file='src/data/locations_data_normalized.json',
+    input_file='ptbr_sampler/data/locations_data.json',
+    ceps_file='ptbr_sampler/data/cities_with_ceps.json',
+    output_file='ptbr_sampler/data/locations_data_normalized.json',
 ):
     """
-    Recalculate population percentages in locations_data.json
-
-    This script:
-    1. Loads the existing locations_data.json
-    2. Calculates total population across all cities
-    3. Recalculates population_percentage_total for each city
-    4. Calculates state populations by summing cities within each state
-    5. Recalculates population_percentage_state for each city
-    6. Imports CEP data from cities_with_ceps.json
-    7. Selects a random CEP from a weighted-selected city
-    8. Writes the normalized data to a new file
+    Normalize and augment location population data and CEPs.
+    
+    Loads location data and CEP mappings, recalculates city and state population totals and percentage fields, attaches CEP information to cities, performs a population-weighted random selection of a city and a random CEP within it, writes the updated dataset to the output file, and returns the modified data structure.
+    
+    Returns:
+        dict: The updated locations data dictionary (cities and states updated with population totals/percentages, added `ceps` where available, and fields `selected_city` and `selected_city_cep` when a selection was made).
     """
     # Load the data
     with open(input_file, encoding='utf-8') as f:

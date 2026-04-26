@@ -106,51 +106,23 @@ def sample(
     save_to_jsonl: str | None,
     all_data: bool,
 ) -> dict | list[dict]:
-    """Generate random Brazilian samples with comprehensive information.
-
-    This function generates random Brazilian location, name, and document samples
-    based on the provided parameters. It handles various combinations of output
-    formats and ensures proper state handling for document generation.
-
-    Args:
-        qty: Number of samples to generate
-        q: Alias for qty parameter (takes precedence if provided)
-        city_only: Return only city names
-        state_abbr_only: Return only state abbreviations
-        state_full_only: Return only full state names
-        only_cep: Return only CEP
-        cep_without_dash: Format CEP without dash
-        time_period: Time period for name sampling
-        return_only_name: Return only names without location
-        name_raw: Return names in raw format (all caps)
-        json_path: Path to city/state data JSON file
-        names_path: Path to first names data file
-        middle_names_path: Path to middle names data file
-        only_surname: Return only surnames
-        top_40: Use only top 40 surnames
-        with_only_one_surname: Use single surname
-        always_middle: Always include middle name
-        only_middle: Return only middle names
-        always_cpf: Include CPF in documents
-        always_pis: Include PIS in documents
-        always_cnpj: Include CNPJ in documents
-        always_cei: Include CEI in documents
-        always_rg: Include RG in documents
-        only_cpf: Generate only CPF
-        only_pis: Generate only PIS
-        only_cnpj: Generate only CNPJ
-        only_cei: Generate only CEI
-        only_rg: Generate only RG
-        include_issuer: Include issuing state in RG
-        only_document: Return only documents
-        surnames_path: Path to surnames data file
-        locations_path: Path to locations data JSON file
-        save_to_jsonl: Path to save generated samples as JSONL
-        all_data: Include all possible data in the generated samples
-
+    """
+    Generate randomized Brazilian samples containing location, name, and document fields.
+    
+    Generates one or more samples combining location (city, state, CEP), name components (given, middle, surnames) and issued documents (CPF, PIS, CNPJ, CEI, RG) according to the provided flags. The `q` parameter, when given, takes precedence over `qty`. If `all_data` is True, the function forces inclusion of all data types and clears mutually exclusive "only" flags. If `save_to_jsonl` is provided, the generated samples are written to that file in JSONL format.
+    
+    Parameters:
+        qty (int): Default number of samples to generate.
+        q (int | None): Alias for `qty` that takes precedence when not None.
+        time_period (TimePeriod): Time period constraint used when sampling names.
+        name_raw (bool): When True, sample names use raw formatting (e.g., uppercase).
+        include_issuer (bool): When True, include RG issuing-state information in generated RG values.
+        save_to_jsonl (str | None): Path to write results as JSONL; if None, results are not saved.
+        all_data (bool): When True, include all possible fields and disable mutually exclusive "only" flags.
+    
     Returns:
-        A dictionary with the generated sample if qty=1, or a list of dictionaries if qty>1.
-        Each dictionary contains keys for name, location, and document information.
+        dict: A single sample when the effective quantity is 1.
+        list[dict]: A list of samples when the effective quantity is greater than 1.
     """
     # Handle q parameter alias (takes precedence over qty)
     actual_qty = q if q is not None else qty
@@ -192,7 +164,7 @@ def sample(
                         location_sampler.update_cities(locations_data['cities'])
                     if 'states' in locations_data:
                         location_sampler.update_states(locations_data['states'])
-            except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+            except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError) as e:
                 # Log but continue with default data
                 print(f'Warning: Could not use locations_path data: {e}')
 

@@ -204,15 +204,39 @@ class GivenNameVocabulary:
 
     @classmethod
     def from_iterable(cls, names: Iterable[str], surnames: Iterable[str] | None = None) -> GivenNameVocabulary:
+        """
+        Create a GivenNameVocabulary from iterables of given names and optional surnames.
+        
+        Parameters:
+            names (Iterable[str]): Iterable of given-name tokens to include in the vocabulary; tokens are normalized and folded.
+            surnames (Iterable[str] | None): Optional iterable of surname tokens whose folded forms will be added to the surname blocklist in addition to the canonical surnames.
+        
+        Returns:
+            GivenNameVocabulary: Instance whose `folded` set contains the folded given names and whose `surname_blocklist` contains the canonical surnames plus any provided folded surnames.
+        
+        Raises:
+            ValueError: If `names` contains no valid names after folding.
+        """
         folded = frozenset(_fold(n) for n in names if _fold(n))
         if not folded:
             raise ValueError('GivenNameVocabulary requires at least one name')
-        block = frozenset()
+        # Always seed the blocklist with canonical surnames so this constructor
+        # cannot accidentally accept tokens like ``Silva`` as given names.
+        block = set(CANONICAL_SURNAMES)
         if surnames is not None:
-            block = frozenset(_fold(s) for s in surnames if _fold(s))
-        return cls(folded=folded, surname_blocklist=block)
+            block.update(_fold(s) for s in surnames if _fold(s))
+        return cls(folded=folded, surname_blocklist=frozenset(block))
 
     def __contains__(self, token: str) -> bool:  # type: ignore[override] - Accepts str instead of object to match internal folded-key usage
+        """
+        Determine whether a token is an accepted given-name in this vocabulary.
+
+        Parameters:
+            token (str): Input token to test; it will be normalized (folded) before membership checks.
+
+        Returns:
+            `True` if the folded token is in the vocabulary's accepted given-name set and not present in the surname blocklist, `False` otherwise.
+        """
         folded = _fold(str(token))
         if folded in self.surname_blocklist:
             return False

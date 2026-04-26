@@ -285,53 +285,45 @@ def sample(
     progress_callback: Callable[[int, str], None] | None = None,
     append_to_jsonl: bool = False,
 ) -> dict | list[dict]:
-    """Generate random Brazilian samples with comprehensive information.
-
-    This function generates random Brazilian location, name, and document samples
-    based on the provided parameters. It handles various combinations of output
-    formats and ensures proper state handling for document generation.
-
-    Args:
-        qty: Number of samples to generate
-        q: Alias for qty parameter (takes precedence if provided)
-        city_only: Return only city names
-        state_abbr_only: Return only state abbreviations
-        state_full_only: Return only full state names
-        only_cep: Return only CEP
-        cep_without_dash: Format CEP without dash
-        time_period: Time period for name sampling
-        return_only_name: Return only names without location
-        name_raw: Return names in raw format (all caps)
-        json_path: Path to city/state data JSON file
-        names_path: Path to first names data file
-        middle_names_path: Path to middle names data file
-        only_surname: Return only surnames
-        top_40: Use only top 40 surnames
-        with_only_one_surname: Use single surname
-        always_middle: Always include middle name
-        only_middle: Return only middle names
-        always_cpf: Include CPF in documents
-        always_pis: Include PIS in documents
-        always_cnpj: Include CNPJ in documents
-        always_cei: Include CEI in documents
-        always_rg: Include RG in documents
-        only_cpf: Generate only CPF
-        only_pis: Generate only PIS
-        only_cnpj: Generate only CNPJ
-        only_cei: Generate only CEI
-        only_rg: Generate only RG
-        only_fone: Generate only phone number
-        include_issuer: Include issuing state in RG
-        only_document: Return only documents
-        surnames_path: Path to surnames data file
-        locations_path: Path to locations data JSON file
-        save_to_jsonl: Path to save generated samples as JSONL
-        all_data: Include all possible data in the generated samples
-        progress_callback: Optional callback function to report progress (takes completed count as parameter)
-        append_to_jsonl: If True, append to existing JSONL file instead of overwriting
-
+    """
+    Generate randomized Brazilian profiles composed of name, location, and document fields according to the supplied flags.
+    
+    Parameters:
+        qty (int): Number of samples to generate.
+        q (int | None): Alias for `qty`; if provided, takes precedence.
+        city_only (bool): If True, use only city name for the location field.
+        state_abbr_only (bool): If True, use only state abbreviation for the location field.
+        state_full_only (bool): If True, use only full state name for the location field.
+        only_cep (bool): If True, return only a CEP for the location field.
+        cep_without_dash (bool): If True, format CEP without a dash (e.g., '12345678').
+        make_api_call (bool): If True, attempt API-based address enrichment for CEPs; otherwise generate addresses offline.
+        time_period (TimePeriod): Time period used when sampling first names.
+        return_only_name (bool): If True, produce name-centric results (no full location by default).
+        name_raw (bool): If True, return names in raw form (preserves casing as produced by samplers).
+        names_path (str | Path): Optional path to first-name data to merge into the name sampler.
+        middle_names_path (str | Path): Optional path to middle-name data for the name sampler.
+        only_surname (bool): If True, return only surname components instead of full names.
+        top_40 (bool): If True, restrict surname selection to top 40 surnames.
+        with_only_one_surname (bool): If True, force a single surname instead of multiple.
+        always_middle (bool): If True, always include a middle name when sampling full names.
+        only_middle (bool): If True, return only middle-name components.
+        always_cpf / always_pis / always_cnpj / always_cei / always_rg / always_phone (bool):
+            If True, include the respective document/phone in generated profiles.
+        only_cpf / only_pis / only_cnpj / only_cei / only_rg / only_fone (bool):
+            If True, generate exclusively the specified document(s) or phone.
+        include_issuer (bool): When generating RG, include the issuing state if requested.
+        only_document (bool): If True, produce document-only results (no name/location unless combined via other flags).
+        surnames_path (str | Path): Path to surnames data used by the name sampler.
+        json_path (str | Path): Path to bundled city/state JSON used to initialize the location sampler.
+        locations_path (str | Path): Optional override JSON with custom `cities`/`states` to update the location sampler; failures are logged and ignored.
+        save_to_jsonl (str | None): If provided, path to write results as newline-delimited JSON; saved via an async writer.
+        all_data (bool): If True, enable all `always_*` outputs and disable mutually exclusive `only_*`/`only_*` output restrictions.
+        progress_callback (Callable[[int, str], None] | None): Optional callback receiving (completed_count, message) to report progress.
+        append_to_jsonl (bool): If True, append to `save_to_jsonl` file instead of overwriting.
+    
     Returns:
-        Dictionary or list of dictionaries containing the generated samples
+        dict: A single generated sample when a single result was requested.
+        list[dict]: A list of generated samples when multiple results were requested.
     """
     # Handle q parameter alias (takes precedence over qty)
     actual_qty = q if q is not None else qty
@@ -377,7 +369,7 @@ def sample(
                     location_sampler.update_cities(locations_data['cities'])
                 if 'states' in locations_data:
                     location_sampler.update_states(locations_data['states'])
-            except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+            except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError) as e:
                 # Log but continue with default data
                 print(f'Warning: Could not use locations_path data: {e}')
 
