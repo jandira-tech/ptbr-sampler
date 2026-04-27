@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from ptbr_sampler.br_name_class import TimePeriod
 from ptbr_sampler.sampling.alias import AliasTable
 from ptbr_sampler.sampling.store import PartitionSpec, PartitionStore
 from scripts import ingest_to_parquet
@@ -212,6 +213,163 @@ class TestPartitionStore:
         store = PartitionStore()
         with pytest.raises(ValueError, match='neither positive counts nor weight column'):
             store.get(spec)
+
+    def test_uf_sex_partition_round_trip_and_ingest(self, tmp_path: Path):
+        """Synthetic IBGE Nomes v2 raw → ingest → conditioned partition.
+
+        Verifies the full chain: raw JSON written by the downloader is
+        consumed by ``ingest_first_names_uf_sex`` and produces a
+        ``first_names/uf=<UF>/period=<P>/sex=<S>/part.parquet`` file with
+        the right labels.
+        """
+        raw_root = tmp_path / 'raw' / 'ibge_nomes_v2'
+        out = tmp_path / 'parquet'
+        target = raw_root / 'uf=SP' / 'period=ate2010' / 'sex=F.json'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(
+                {
+                    'uf': 'SP',
+                    'localidade': '35',
+                    'sexo': 'F',
+                    'decada': 2010,
+                    'period': 'ate2010',
+                    'res': [
+                        {'nome': 'MARIA', 'frequencia': 1000, 'ranking': 1},
+                        {'nome': 'ANA', 'frequencia': 500, 'ranking': 2},
+                    ],
+                },
+            ),
+            encoding='utf-8',
+        )
+
+        stats = ingest_to_parquet.ingest_first_names_uf_sex(raw_root, out)
+        assert stats == {('SP', 'ate2010', 'F'): 2}
+
+        spec = PartitionSpec.of(
+            out / 'first_names',
+            uf='SP',
+            period='ate2010',
+            sex='F',
+        )
+        assert spec.path().exists()
+
+        store = PartitionStore()
+        table = store.get(spec)
+        labels = {str(s) for s in table.labels}
+        assert labels == {'MARIA', 'ANA'}
+
+    def test_uf_sex_ingest_skips_when_raw_missing(self, tmp_path: Path):
+        """No raw → no partitions, no error."""
+        out = tmp_path / 'parquet'
+        stats = ingest_to_parquet.ingest_first_names_uf_sex(tmp_path / 'absent', out)
+        assert stats == {}
+
+    def test_name_sampler_uses_uf_sex_partition_when_present(self, tmp_path: Path):
+        """When (uf, period, sex) partition exists, the conditioned draw uses it."""
+        # Build a tiny but full payload that satisfies ``_validate_data``.
+        tiny_full_names = {
+            'common_names_percentage': {
+                p.value: {
+                    'names': {
+                        'PeriodFallback': {'percentage': 1.0, 'count': 1},
+                    },
+                    'total': 1,
+                }
+                for p in TimePeriod
+            }
+        }
+        tiny_data_dir = tmp_path / 'data'
+        tiny_data_dir.mkdir()
+        (tiny_data_dir / 'names_data.json').write_text(json.dumps(tiny_full_names), encoding='utf-8')
+        (tiny_data_dir / 'surnames_data.json').write_text(json.dumps(_TINY_SURNAMES), encoding='utf-8')
+        (tiny_data_dir / 'middle_names.json').write_text(json.dumps(_TINY_MIDDLES), encoding='utf-8')
+        (tiny_data_dir / 'locations_data.json').write_text(json.dumps(_TINY_LOCATIONS), encoding='utf-8')
+
+        out = tmp_path / 'parquet'
+        ingest_to_parquet.main(['--data-dir', str(tiny_data_dir), '--out', str(out)])
+
+        # Drop a synthetic UF / sex partition with a distinctive label that
+        # cannot collide with the period-only fallback table.
+        raw_root = tiny_data_dir / 'raw' / 'ibge_nomes_v2'
+        target = raw_root / 'uf=SP' / 'period=ate2010' / 'sex=F.json'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(
+                {
+                    'uf': 'SP', 'localidade': '35', 'sexo': 'F',
+                    'decada': 2010, 'period': 'ate2010',
+                    'res': [
+                        {'nome': 'CONDITIONED_ONLY_NAME', 'frequencia': 999, 'ranking': 1},
+                    ],
+                },
+            ),
+            encoding='utf-8',
+        )
+        ingest_to_parquet.ingest_first_names_uf_sex(raw_root, out)
+
+        from ptbr_sampler.br_name_class import BrazilianNameSampler
+
+        combined = {**tiny_full_names, 'surnames': _TINY_SURNAMES['surnames']}
+        sampler = BrazilianNameSampler(
+            combined,
+            middle_names_path=tiny_data_dir / 'middle_names.json',
+            parquet_root=out,
+        )
+        # Conditioned draw — must hit the synthetic label.
+        comps = sampler.batch_sample_names(
+            5,
+            time_period=TimePeriod.UNTIL_2010,
+            ufs=['SP'] * 5,
+            sexes=['F'] * 5,
+        )
+        for c in comps:
+            assert c.first_name == 'CONDITIONED_ONLY_NAME'
+
+        # Unconditioned draw — must NOT hit the synthetic label (only the
+        # period-only ``PeriodFallback`` is valid).
+        comps_default = sampler.batch_sample_names(5, time_period=TimePeriod.UNTIL_2010)
+        for c in comps_default:
+            assert c.first_name == 'PeriodFallback'
+
+    def test_name_sampler_uf_sex_falls_back_when_partition_absent(self, tmp_path: Path):
+        """Asking for a (uf, sex) without a partition silently falls back."""
+        tiny_full_names = {
+            'common_names_percentage': {
+                p.value: {
+                    'names': {'PeriodFallback': {'percentage': 1.0, 'count': 1}},
+                    'total': 1,
+                }
+                for p in TimePeriod
+            }
+        }
+        tiny_data_dir = tmp_path / 'data'
+        tiny_data_dir.mkdir()
+        (tiny_data_dir / 'names_data.json').write_text(json.dumps(tiny_full_names), encoding='utf-8')
+        (tiny_data_dir / 'surnames_data.json').write_text(json.dumps(_TINY_SURNAMES), encoding='utf-8')
+        (tiny_data_dir / 'middle_names.json').write_text(json.dumps(_TINY_MIDDLES), encoding='utf-8')
+        (tiny_data_dir / 'locations_data.json').write_text(json.dumps(_TINY_LOCATIONS), encoding='utf-8')
+
+        out = tmp_path / 'parquet'
+        ingest_to_parquet.main(['--data-dir', str(tiny_data_dir), '--out', str(out)])
+
+        from ptbr_sampler.br_name_class import BrazilianNameSampler
+
+        combined = {**tiny_full_names, 'surnames': _TINY_SURNAMES['surnames']}
+        sampler = BrazilianNameSampler(
+            combined,
+            middle_names_path=tiny_data_dir / 'middle_names.json',
+            parquet_root=out,
+        )
+        # Asking for a UF without a partition must fall back to the period table.
+        comps = sampler.batch_sample_names(
+            5,
+            time_period=TimePeriod.UNTIL_2010,
+            ufs=['ZZ'] * 5,  # no partition for ZZ — must fall back
+            sexes=['F'] * 5,
+        )
+        for c in comps:
+            assert c.first_name == 'PeriodFallback'
 
     def test_partition_with_only_weight_column_loads(self, tmp_path: Path):
         """A partition file with only weight (no count) is loaded via from_weights."""

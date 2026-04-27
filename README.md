@@ -244,12 +244,16 @@ Se quiser reconstruir os artefatos do zero (`todo.md` itens 1 e 11):
 # 1. Inventário: o que está presente localmente, e o que cada dataset alimenta?
 python -m scripts.download_datasets
 
-# 2. Para qualquer linha [MISS], baixe a fonte (URL impressa) e coloque em
-#    ptbr_sampler/data/raw/<nome>/. O script é declarativo: ele NÃO faz
-#    scraping silencioso do IBGE/Arpen porque há termos de uso e limites
-#    de taxa que precisam ser respeitados explicitamente.
+# 2a. (Opcional, EXPERIMENTAL) Baixar os rankings UF × sexo × década do
+#     IBGE Nomes v2 (~540 chamadas, top-20 por condição). Isso destrava o
+#     condicionamento por UF/sexo para nomes; ver caveat abaixo.
+python -m scripts.download_datasets --fetch-ibge-nomes
 
-# 3. Reconstrua o layout Parquet a partir dos JSONs:
+# 2b. Para qualquer linha [MISS] do passo 1, baixe a fonte e coloque em
+#    ptbr_sampler/data/raw/<nome>/. Datasets distribuídos só como webapp
+#    (IBGE Nomes 2022, Arpen 2024) ficam manuais por design.
+
+# 3. Reconstrua o layout Parquet a partir dos JSONs e dos rankings raw:
 python -m scripts.ingest_to_parquet
 
 # 4. Re-rode os testes:
@@ -260,21 +264,57 @@ Cada dataset, a URL canônica, o caminho local e o que ele alimenta
 estão tabelados em [`docs/data-origins.md`](docs/data-origins.md) na
 seção "Download-and-rebuild walkthrough".
 
+**Requisitos de rede:** o fetch chama `servicodados.ibge.gov.br` via
+HTTPS; sandboxes que restringem egress (este repositório é desenvolvido
+em um deles) falham com "Host not in allowlist" / 403. Rode em uma
+máquina com saída de internet liberada.
+
+### Condicionamento UF × sexo (experimental)
+
+Quando os rankings do passo 2a são ingeridos, o amostrador pode
+condicionar nomes em `(UF, período, sexo)` — mas isso é **opt-in**:
+
+```python
+from sample import sample
+sample(q=5, experimental_uf_sex_conditioning=True)
+```
+
+```bash
+uv run ptbr sample --qty 5 --experimental-uf-sex
+```
+
+**Caveat (importante):** o endpoint de ranking do IBGE Nomes v2 retorna
+apenas os **top 20** nomes por condição. A pool condicionada é portanto
+muito mais estreita do que a tabela period-only (~milhares de nomes por
+período), então ligar o flag troca diversidade distribucional por
+realismo regional/sexo. Por isso o default segue period-only.
+
+Quando uma partição `(UF, período, sexo)` específica está ausente, o
+amostrador cai silenciosamente para a tabela period-only para aquela
+linha — então o flag é seguro mesmo após um fetch parcial.
+
 ## ⚠️ Lacunas de realismo conhecidas
 
 Resumo operacional dos pontos onde os dados disponíveis hoje **limitam**
 o realismo da amostragem. Os detalhes completos estão em
 `docs/data-origins.md`, `docs/architecture.md` e `deep-research-report(4).md`.
 
-- **Sem condicionamento por UF para nomes/sobrenomes.** O layout Parquet
-  já carrega as chaves de partição (`uf`, `period`, `sex`), mas a ingesta
-  do IBGE *Nomes no Brasil* 2022 (que adiciona essas dimensões) ainda não
-  foi feita. Hoje sobrenomes saem de uma distribuição nacional pooled —
-  isto subestima fortes efeitos regionais (`Santos` 43,38% em Sergipe;
-  `Silva` 35,75% em Alagoas). Bloqueado por dado, não por código.
-- **Sem condicionamento por sexo.** Pelo mesmo motivo: o
-  `names_data.json` agrupa M/F. O amostrador não inventa nem infere uma
-  divisão de sexo.
+- **Condicionamento por UF/sexo para *nomes* — experimental, top-20.**
+  O endpoint IBGE Nomes v2 expõe top-20 nomes por
+  `(UF, sexo, década)`. A ingesta gravar partições
+  `parquet/first_names/uf=<UF>/period=<P>/sex=<S>/` quando rodada e o
+  amostrador as usa via `experimental_uf_sex_conditioning=True`. Default
+  fica em period-only porque ~20 nomes/condição é muito menos do que
+  ~milhares/período no caminho não-condicionado.
+- **Sem condicionamento por UF para *sobrenomes*.** A release IBGE Nomes
+  no Brasil 2022 publica sobrenomes por UF apenas no webapp (sem API /
+  endpoint de download). Hoje sobrenomes seguem distribuição pooled
+  nacional — `Santos` 43,38% em Sergipe e `Silva` 35,75% em Alagoas
+  ficam subestimados. Bloqueado por dado, não por código.
+- **Sem condicionamento por sexo no caminho default.** Pelo mesmo
+  motivo do item anterior: o `names_data.json` agrupa M/F. O sampler
+  só usa sexo quando o flag experimental está ligado E os partições
+  ingeridas existem.
 - **Horizonte de tempo limitado a `UNTIL_2010`.** O último bucket
   cobre nascimentos até 2010 (estoque IBGE). Coortes recentes (2011–2024)
   ficam fora; o ranking Arpen 2024 serve como benchmark de fluxo de

@@ -22,12 +22,20 @@ command (see `ptbr_sampler/cli.py`).
   published "up to 1929" and then by decade from 1930 onward.
 - **Dimensions bundled today:** `period` ∈ {`ate1930`, `ate1940`, `ate1950`,
   `ate1960`, `ate1970`, `ate1980`, `ate1990`, `ate2000`, `ate2010`}.
-- **Missing dimensions (planned, blocked on data ingest):** `uf` and `sex`.
-  The 2022 Census release (2025) adds both — the Parquet layout already
-  carries those partition keys ready to receive the drop-in. Until those
-  raw exports land under `ptbr_sampler/data/raw/ibge_nomes_2022/`, the
-  sampler does **not** claim UF- or sex-conditioned first-name realism.
-  This is a data-availability limitation, not a code limitation.
+- **Missing dimensions (planned, partially unblocked):**
+  - `uf` and `sex` — the 2022 Census release (2025) adds both. The
+    Parquet layout already carries those partition keys.
+  - **Now downloadable** via the IBGE Nomes v2 ranking endpoint
+    (top-20 only per condition). Run `python -m scripts.download_datasets
+    --fetch-ibge-nomes` then `python -m scripts.ingest_to_parquet` to
+    populate `parquet/first_names/uf=<UF>/period=<P>/sex=<S>/`. The
+    sampler will use those partitions when the
+    `experimental_uf_sex_conditioning` flag is on.
+  - **Top-20 caveat:** the conditioned pool is ~20 names per
+    condition, vs. ~thousands per period in the unconditioned table.
+    Default behaviour stays on the period-only path.
+  - The full 2022-Census export (with surnames by UF) lives only in the
+    web app; bulk download remains blocked.
 - **Time-horizon caveat:** the latest bucket is `UNTIL_2010` (`ate2010`).
   Recent cohorts (people born 2011–2024) are *not* faithfully represented
   by this distribution. Whole-population realism here matches IBGE's stock
@@ -203,17 +211,56 @@ how to start from zero and produce the Parquet layout the sampler reads.
 # 1. Inventory: which datasets are present locally and what powers them?
 python -m scripts.download_datasets
 
-# 2. (If anything is missing) fetch it from the source URL printed above
-#    and drop it under the indicated raw_local_path. The script does NOT
-#    silently scrape IBGE/Arpen — terms-of-use and rate limits make
-#    interactive download the right default.
+# 2a. (Optional, EXPERIMENTAL) Download the IBGE Nomes API v2 UF x sex x
+#     decade rankings (top-20 names per condition, ~540 small JSON files).
+#     This unblocks UF- and sex-conditioned realism for first names. See
+#     the "Experimental UF / sex conditioning" section below for the
+#     trade-off (top-20 only).
+python -m scripts.download_datasets --fetch-ibge-nomes
 
-# 3. Rebuild the partitioned Parquet layout from the JSON sources:
+# 2b. (For datasets the script lists as [MISS]) fetch them from the
+#     printed source URL and drop them under the indicated raw_local_path.
+#     Datasets behind web apps (IBGE Nomes 2022, Arpen 2024) are
+#     intentionally left to interactive download because they have no
+#     public bulk-download endpoint.
+
+# 3. Rebuild the partitioned Parquet layout. This consumes both the JSON
+#    sources under ptbr_sampler/data/ AND any raw IBGE v2 rankings under
+#    ptbr_sampler/data/raw/ibge_nomes_v2/, producing both the
+#    period-only partitions AND the uf=<UF>/period=<P>/sex=<S>/ partitions
+#    when raw data exists.
 python -m scripts.ingest_to_parquet
 
 # 4. Re-run the smoke and statistical tests:
 uv run --extra test pytest -q
 ```
+
+### Network requirements
+
+The fetcher hits `servicodados.ibge.gov.br` over HTTPS. CI sandboxes that
+restrict outbound traffic (the one this repo is developed in, for
+example) will fail at the first request with `Host not in allowlist` or
+HTTP 403. Run `--fetch-ibge-nomes` on a machine with general internet
+egress.
+
+### Experimental UF / sex conditioning
+
+`scripts.download_datasets --fetch-ibge-nomes` calls the IBGE Nomes v2
+ranking endpoint (`/api/v2/censos/nomes/ranking?localidade=<UF>&sexo=<>&decada=<>`),
+which returns **only the top 20 names per (UF, sex, decade) condition**.
+
+Once those rows are ingested into
+`parquet/first_names/uf=<UF>/period=<P>/sex=<S>/`, the sampler can
+condition first-name draws on UF and sex by passing
+`experimental_uf_sex_conditioning=True` (Python) or
+`--experimental-uf-sex` (CLI). It is **off by default** because the
+conditioned pool (~20 names per condition) is much narrower than the
+unconditioned period-only table (~thousands of names per period) — so
+turning it on trades distribution breadth for regional / sex realism.
+
+When the flag is on but a specific `(UF, period, sex)` partition is
+missing, the sampler silently falls back to the period-only table for
+that row. So it is safe to turn on after only a partial fetch.
 
 | Dataset | Source URL | Raw local path | Powers | Status |
 |---|---|---|---|---|

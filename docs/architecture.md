@@ -134,14 +134,18 @@ ingest (see `docs/data-origins.md` and the README "Known realism gaps").
    `scripts/ingest_to_parquet.py` applies it by default and writes the
    cleaned distribution to `parquet/middle_names/`. Pass
    `--skip-middle-names-filter` to inspect the raw distribution.
-2. **Sex conditioning in the current first-name file.** The committed
-   `names_data.json` has no sex dimension. The IBGE 2022 release does. Until
-   2022-conditioned data is ingested into `first_names/uf=…/decade=…/sex=…/`,
-   first names will be sex-mixed in output. The sampler does not fabricate
-   a sex split — adding sex realism is blocked on data, not on code.
-3. **UF-conditioned first names and surnames.** Same shape as (2): the
-   Parquet layout is ready, the ingest is not. The sampler honestly draws
-   from the pooled-national distribution today.
+2. **Sex conditioning — experimental, top-20.** The committed
+   `names_data.json` has no sex dimension; the default path stays
+   sex-mixed. The IBGE Nomes v2 ranking endpoint exposes
+   `(UF, sex, decade)` triples (top-20 each), and
+   `scripts/download_datasets.py --fetch-ibge-nomes` ingests them into
+   `first_names/uf=<UF>/period=<P>/sex=<S>/`. Turn it on with
+   `experimental_uf_sex_conditioning=True` (Python) or
+   `--experimental-uf-sex` (CLI). The sampler still falls back to the
+   period-only table per row when a specific partition is missing.
+3. **UF-conditioned surnames.** The 2022-Census surname tables by UF
+   live in the IBGE web app only — no public API, no bulk download.
+   Surnames stay on the pooled-national distribution today.
 4. **Time horizon capped at `UNTIL_2010`.** The bundled first-name buckets
    stop at the 2010 Census. Recent cohorts (born 2011–2024) are not
    directly represented; whole-population realism for "people alive

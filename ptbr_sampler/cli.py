@@ -65,6 +65,20 @@ RANDOM_MODE = typer.Option(
     ),
     rich_help_panel='Basic Options',
 )
+EXPERIMENTAL_UF_SEX = typer.Option(
+    False,
+    '--experimental-uf-sex',
+    help=(
+        'EXPERIMENTAL: condition first-name draws on the sampled UF and a '
+        "50/50-drawn sex when the parquet/first_names/uf=<UF>/period=<P>/sex=<S>/ "
+        'partitions exist (produced by "python -m scripts.download_datasets '
+        '--fetch-ibge-nomes" + "python -m scripts.ingest_to_parquet"). The IBGE '
+        'Nomes v2 ranking endpoint exposes only the top-20 names per condition, '
+        'so the conditioned pool is much narrower than the unconditioned '
+        'period table; default is OFF.'
+    ),
+    rich_help_panel='Basic Options',
+)
 
 # Location options
 CITY_ONLY = typer.Option(False, '--city-only', '-c', help='Return only city names', rich_help_panel='Location Options')
@@ -355,6 +369,7 @@ def sample(
     easy: int = EASY,
     append_to_jsonl: bool = APPEND_TO_JSONL,
     random: bool = RANDOM_MODE,
+    experimental_uf_sex: bool = EXPERIMENTAL_UF_SEX,
 ) -> None:
     """Generate random Brazilian samples with comprehensive information.
 
@@ -583,6 +598,7 @@ def sample(
                             progress_callback=progress_callback,
                             append_to_jsonl=(append_to_jsonl or not first_batch),  # Force append for all batches after the first
                             random=random,
+                            experimental_uf_sex_conditioning=experimental_uf_sex,
                         )
                         logger.info(f'Batch {batch_num} processed successfully')
                     except Exception as e:
@@ -702,6 +718,7 @@ def sample(
                         progress_callback=progress_callback,
                         append_to_jsonl=append_to_jsonl,
                         random=random,
+                        experimental_uf_sex_conditioning=experimental_uf_sex,
                     )
                     logger.info(f'All {qty} samples processed successfully')
                 except Exception as e:

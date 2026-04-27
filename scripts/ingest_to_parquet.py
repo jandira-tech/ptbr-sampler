@@ -5,6 +5,7 @@ Running the script writes::
 
     ptbr_sampler/data/parquet/
     ├── first_names/period=<period>/part.parquet
+    ├── first_names/uf=<UF>/period=<period>/sex=<M|F>/part.parquet  (if raw IBGE v2 data is present)
     ├── surnames/scope=national/part.parquet
     ├── middle_names/part.parquet
     └── states/part.parquet
@@ -13,6 +14,12 @@ The layout intentionally carries partition keys even when the current JSON
 files only supply a single slice (e.g. national surnames and sex-mixed first
 names). This makes it trivial to drop-in IBGE 2022 data conditioned on
 ``(uf x decade x sex)`` without changing the code reading the partitions.
+
+The UF x period x sex first-name partitions are written when raw rankings
+fetched by ``scripts.download_datasets --fetch-ibge-nomes`` are present
+under ``ptbr_sampler/data/raw/ibge_nomes_v2/``. Their absence is not an
+error — the sampler falls back to the period-only partitions when no
+UF/sex partition matches the requested condition.
 
 Usage::
 
@@ -148,6 +155,60 @@ def ingest_middle_names(src: Path, out_root: Path, vocabulary: GivenNameVocabula
     return len(kept_names), dropped
 
 
+def ingest_first_names_uf_sex(raw_root: Path, out_root: Path) -> dict[tuple[str, str, str], int]:
+    """Read IBGE Nomes v2 raw JSON and write UF x period x sex partitions.
+
+    Expects the on-disk layout produced by
+    :func:`scripts.download_datasets.fetch_ibge_first_names_v2`::
+
+        raw_root/uf=<UF>/period=ate<YYYY>/sex=<M|F>.json
+
+    For each file with non-empty ``res``, writes::
+
+        out_root/first_names/uf=<UF>/period=<P>/sex=<S>/part.parquet
+
+    Returns a dict ``{(uf, period, sex): row_count}``. Empty result when
+    ``raw_root`` doesn't exist (no fetch yet) — that's deliberate: the
+    sampler keeps using the period-only partitions in that case.
+    """
+    stats: dict[tuple[str, str, str], int] = {}
+    if not raw_root.exists():
+        return stats
+    for uf_dir in sorted(raw_root.glob('uf=*')):
+        uf = uf_dir.name.split('=', 1)[1]
+        for period_dir in sorted(uf_dir.glob('period=*')):
+            period = period_dir.name.split('=', 1)[1]
+            for sex_file in sorted(period_dir.glob('sex=*.json')):
+                sex = sex_file.stem.split('=', 1)[1]
+                with sex_file.open(encoding='utf-8') as f:
+                    payload = json.load(f)
+                rows = payload.get('res') or []
+                labels: list[str] = []
+                counts: list[int] = []
+                pcts: list[float] = []
+                for row in rows:
+                    name = row.get('nome')
+                    freq = row.get('frequencia')
+                    if not name or freq is None:
+                        continue
+                    try:
+                        cnt = int(freq)
+                    except (TypeError, ValueError):
+                        continue
+                    if cnt <= 0:
+                        continue
+                    labels.append(str(name))
+                    counts.append(cnt)
+                    pcts.append(float(cnt))
+                if not labels:
+                    continue
+                weights = _normalise(pcts)
+                partition_dir = out_root / 'first_names' / f'uf={uf}' / f'period={period}' / f'sex={sex}'
+                _write_partition(partition_dir, labels, counts, weights)
+                stats[uf, period, sex] = len(labels)
+    return stats
+
+
 def ingest_states(src: Path, out_root: Path) -> int:
     with src.open(encoding='utf-8') as f:
         data = json.load(f)
@@ -198,6 +259,14 @@ def main(argv: list[str] | None = None) -> int:
     first_name_stats = ingest_first_names(data_dir / 'names_data.json', out_root)
     for period, count in sorted(first_name_stats.items()):
         print(f'  {period}: {count} rows')
+
+    raw_v2 = data_dir / 'raw' / 'ibge_nomes_v2'
+    print(f'Ingesting first names (UF x period x sex) from {raw_v2}...')
+    uf_stats = ingest_first_names_uf_sex(raw_v2, out_root)
+    if not uf_stats:
+        print('  (no raw IBGE Nomes v2 data found — run "python -m scripts.download_datasets --fetch-ibge-nomes" first)')
+    else:
+        print(f'  partitions written: {len(uf_stats)}')
 
     print('Ingesting national surnames...')
     n_surnames = ingest_surnames(data_dir / 'surnames_data.json', out_root)

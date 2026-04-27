@@ -172,6 +172,9 @@ class BrazilianNameSampler:
         # Alias-table caches. Built lazily on first use so construction
         # cost (~a few ms per period) is paid only if the period is drawn.
         self._first_name_alias: dict[str, AliasTable | None] = {}
+        # UF x period x sex caches: distinct from the period-only cache because
+        # the on-disk partition path differs and keys are (uf, period, sex).
+        self._first_name_uf_sex_alias: dict[tuple[str, str, str], AliasTable | None] = {}
         self._surname_alias: AliasTable | None = None
         self._top_40_alias: AliasTable | None = None
         self._middle_name_alias: AliasTable | None = None
@@ -249,24 +252,63 @@ class BrazilianNameSampler:
                 raise
             return None
 
-    def _first_names_table(self, time_period: TimePeriod) -> AliasTable:
-        key = time_period.value
-        cached = self._first_name_alias.get(key)
+    def _first_names_table(
+        self,
+        time_period: TimePeriod,
+        uf: str | None = None,
+        sex: str | None = None,
+    ) -> AliasTable:
+        """Return the first-name alias table for a given conditioning tuple.
+
+        Resolution order (most-specific wins, falls back on partition miss):
+
+        1. ``parquet_root/first_names/uf=<UF>/period=<P>/sex=<S>/`` — used
+           when both ``uf`` and ``sex`` are provided AND the partition
+           file exists. This is the realistic path unlocked by
+           ``scripts.download_datasets --fetch-ibge-nomes``.
+        2. ``parquet_root/first_names/period=<P>/`` — the existing
+           period-only Parquet partition, populated from
+           ``names_data.json`` by ``scripts.ingest_to_parquet``.
+        3. The legacy in-memory ``names_data.json`` mapping — exercised
+           only by unit tests that override the distribution.
+        """
+        period_key = time_period.value
+
+        if uf is not None and sex is not None and self.parquet_root is not None:
+            cache_key = (uf, period_key, sex)
+            cached_uf = self._first_name_uf_sex_alias.get(cache_key)
+            if cached_uf is not None:
+                return cached_uf
+            spec = PartitionSpec.of(
+                self.parquet_root / 'first_names',
+                uf=uf,
+                period=period_key,
+                sex=sex,
+            )
+            table = self._load_from_parquet(spec)
+            if table is not None:
+                self._first_name_uf_sex_alias[cache_key] = table
+                return table
+            # Cache the negative result — there's no point re-stat'ing the
+            # same missing partition for every draw of this period.
+            self._first_name_uf_sex_alias[cache_key] = None
+
+        cached = self._first_name_alias.get(period_key)
         if cached is not None:
             return cached
 
         if self.parquet_root is not None:
-            spec = PartitionSpec.of(self.parquet_root / 'first_names', period=key)
+            spec = PartitionSpec.of(self.parquet_root / 'first_names', period=period_key)
             table = self._load_from_parquet(spec)
             if table is not None:
-                self._first_name_alias[key] = table
+                self._first_name_alias[period_key] = table
                 return table
 
         # JSON fallback — the legacy path, still exercised by tests that pass
         # bespoke ``mock_name_data`` dictionaries without a Parquet tree.
-        period_data = self.name_data[key]
+        period_data = self.name_data[period_key]
         table = alias_from_mapping(period_data['names'])
-        self._first_name_alias[key] = table
+        self._first_name_alias[period_key] = table
         return table
 
     def _surnames_table(self) -> AliasTable:
@@ -357,6 +399,8 @@ class BrazilianNameSampler:
         only_middle: bool = False,
         return_components: bool = False,
         random_mode: bool = False,
+        uf: str | None = None,
+        sex: str | None = None,
     ) -> str | NameComponents:
         """Get a single random name. Delegates to the unified batch path
         with ``k=1`` so the batch and single-sample code paths share one
@@ -367,6 +411,15 @@ class BrazilianNameSampler:
                 instead of honouring the empirical frequency weights. This is
                 the explicit-random escape hatch documented in the README.
                 Default ``False`` keeps the realism-by-default behaviour.
+            uf: Federation Unit abbreviation (e.g. ``'SP'``). When passed
+                together with ``sex`` and a matching Parquet partition
+                exists, the first-name draw is conditioned on
+                ``(uf, period, sex)``. When the partition is missing, the
+                sampler falls back to the period-only table — so this
+                argument is safe to pass even when the IBGE Nomes v2 raw
+                data has not been ingested yet.
+            sex: Either ``'M'`` or ``'F'``. Same fallback behaviour as
+                ``uf``.
         """
         if only_middle:
             middle_name = self._get_random_middle_name(random_mode=random_mode)
@@ -383,6 +436,8 @@ class BrazilianNameSampler:
             with_only_one_surname=with_only_one_surname,
             always_middle=always_middle,
             random_mode=random_mode,
+            uf=uf,
+            sex=sex,
         )[0]
 
         if return_components:
@@ -405,6 +460,8 @@ class BrazilianNameSampler:
         with_only_one_surname: bool = False,
         always_middle: bool = False,
         random_mode: bool = False,
+        ufs: list[str] | tuple[str, ...] | None = None,
+        sexes: list[str] | tuple[str, ...] | None = None,
     ) -> list[NameComponents]:
         """Draw ``n`` name components with one vectorised alias lookup per
         independent draw (first names, middle names, two surnames).
@@ -417,6 +474,13 @@ class BrazilianNameSampler:
             random_mode: When ``True``, draw uniformly from each table
                 instead of honouring the empirical frequencies. Default
                 ``False`` keeps the realism-by-default behaviour.
+            ufs: Per-row UF list. When provided alongside ``sexes`` (and
+                with matching ``(uf, period, sex)`` Parquet partitions on
+                disk), each first-name draw is conditioned on its row's
+                UF / sex. Falls back to the period-only table when a
+                partition is missing.
+            sexes: Per-row sex list (``'M'``/``'F'``). Used together with
+                ``ufs``.
         """
         if n <= 0:
             return []
@@ -429,6 +493,8 @@ class BrazilianNameSampler:
             with_only_one_surname=with_only_one_surname,
             always_middle=always_middle,
             random_mode=random_mode,
+            ufs=ufs,
+            sexes=sexes,
         )
 
     def get_random_surname(
@@ -471,12 +537,26 @@ class BrazilianNameSampler:
         with_only_one_surname: bool,
         always_middle: bool,
         random_mode: bool = False,
+        uf: str | None = None,
+        sex: str | None = None,
+        ufs: list[str] | tuple[str, ...] | None = None,
+        sexes: list[str] | tuple[str, ...] | None = None,
     ) -> list[NameComponents]:
         rng = _rng_from_python_random()
 
-        first_table = self._first_names_table(time_period)
-        first_draws = first_table.sample_uniform(n, rng) if random_mode else first_table.sample(n, rng)
-        first_names = [(str(name).upper() if raw else str(name)) for name in first_draws]
+        # Normalise the per-row UF / sex inputs. Accepts either scalar
+        # ``uf``/``sex`` (broadcast to every row) or per-row ``ufs`` / ``sexes``.
+        first_names = self._draw_first_names_conditioned(
+            n,
+            time_period=time_period,
+            raw=raw,
+            random_mode=random_mode,
+            rng=rng,
+            uf=uf,
+            sex=sex,
+            ufs=ufs,
+            sexes=sexes,
+        )
 
         middle_names: list[str | None] = self._draw_middle_names(
             n, raw=raw, always_middle=always_middle, rng=rng, random_mode=random_mode,
@@ -504,6 +584,63 @@ class BrazilianNameSampler:
             )
             results.append(NameComponents(first_names[i], middle_names[i], surname))
         return results
+
+    def _draw_first_names_conditioned(
+        self,
+        n: int,
+        *,
+        time_period: TimePeriod,
+        raw: bool,
+        random_mode: bool,
+        rng: np.random.Generator,
+        uf: str | None,
+        sex: str | None,
+        ufs: list[str] | tuple[str, ...] | None,
+        sexes: list[str] | tuple[str, ...] | None,
+    ) -> list[str]:
+        """Draw ``n`` first names, optionally conditioned on per-row UF / sex.
+
+        When neither per-row nor scalar UF / sex are provided (or no
+        Parquet partition matches), every draw goes through the unconditioned
+        period table — this is the legacy fast path and matches the
+        existing behaviour bit-for-bit on the bundled (period-only) data.
+        """
+        per_row_ufs: list[str | None] | None
+        per_row_sexes: list[str | None] | None
+        if ufs is None and uf is None and sexes is None and sex is None:
+            per_row_ufs = None
+            per_row_sexes = None
+        else:
+            per_row_ufs = list(ufs) if ufs is not None else [uf] * n
+            per_row_sexes = list(sexes) if sexes is not None else [sex] * n
+            if len(per_row_ufs) != n or len(per_row_sexes) != n:
+                raise ValueError('ufs/sexes must have length n')
+
+        # Fast path — single unconditioned table for every row.
+        if per_row_ufs is None or per_row_sexes is None:
+            table = self._first_names_table(time_period)
+            draws = table.sample_uniform(n, rng) if random_mode else table.sample(n, rng)
+            return [(str(name).upper() if raw else str(name)) for name in draws]
+
+        # Conditional path — bucket by (uf, sex) and draw per bucket so we
+        # still amortise per-call overhead. Rows with missing partitions
+        # silently fall back to the period-only table inside
+        # ``_first_names_table`` — that's the no-data-yet behaviour.
+        from collections import defaultdict  # noqa: PLC0415 - keep imports local to the conditional path
+
+        buckets: dict[tuple[str | None, str | None], list[int]] = defaultdict(list)
+        for i in range(n):
+            buckets[per_row_ufs[i], per_row_sexes[i]].append(i)
+
+        names_out: list[str] = [''] * n
+        for (bucket_uf, bucket_sex), indices in buckets.items():
+            table = self._first_names_table(time_period, uf=bucket_uf, sex=bucket_sex)
+            count = len(indices)
+            draws = table.sample_uniform(count, rng) if random_mode else table.sample(count, rng)
+            for j, row_idx in enumerate(indices):
+                s = str(draws[j])
+                names_out[row_idx] = s.upper() if raw else s
+        return names_out
 
     def _draw_middle_names(
         self,

@@ -285,6 +285,7 @@ def sample(
     progress_callback: Callable[[int, str], None] | None = None,
     append_to_jsonl: bool = False,
     random: bool = False,
+    experimental_uf_sex_conditioning: bool = False,
 ) -> dict | list[dict]:
     """
     Generate randomized Brazilian profiles composed of name, location, and document fields according to the supplied flags.
@@ -328,6 +329,18 @@ def sample(
             realism-by-default sampling — geography first via population
             weights, then names from the IBGE-derived alias tables. See the
             "Realism vs. random mode" section in the README for details.
+        experimental_uf_sex_conditioning (bool): If True AND the
+            ``parquet/first_names/uf=<UF>/period=<P>/sex=<S>/`` partitions
+            exist on disk (produced by ``python -m scripts.download_datasets
+            --fetch-ibge-nomes`` followed by ``python -m
+            scripts.ingest_to_parquet``), each first-name draw is conditioned
+            on the row's sampled UF and a 50/50-drawn sex. **Experimental
+            because the IBGE Nomes v2 ranking endpoint only exposes the top
+            20 names per (UF, sex, decade) condition, so the conditioned
+            pool is much narrower than the unconditioned period-only table
+            (~thousands of names per period).** Default ``False`` keeps
+            the period-only path. Rows whose partition is missing fall back
+            to the period-only table individually.
 
     Returns:
         dict: A single generated sample when a single result was requested.
@@ -543,6 +556,18 @@ def sample(
             # flush-to-disk cadence (see ``save_to_jsonl`` below), not a
             # sampling-strategy switch.
             batch_locations = location_sampler.batch_sample_locations(actual_qty, random_mode=random)
+            # Build per-row UF / sex when the experimental conditioning is on.
+            # Sex is drawn 50/50 because the bundled data has no sex prior;
+            # downstream the name sampler falls back to the period-only table
+            # if a (uf, period, sex) partition is absent, so this is safe to
+            # pass even when only some partitions have been ingested.
+            batch_ufs: list[str] | None = None
+            batch_sexes: list[str] | None = None
+            if experimental_uf_sex_conditioning:
+                import random as _stdlib_random  # noqa: PLC0415 - local to the experimental path
+
+                batch_ufs = [loc['state_abbr'] for loc in batch_locations]
+                batch_sexes = [_stdlib_random.choice(('M', 'F')) for _ in range(actual_qty)]
             batch_names = name_sampler.batch_sample_names(
                 actual_qty,
                 time_period=time_period,
@@ -552,6 +577,8 @@ def sample(
                 with_only_one_surname=with_only_one_surname,
                 always_middle=always_middle,
                 random_mode=random,
+                ufs=batch_ufs,
+                sexes=batch_sexes,
             )
 
             for i in range(actual_qty):

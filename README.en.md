@@ -262,12 +262,16 @@ To rebuild the bundled artefacts from scratch (`todo.md` items 1 and 11):
 # 1. Inventory: what's present locally, and what does each dataset power?
 python -m scripts.download_datasets
 
-# 2. For any [MISS] row, fetch the source (URL printed above) and drop
-#    it under ptbr_sampler/data/raw/<name>/. The script is declarative:
-#    it does NOT silently scrape IBGE/Arpen because terms-of-use and
-#    rate limits make interactive download the right default.
+# 2a. (Optional, EXPERIMENTAL) Download the IBGE Nomes v2 UF x sex x
+#     decade rankings (~540 calls, top-20 per condition). Unlocks UF /
+#     sex conditioning for first names — see caveat below.
+python -m scripts.download_datasets --fetch-ibge-nomes
 
-# 3. Rebuild the partitioned Parquet layout from the JSON sources:
+# 2b. For any [MISS] row from step 1, fetch the source URL and drop it
+#     under ptbr_sampler/data/raw/<name>/. Datasets distributed only as
+#     web apps (IBGE Nomes 2022, Arpen 2024) stay manual by design.
+
+# 3. Rebuild the partitioned Parquet layout from JSON sources + raw rankings:
 python -m scripts.ingest_to_parquet
 
 # 4. Re-run the tests:
@@ -278,21 +282,58 @@ Each dataset's source URL, raw local path, and what it powers are
 tabulated in [`docs/data-origins.md`](docs/data-origins.md) under
 "Download-and-rebuild walkthrough".
 
+**Network requirements:** the fetcher hits `servicodados.ibge.gov.br`
+over HTTPS. Sandboxes that restrict outbound egress (the one this repo
+is developed in, for example) fail with `Host not in allowlist` / 403.
+Run on a machine with general internet egress.
+
+### UF / sex conditioning (experimental)
+
+Once the step 2a rankings are ingested, the sampler can condition
+first-name draws on `(UF, period, sex)` — but it's **opt-in**:
+
+```python
+from sample import sample
+sample(q=5, experimental_uf_sex_conditioning=True)
+```
+
+```bash
+uv run ptbr sample --qty 5 --experimental-uf-sex
+```
+
+**Caveat (important):** the IBGE Nomes v2 ranking endpoint returns only
+the **top 20** names per condition. The conditioned pool is therefore
+much narrower than the period-only table (~thousands of names per
+period), so turning the flag on trades distribution breadth for
+regional/sex realism. That's why the default stays on the period-only
+path.
+
+When a specific `(UF, period, sex)` partition is missing, the sampler
+silently falls back to the period-only table for that row — so the flag
+is safe to enable after a partial fetch.
+
 ## ⚠️ Known realism gaps
 
 Operational summary of where the available data **limits** sampling
 realism today. Full details live in `docs/data-origins.md`,
 `docs/architecture.md`, and `deep-research-report(4).md`.
 
-- **No UF conditioning for names / surnames.** The Parquet layout
-  already carries `uf`, `period`, and `sex` partition keys, but the
-  IBGE *Nomes no Brasil* 2022 ingest (which would populate them) is not
-  yet bundled. Surnames currently come from a pooled-national
-  distribution — this understates strong regional effects (`Santos`
-  43.38% in Sergipe, `Silva` 35.75% in Alagoas). Blocked on data, not
-  on code.
-- **No sex conditioning.** Same reason: `names_data.json` is
-  sex-mixed. The sampler does not invent or infer a sex split.
+- **UF / sex conditioning for *first names* — experimental, top-20.**
+  The IBGE Nomes v2 ranking endpoint exposes top-20 names per
+  `(UF, sex, decade)` condition. The ingester writes them to
+  `parquet/first_names/uf=<UF>/period=<P>/sex=<S>/` and the sampler
+  uses them via `experimental_uf_sex_conditioning=True`. Default stays
+  on the period-only path because ~20 names per condition is much
+  narrower than ~thousands per period in the unconditioned table.
+- **No UF conditioning for *surnames*.** The IBGE 2022 release
+  publishes UF-level surname distributions only in the web app (no
+  API or bulk download). Surnames stay on the pooled-national
+  distribution today — this understates strong regional effects
+  (`Santos` 43.38% in Sergipe, `Silva` 35.75% in Alagoas). Blocked on
+  data, not on code.
+- **No sex conditioning on the default path.** Same reason as above:
+  `names_data.json` is sex-mixed. Sex only enters when the
+  experimental flag is on AND the conditioned partitions exist.
 - **Time horizon capped at `UNTIL_2010`.** The latest bucket covers
   births up to 2010 (IBGE stock). Recent cohorts (2011–2024) sit
   outside; the Arpen 2024 ranking is a newborn-flow benchmark, not a
