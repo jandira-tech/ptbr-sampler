@@ -162,3 +162,30 @@ class TestQAlias:
         result = _sample(qty=1, q=3)
         assert isinstance(result, list)
         assert len(result) == 3
+
+
+class TestRandomMode:
+    """The random=True escape hatch documented in the README and
+    docs/architecture.md. We can't easily test the empirical-distribution
+    flattening end-to-end in a smoke test (city/state space is too big),
+    but we can confirm the flag is plumbed through and the sampler still
+    produces the same output shape."""
+
+    def test_random_mode_returns_same_shape(self):
+        result = _sample(qty=1, random=True)
+        assert isinstance(result, dict)
+        for key in ('name', 'city', 'state', 'state_abbr', 'cpf', 'rg'):
+            assert key in result
+
+    def test_random_mode_batch(self):
+        results = _sample(qty=5, random=True)
+        assert isinstance(results, list)
+        assert len(results) == 5
+        for r in results:
+            assert r['name']
+            assert r['city']
+
+    def test_random_mode_default_is_false(self):
+        # Smoke-check: omitting ``random`` keyword keeps realistic path.
+        result = _sample(qty=1)
+        assert isinstance(result, dict)

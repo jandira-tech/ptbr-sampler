@@ -56,6 +56,15 @@ BATCH = typer.Option(
 EASY = typer.Option(
     None, '--easy', '-e', help='Easy mode with integer qty (enables API calls, all data, and auto-saves)', rich_help_panel='Basic Options'
 )
+RANDOM_MODE = typer.Option(
+    False,
+    '--random',
+    help=(
+        'Explicit random mode (opt-out of realism): uniform location and name draws, '
+        'flat 50% middle-name flag. Default is realism-by-default (population-weighted).'
+    ),
+    rich_help_panel='Basic Options',
+)
 
 # Location options
 CITY_ONLY = typer.Option(False, '--city-only', '-c', help='Return only city names', rich_help_panel='Location Options')
@@ -345,6 +354,7 @@ def sample(
     batch: int = BATCH,
     easy: int = EASY,
     append_to_jsonl: bool = APPEND_TO_JSONL,
+    random: bool = RANDOM_MODE,
 ) -> None:
     """Generate random Brazilian samples with comprehensive information.
 
@@ -572,6 +582,7 @@ def sample(
                             all_data=all_data,
                             progress_callback=progress_callback,
                             append_to_jsonl=(append_to_jsonl or not first_batch),  # Force append for all batches after the first
+                            random=random,
                         )
                         logger.info(f'Batch {batch_num} processed successfully')
                     except Exception as e:
@@ -690,6 +701,7 @@ def sample(
                         all_data=all_data,
                         progress_callback=progress_callback,
                         append_to_jsonl=append_to_jsonl,
+                        random=random,
                     )
                     logger.info(f'All {qty} samples processed successfully')
                 except Exception as e:

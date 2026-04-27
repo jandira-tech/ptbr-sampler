@@ -118,21 +118,29 @@ class BrazilianLocationSampler:
         # Build reverse lookup: state abbreviation -> full state name
         self.abbr_to_name: dict[str, str] = {data['state_abbr']: name for name, data in self.data['states'].items()}
 
-    def get_state(self) -> tuple[str, str]:
+    def get_state(self, random_mode: bool = False) -> tuple[str, str]:
         """Get a random state weighted by population percentage.
+
+        Args:
+            random_mode: When ``True``, ignore population weights and pick
+                uniformly across the 27 UFs. The default (``False``) is the
+                realism-by-default path described in ``docs/architecture.md``.
 
         Returns:
             Tuple of (state_name, state_abbreviation)
         """
-        state_name = random.choices(self.state_names, weights=self.state_weights, k=1)[0]
+        weights = None if random_mode else self.state_weights
+        state_name = random.choices(self.state_names, weights=weights, k=1)[0]
         state_abbr = self.data['states'][state_name]['state_abbr']
         return state_name, state_abbr
 
-    def get_city(self, state_abbr: str | None = None) -> tuple[str, str]:
+    def get_city(self, state_abbr: str | None = None, random_mode: bool = False) -> tuple[str, str]:
         """Get a random city weighted by population percentage.
 
         Args:
             state_abbr: Optional state abbreviation to get city from specific state
+            random_mode: When ``True``, ignore population weights and pick
+                uniformly across the cities of the chosen UF.
 
         Returns:
             Tuple of (city_name, state_abbreviation)
@@ -141,26 +149,32 @@ class BrazilianLocationSampler:
             ValueError: If no cities found for given state
         """
         if state_abbr is None:
-            _, state_abbr = self.get_state()
+            _, state_abbr = self.get_state(random_mode=random_mode)
 
         if state_abbr not in self.city_weights_by_state:
             raise ValueError(f'No cities found for state: {state_abbr}')
 
-        city_name = random.choices(self.city_names_by_state[state_abbr], weights=self.city_weights_by_state[state_abbr], k=1)[0]
+        weights = None if random_mode else self.city_weights_by_state[state_abbr]
+        city_name = random.choices(self.city_names_by_state[state_abbr], weights=weights, k=1)[0]
 
         return city_name, state_abbr
 
-    def get_state_and_city(self) -> tuple[str, str, str]:
+    def get_state_and_city(self, random_mode: bool = False) -> tuple[str, str, str]:
         """Get a random state and city combination weighted by population percentage.
+
+        Args:
+            random_mode: When ``True``, ignore population weights and pick
+                states / cities uniformly. Default ``False`` is the
+                realism-by-default path.
 
         Returns:
             Tuple of (state_name, state_abbreviation, city_name)
         """
-        state_name, state_abbr = self.get_state()
-        city_name, _ = self.get_city(state_abbr)
+        state_name, state_abbr = self.get_state(random_mode=random_mode)
+        city_name, _ = self.get_city(state_abbr, random_mode=random_mode)
         return state_name, state_abbr, city_name
 
-    def batch_sample_locations(self, n: int) -> list[dict[str, str]]:
+    def batch_sample_locations(self, n: int, random_mode: bool = False) -> list[dict[str, str]]:
         """Draw n location samples with batched random calls.
 
         Mathematically identical to calling get_state_and_city() n times —
@@ -169,12 +183,17 @@ class BrazilianLocationSampler:
 
         Args:
             n: Number of location samples to draw.
+            random_mode: When ``True``, ignore population weights and draw
+                states / cities uniformly. Use this when the caller has
+                explicitly opted out of realism (``random=True`` in the
+                public ``sample()`` API).
 
         Returns:
             List of dicts with keys: state_name, state_abbr, city_name
         """
         # Stage 1: batch-draw all states (self.state_names holds full names)
-        drawn_state_names = random.choices(self.state_names, weights=self.state_weights, k=n)
+        state_weights = None if random_mode else self.state_weights
+        drawn_state_names = random.choices(self.state_names, weights=state_weights, k=n)
 
         # Map full names to abbreviations for city lookup
         state_abbr_map = {name: self.data['states'][name]['state_abbr'] for name in set(drawn_state_names)}
@@ -186,9 +205,10 @@ class BrazilianLocationSampler:
         for state_name, count in state_name_counts.items():
             abbr = state_abbr_map[state_name]
             if abbr in self.city_names_by_state:
+                city_weights = None if random_mode else self.city_weights_by_state[abbr]
                 city_draws[state_name] = random.choices(
                     self.city_names_by_state[abbr],
-                    weights=self.city_weights_by_state[abbr],
+                    weights=city_weights,
                     k=count,
                 )
             else:

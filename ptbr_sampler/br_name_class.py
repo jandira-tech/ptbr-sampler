@@ -324,7 +324,7 @@ class BrazilianNameSampler:
             return False
         return random.random() < (self.middle_names_data['percentage_with_second'] / 100)
 
-    def _get_random_middle_name(self) -> str:
+    def _get_random_middle_name(self, random_mode: bool = False) -> str:
         """Return one middle name draw using the cached alias table.
 
         Kept as a compatibility shim so callers and tests that reach into
@@ -339,7 +339,8 @@ class BrazilianNameSampler:
         if table is None:
             return ''
         rng = _rng_from_python_random()
-        return str(table.sample(1, rng)[0])
+        draws = table.sample_uniform(1, rng) if random_mode else table.sample(1, rng)
+        return str(draws[0])
 
     # ------------------------------------------------------------------
     # Public draw API
@@ -355,13 +356,20 @@ class BrazilianNameSampler:
         always_middle: bool = False,
         only_middle: bool = False,
         return_components: bool = False,
+        random_mode: bool = False,
     ) -> str | NameComponents:
         """Get a single random name. Delegates to the unified batch path
         with ``k=1`` so the batch and single-sample code paths share one
         vectorised alias lookup.
+
+        Args:
+            random_mode: When ``True``, draw uniformly from the support
+                instead of honouring the empirical frequency weights. This is
+                the explicit-random escape hatch documented in the README.
+                Default ``False`` keeps the realism-by-default behaviour.
         """
         if only_middle:
-            middle_name = self._get_random_middle_name()
+            middle_name = self._get_random_middle_name(random_mode=random_mode)
             if return_components:
                 return NameComponents('', middle_name, '')
             return middle_name.upper() if raw else middle_name
@@ -374,6 +382,7 @@ class BrazilianNameSampler:
             top_40=top_40,
             with_only_one_surname=with_only_one_surname,
             always_middle=always_middle,
+            random_mode=random_mode,
         )[0]
 
         if return_components:
@@ -395,6 +404,7 @@ class BrazilianNameSampler:
         top_40: bool = False,
         with_only_one_surname: bool = False,
         always_middle: bool = False,
+        random_mode: bool = False,
     ) -> list[NameComponents]:
         """Draw ``n`` name components with one vectorised alias lookup per
         independent draw (first names, middle names, two surnames).
@@ -402,6 +412,11 @@ class BrazilianNameSampler:
         The only difference between ``batch_sample_names(1)`` and
         ``get_random_name(..., return_components=True)`` is the return type
         (a one-element list vs. a single ``NameComponents``).
+
+        Args:
+            random_mode: When ``True``, draw uniformly from each table
+                instead of honouring the empirical frequencies. Default
+                ``False`` keeps the realism-by-default behaviour.
         """
         if n <= 0:
             return []
@@ -413,6 +428,7 @@ class BrazilianNameSampler:
             top_40=top_40,
             with_only_one_surname=with_only_one_surname,
             always_middle=always_middle,
+            random_mode=random_mode,
         )
 
     def get_random_surname(
@@ -420,11 +436,17 @@ class BrazilianNameSampler:
         top_40: bool = False,
         raw: bool = False,
         with_only_one_surname: bool = False,
+        random_mode: bool = False,
     ) -> str:
-        """Get random surname(s), optionally from top 40 only."""
+        """Get random surname(s), optionally from top 40 only.
+
+        Args:
+            random_mode: When ``True``, draw surnames uniformly across the
+                table instead of using empirical frequencies.
+        """
         rng = _rng_from_python_random()
         table = self._top_40_table() if top_40 else self._surnames_table()
-        draws = table.sample(2, rng)
+        draws = table.sample_uniform(2, rng) if random_mode else table.sample(2, rng)
         surname1 = str(draws[0])
         surname2 = str(draws[1])
         return self._assemble_surname(
@@ -448,24 +470,27 @@ class BrazilianNameSampler:
         top_40: bool,
         with_only_one_surname: bool,
         always_middle: bool,
+        random_mode: bool = False,
     ) -> list[NameComponents]:
         rng = _rng_from_python_random()
 
         first_table = self._first_names_table(time_period)
-        first_draws = first_table.sample(n, rng)
+        first_draws = first_table.sample_uniform(n, rng) if random_mode else first_table.sample(n, rng)
         first_names = [(str(name).upper() if raw else str(name)) for name in first_draws]
 
-        middle_names: list[str | None] = self._draw_middle_names(n, raw=raw, always_middle=always_middle, rng=rng)
+        middle_names: list[str | None] = self._draw_middle_names(
+            n, raw=raw, always_middle=always_middle, rng=rng, random_mode=random_mode,
+        )
 
         if not include_surname:
             return [NameComponents(first_names[i], middle_names[i], '') for i in range(n)]
 
         surname_table = self._top_40_table() if top_40 else self._surnames_table()
-        surname_draws_a = surname_table.sample(n, rng)
+        surname_draws_a = surname_table.sample_uniform(n, rng) if random_mode else surname_table.sample(n, rng)
         if with_only_one_surname:
             surname_draws_b: np.ndarray | None = None
         else:
-            surname_draws_b = surname_table.sample(n, rng)
+            surname_draws_b = surname_table.sample_uniform(n, rng) if random_mode else surname_table.sample(n, rng)
 
         results: list[NameComponents] = []
         for i in range(n):
@@ -487,6 +512,7 @@ class BrazilianNameSampler:
         raw: bool,
         always_middle: bool,
         rng: np.random.Generator,
+        random_mode: bool = False,
     ) -> list[str | None]:
         middle_names: list[str | None] = [None] * n
         if not self.middle_names_data:
@@ -495,19 +521,26 @@ class BrazilianNameSampler:
         if table is None:
             return middle_names
 
+        def _draw_n(k: int) -> np.ndarray:
+            return table.sample_uniform(k, rng) if random_mode else table.sample(k, rng)
+
         if always_middle:
-            draws = table.sample(n, rng)
+            draws = _draw_n(n)
             for i, name in enumerate(draws):
                 s = str(name)
                 middle_names[i] = s.upper() if raw else s
             return middle_names
 
-        threshold = float(self.middle_names_data['percentage_with_second']) / 100.0
+        # In random mode, the empirical 30.99% inclusion rate is replaced by
+        # a flat coin flip — that's the whole point of the escape hatch:
+        # ``random=True`` drops realism-oriented assumptions, including the
+        # ``percentage_with_second`` documented in the README.
+        threshold = 0.5 if random_mode else float(self.middle_names_data['percentage_with_second']) / 100.0
         middle_name_flags = rng.random(n) < threshold
         need = int(np.count_nonzero(middle_name_flags))
         if need == 0:
             return middle_names
-        draws = table.sample(need, rng)
+        draws = _draw_n(need)
         j = 0
         for i in range(n):
             if middle_name_flags[i]:

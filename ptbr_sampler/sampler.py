@@ -284,6 +284,7 @@ def sample(
     all_data: bool,
     progress_callback: Callable[[int, str], None] | None = None,
     append_to_jsonl: bool = False,
+    random: bool = False,
 ) -> dict | list[dict]:
     """
     Generate randomized Brazilian profiles composed of name, location, and document fields according to the supplied flags.
@@ -320,7 +321,14 @@ def sample(
         all_data (bool): If True, enable all `always_*` outputs and disable mutually exclusive `only_*`/`only_*` output restrictions.
         progress_callback (Callable[[int, str], None] | None): Optional callback receiving (completed_count, message) to report progress.
         append_to_jsonl (bool): If True, append to `save_to_jsonl` file instead of overwriting.
-    
+        random (bool): If True, switch to the explicit-random escape hatch:
+            uniform location sampling (no population weighting), uniform name
+            draws (no frequency weighting), and a flat 50% middle-name flag in
+            place of the empirical 30.99% rate. The default (False) keeps
+            realism-by-default sampling — geography first via population
+            weights, then names from the IBGE-derived alias tables. See the
+            "Realism vs. random mode" section in the README for details.
+
     Returns:
         dict: A single generated sample when a single result was requested.
         list[dict]: A list of generated samples when multiple results were requested.
@@ -406,7 +414,7 @@ def sample(
                 documents = {}
 
                 # Generate location first to get proper state for RG
-                state_name, state_abbr, city_name = location_sampler.get_state_and_city()
+                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random)
                 state_city_info.append((state_name, state_abbr, city_name))
 
                 # Generate all requested documents
@@ -440,7 +448,7 @@ def sample(
                 # No need to reload location data - already loaded once at the beginning
 
                 # Generate location first to get proper state for RG
-                state_name, state_abbr, city_name = location_sampler.get_state_and_city()
+                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random)
                 state_city_info.append((state_name, state_abbr, city_name))
                 if only_cpf:
                     documents['cpf'] = doc_sampler.generate_cpf()
@@ -473,15 +481,24 @@ def sample(
                 # No need to reload location data - already loaded once at the beginning
 
                 # Generate location first to get proper state and DDD
-                state_name, state_abbr, city_name = location_sampler.get_state_and_city()
+                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random)
                 state_city_info.append((state_name, state_abbr, city_name))
 
                 if only_surname:
                     name_components = NameComponents(
-                        '', None, name_sampler.get_random_surname(top_40=top_40, raw=name_raw, with_only_one_surname=with_only_one_surname)
+                        '',
+                        None,
+                        name_sampler.get_random_surname(
+                            top_40=top_40,
+                            raw=name_raw,
+                            with_only_one_surname=with_only_one_surname,
+                            random_mode=random,
+                        ),
                     )
                 elif only_middle:
-                    name_components = name_sampler.get_random_name(raw=name_raw, only_middle=True, return_components=True)
+                    name_components = name_sampler.get_random_name(
+                        raw=name_raw, only_middle=True, return_components=True, random_mode=random,
+                    )
                 else:
                     name_components = name_sampler.get_random_name(
                         time_period=time_period,
@@ -491,6 +508,7 @@ def sample(
                         with_only_one_surname=with_only_one_surname,
                         always_middle=always_middle,
                         return_components=True,
+                        random_mode=random,
                     )
 
                     # Add documents for full names
@@ -524,7 +542,7 @@ def sample(
             # through the same vectorised alias lookup. ``--batch`` is a
             # flush-to-disk cadence (see ``save_to_jsonl`` below), not a
             # sampling-strategy switch.
-            batch_locations = location_sampler.batch_sample_locations(actual_qty)
+            batch_locations = location_sampler.batch_sample_locations(actual_qty, random_mode=random)
             batch_names = name_sampler.batch_sample_names(
                 actual_qty,
                 time_period=time_period,
@@ -533,6 +551,7 @@ def sample(
                 top_40=top_40,
                 with_only_one_surname=with_only_one_surname,
                 always_middle=always_middle,
+                random_mode=random,
             )
 
             for i in range(actual_qty):

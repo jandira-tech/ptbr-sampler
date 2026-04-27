@@ -51,10 +51,17 @@ _DEFAULTS = {
     'locations_path': _DATA_DIR / 'locations_data.json',
     'save_to_jsonl': None,
     'all_data': False,
+    'random': False,
 }
 
 
-def sample(q: int | None = None, save_to_jsonl: str | None = None, all_data: bool = False, **kwargs) -> dict | list[dict]:
+def sample(
+    q: int | None = None,
+    save_to_jsonl: str | None = None,
+    all_data: bool = False,
+    random: bool = False,
+    **kwargs,
+) -> dict | list[dict]:
     """
     Generate random Brazilian name, location, and document samples.
 
@@ -64,6 +71,11 @@ def sample(q: int | None = None, save_to_jsonl: str | None = None, all_data: boo
             default of 1).
         save_to_jsonl: Path to save generated samples as JSONL
         all_data: Include all possible data in the generated samples
+        random: Explicit random mode (opt-out of realism). When ``True``, the
+            sampler ignores population weights for locations and frequency
+            weights for names, and uses a flat 50% middle-name flag in place
+            of the empirical 30.99% rate. Default ``False`` keeps the
+            realism-by-default path described in the README.
         **kwargs: Additional parameters passed directly to cli.sample
 
     Common keyword arguments:
@@ -116,6 +128,7 @@ def sample(q: int | None = None, save_to_jsonl: str | None = None, all_data: boo
     merged['q'] = q
     merged['save_to_jsonl'] = save_to_jsonl
     merged['all_data'] = all_data
+    merged['random'] = random
 
     return sampler_function(**merged)
 

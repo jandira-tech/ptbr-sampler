@@ -48,6 +48,11 @@ uv run ptbr sample --qty 1
 
 # Generate specific documents only
 uv run ptbr sample --only-cpf --only-rg --qty 3
+
+# "Realism off" mode (intentionally non-realistic output): uniform
+# location across states/cities, uniform name draws, flat 50/50
+# middle-name flag instead of the empirical 30.99%.
+uv run ptbr sample --qty 5 --random
 ```
 
 ### Python API
@@ -218,6 +223,102 @@ To materialise the Parquet layout from the legacy JSON files:
 ```bash
 python -m scripts.ingest_to_parquet
 ```
+
+## 🧭 Realism by default (and an explicit random escape hatch)
+
+The default path is **realism-by-default**:
+
+1. geography is sampled first, weighted by population (state and city);
+2. names are drawn from alias tables that encode the empirical IBGE /
+   civil-registry distributions, conditioned on whichever dimensions are
+   actually available in the bundled data.
+
+Callers that want intentionally less realistic output can opt in via
+`random=True` (Python) or `--random` (CLI):
+
+```python
+from sample import sample
+sample(q=5)                 # realism by default (recommended)
+sample(q=5, random=True)    # explicit random mode
+```
+
+In random mode the sampler **ignores** population weights for location,
+**ignores** frequency weights for names/surnames, and replaces the
+empirical 30.99% middle-name flag with a flat 50/50 coin flip. This is
+deliberate: realism remains the project's goal, and the flag makes the
+escape hatch explicit.
+
+The realistic path **only** conditions on dimensions that actually
+exist in the bundled data: `period` for first names, `scope=national`
+for surnames, and population shares for geography. UF- and
+sex-conditioned realism are blocked on data ingest, not on code — see
+"Known realism gaps" below.
+
+## 📥 Download data and rebuild the Parquet layout
+
+To rebuild the bundled artefacts from scratch (`todo.md` items 1 and 11):
+
+```bash
+# 1. Inventory: what's present locally, and what does each dataset power?
+python -m scripts.download_datasets
+
+# 2. For any [MISS] row, fetch the source (URL printed above) and drop
+#    it under ptbr_sampler/data/raw/<name>/. The script is declarative:
+#    it does NOT silently scrape IBGE/Arpen because terms-of-use and
+#    rate limits make interactive download the right default.
+
+# 3. Rebuild the partitioned Parquet layout from the JSON sources:
+python -m scripts.ingest_to_parquet
+
+# 4. Re-run the tests:
+uv run --extra test pytest -q
+```
+
+Each dataset's source URL, raw local path, and what it powers are
+tabulated in [`docs/data-origins.md`](docs/data-origins.md) under
+"Download-and-rebuild walkthrough".
+
+## ⚠️ Known realism gaps
+
+Operational summary of where the available data **limits** sampling
+realism today. Full details live in `docs/data-origins.md`,
+`docs/architecture.md`, and `deep-research-report(4).md`.
+
+- **No UF conditioning for names / surnames.** The Parquet layout
+  already carries `uf`, `period`, and `sex` partition keys, but the
+  IBGE *Nomes no Brasil* 2022 ingest (which would populate them) is not
+  yet bundled. Surnames currently come from a pooled-national
+  distribution — this understates strong regional effects (`Santos`
+  43.38% in Sergipe, `Silva` 35.75% in Alagoas). Blocked on data, not
+  on code.
+- **No sex conditioning.** Same reason: `names_data.json` is
+  sex-mixed. The sampler does not invent or infer a sex split.
+- **Time horizon capped at `UNTIL_2010`.** The latest bucket covers
+  births up to 2010 (IBGE stock). Recent cohorts (2011–2024) sit
+  outside; the Arpen 2024 ranking is a newborn-flow benchmark, not a
+  population-stock replacement.
+- **`top_40` is a historical-data mode.** It exists because, in the
+  legacy extract, only the top-40 surnames were consolidated reliably.
+  The full ~86k-entry table tracks the empirical distribution more
+  faithfully. `top_40` is kept for convenience; do not read it as the
+  realism-preserving path.
+- **Two-surname convention.** Brazilian civil naming overwhelmingly
+  uses **at least two surnames** (one per parental line). The default
+  preserves this. `with_only_one_surname=True` is a
+  compatibility / convenience override, **not** the realistic default.
+- **`middle_names.json` provenance.** Civil-registry extract filtered
+  through the given-name whitelist and surname blocklist in
+  `ptbr_sampler/sampling/vocabulary.py`; the cleaning pipeline is
+  reproducible via `python -m scripts.ingest_to_parquet`. IBGE *Nomes
+  no Brasil* disseminates first name only, so this dataset is
+  authorial by necessity. Detailed provenance in `docs/data-origins.md`.
+- **`percentage_with_second = 30.99%`.** Computed directly from the
+  raw extract (`1,640,514 / 5,293,204`). Transparent for that corpus,
+  but the corpus itself is the authorial extraction. Read it as a
+  transparent estimate, not as an IBGE-published statistic.
+- **`random=True` relaxes every conditioning dimension.** It is the
+  honest counterpart of realism-by-default: callers who want uniform
+  output have an explicit way to ask for it.
 
 ## 📄 License
 
