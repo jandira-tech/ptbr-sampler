@@ -203,3 +203,4 @@ python -m scripts.ingest_to_parquet
 ## 📄 Licença
 
 Este projeto está licenciado sob a Licença MIT - consulte o arquivo [LICENSE](LICENSE) para obter detalhes.
+
