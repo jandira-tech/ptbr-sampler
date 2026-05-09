@@ -287,6 +287,12 @@ over HTTPS. Sandboxes that restrict outbound egress (the one this repo
 is developed in, for example) fail with `Host not in allowlist` / 403.
 Run on a machine with general internet egress.
 
+> **Cross-machine handoff.** If you are running the fetch on a separate
+> machine and returning to Claude Code afterwards, follow the runbook
+> in [`docs/handoff-fetch-and-ingest.md`](docs/handoff-fetch-and-ingest.md)
+> and the return template in
+> [`docs/handoff-resume-with-claude.md`](docs/handoff-resume-with-claude.md).
+
 ### UF / sex conditioning (experimental)
 
 Once the step 2a rankings are ingested, the sampler can condition

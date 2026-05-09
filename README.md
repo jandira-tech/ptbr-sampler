@@ -269,6 +269,12 @@ HTTPS; sandboxes que restringem egress (este repositório é desenvolvido
 em um deles) falham com "Host not in allowlist" / 403. Rode em uma
 máquina com saída de internet liberada.
 
+> **Handoff entre máquinas.** Se você está rodando o fetch em outra
+> máquina e voltando para o Claude Code depois, siga o roteiro em
+> [`docs/handoff-fetch-and-ingest.md`](docs/handoff-fetch-and-ingest.md)
+> e o template de retorno em
+> [`docs/handoff-resume-with-claude.md`](docs/handoff-resume-with-claude.md).
+
 ### Condicionamento UF × sexo (experimental)
 
 Quando os rankings do passo 2a são ingeridos, o amostrador pode
