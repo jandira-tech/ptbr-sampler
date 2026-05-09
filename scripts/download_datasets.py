@@ -38,7 +38,9 @@ Usage
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
+import shutil
 import sys
 import time
 import urllib.error
@@ -51,6 +53,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 _DATA_DIR = _REPO_ROOT / 'ptbr_sampler' / 'data'
 _RAW_DIR = _DATA_DIR / 'raw'
 _NOMES_V2_RAW = _RAW_DIR / 'ibge_nomes_v2'
+_GENERO_NOMES_RAW = _RAW_DIR / 'genero_nomes'
+
+_GENERO_NOMES_URL = 'https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz'
 
 # IBGE municipal codes for the 26 UFs + the Federal District. Using the
 # 2-digit UF codes returns one row per (sexo, decada) per UF.
@@ -107,6 +112,23 @@ TARGETS: tuple[DatasetTarget, ...] = (
         powers=(
             'parquet/first_names/uf=<UF>/period=ate<YYYY>/sex=<M|F>/part.parquet '
             '(unblocks UF and sex conditioning).'
+        ),
+    ),
+    DatasetTarget(
+        label='brasil.io / genero-nomes (Álvaro Justen / turicas)',
+        description=(
+            'Per-name male/female frequencies (~100k names, national). Built '
+            "by Brasil.IO from the IBGE Nomes API; same provenance lineage "
+            'as our period-only data. Powers the sex prior P(sex|name) used '
+            'for the period x sex first-name partitions. Fetch with '
+            '--fetch-genero-nomes.'
+        ),
+        source_url=_GENERO_NOMES_URL,
+        raw_local_path=_GENERO_NOMES_RAW,
+        powers=(
+            'parquet/sex_prior/scope=national/part.parquet AND '
+            'parquet/first_names/period=ate<YYYY>/sex=<M|F>/part.parquet '
+            '(period x sex national, full long tail).'
         ),
     ),
     DatasetTarget(
@@ -242,6 +264,8 @@ def report() -> int:
     print('    python -m scripts.ingest_to_parquet')
     print('To fetch IBGE Nomes API v2 UF x sexo x decada rankings (~540 calls):')
     print('    python -m scripts.download_datasets --fetch-ibge-nomes')
+    print('To fetch the brasil.io/genero-nomes sex prior (national, full long tail):')
+    print('    python -m scripts.download_datasets --fetch-genero-nomes')
     return missing
 
 
@@ -340,6 +364,48 @@ def fetch_ibge_first_names_v2(
 
 
 # ----------------------------------------------------------------------
+# brasil.io / genero-nomes fetcher
+# ----------------------------------------------------------------------
+
+
+def fetch_genero_nomes(
+    out_dir: Path = _GENERO_NOMES_RAW,
+    *,
+    url: str = _GENERO_NOMES_URL,
+    timeout: float = 120.0,
+    overwrite: bool = False,
+    user_agent: str = 'ptbr-sampler/0.2 (+https://github.com/arthrod/ptbr-sampler)',
+) -> Path:
+    """Download the brasil.io ``genero-nomes/nomes.csv.gz`` dump.
+
+    The Brasil.IO dataset (curated by Álvaro Justen / @turicas) wraps the
+    public IBGE Nomes API and publishes per-name male/female frequencies
+    nationally (~100k names). Same provenance lineage as our period-only
+    data — citing the source explicitly so downstream consumers can audit
+    where the sex prior comes from.
+
+    Returns the path of the gunzipped CSV.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    gz_path = out_dir / 'nomes.csv.gz'
+    csv_path = out_dir / 'nomes.csv'
+    if csv_path.exists() and not overwrite:
+        print(f'  already present: {csv_path.relative_to(_REPO_ROOT)} (pass --overwrite to refetch)')
+        return csv_path
+    print(f'  source: {url}')
+    print(f'  target: {gz_path.relative_to(_REPO_ROOT)}')
+    req = urllib.request.Request(url, headers={'User-Agent': user_agent})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - public Brasil.IO HTTPS endpoint
+        with gz_path.open('wb') as f:
+            shutil.copyfileobj(resp, f)
+    with gzip.open(gz_path, 'rb') as zin, csv_path.open('wb') as zout:
+        shutil.copyfileobj(zin, zout)
+    size_mib = csv_path.stat().st_size / (1024 * 1024)
+    print(f'  wrote: {csv_path.relative_to(_REPO_ROOT)} ({size_mib:.1f} MiB)')
+    return csv_path
+
+
+# ----------------------------------------------------------------------
 # Entry point
 # ----------------------------------------------------------------------
 
@@ -349,6 +415,15 @@ def main(argv: list[str] | None = None) -> int:
         '--fetch-ibge-nomes',
         action='store_true',
         help='Download UF x sexo x decada rankings from the IBGE Nomes v2 API.',
+    )
+    parser.add_argument(
+        '--fetch-genero-nomes',
+        action='store_true',
+        help=(
+            'Download brasil.io/genero-nomes nomes.csv.gz. Provides the sex '
+            'prior used by the period x sex first-name partitions. Source: '
+            f'{_GENERO_NOMES_URL}'
+        ),
     )
     parser.add_argument(
         '--overwrite',
@@ -368,6 +443,10 @@ def main(argv: list[str] | None = None) -> int:
         print('\nFetching IBGE Nomes API v2 (UF x sexo x decada)...')
         written, skipped = fetch_ibge_first_names_v2(overwrite=args.overwrite)
         print(f'  wrote: {written}, skipped: {skipped}')
+
+    if args.fetch_genero_nomes:
+        print('\nFetching brasil.io/genero-nomes (sex prior)...')
+        fetch_genero_nomes(overwrite=args.overwrite)
 
     if args.rebuild:
         from scripts.ingest_to_parquet import main as ingest_main  # noqa: PLC0415 - keep ingest import lazy

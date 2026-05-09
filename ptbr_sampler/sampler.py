@@ -286,6 +286,7 @@ def sample(
     append_to_jsonl: bool = False,
     random: bool = False,
     experimental_uf_sex_conditioning: bool = False,
+    sex_conditioning: str | None = None,
 ) -> dict | list[dict]:
     """
     Generate randomized Brazilian profiles composed of name, location, and document fields according to the supplied flags.
@@ -341,6 +342,20 @@ def sample(
             (~thousands of names per period).** Default ``False`` keeps
             the period-only path. Rows whose partition is missing fall back
             to the period-only table individually.
+        sex_conditioning (str | None): Drive first-name sampling from the
+            ``parquet/first_names/period=<P>/sex=<S>/`` partitions
+            (national, full long tail — built from IBGE Nomes percentages
+            multiplied by the brasil.io/genero-nomes sex prior; see
+            ``docs/data-origins.md``). Accepts:
+              * ``'M'`` — every row drawn from the male partition
+              * ``'F'`` — every row drawn from the female partition
+              * ``'mixed'`` — 50/50 per row
+              * ``None`` (default) — no sex conditioning, period-only table
+            Compatible with ``experimental_uf_sex_conditioning``: when both
+            are on, UF still comes from the sampled location and sex from
+            this argument. When the per-row partition is missing, the
+            sampler falls back through the resolution chain documented in
+            ``BrazilianNameSampler._first_names_table``.
 
     Returns:
         dict: A single generated sample when a single result was requested.
@@ -420,6 +435,25 @@ def sample(
         # address phase can reuse the same draws without a second batch.
         results: list[tuple[str, NameComponents, dict[str, str]]] = []
         state_city_info: list[tuple[str, str, str]] = []
+
+        # Resolve sex_conditioning once and pre-compute the per-row sex list
+        # so every name-generation branch (single-row, batch, or
+        # return-only-name) honours the same conditioning.
+        sex_conditioning_norm: str | None = None
+        if sex_conditioning is not None:
+            sc = str(sex_conditioning).strip().upper()
+            if sc not in ('M', 'F', 'MIXED'):
+                raise ValueError(
+                    f"sex_conditioning must be 'M', 'F', 'mixed', or None; got {sex_conditioning!r}"
+                )
+            sex_conditioning_norm = sc
+        per_row_sexes: list[str] | None = None
+        if sex_conditioning_norm == 'MIXED':
+            import random as _stdlib_random  # noqa: PLC0415 - local to the conditional path
+
+            per_row_sexes = [_stdlib_random.choice(('M', 'F')) for _ in range(actual_qty)]
+        elif sex_conditioning_norm in ('M', 'F'):
+            per_row_sexes = [sex_conditioning_norm] * actual_qty
 
         if only_document:
             # Document-only generation with proper state handling
@@ -522,6 +556,7 @@ def sample(
                         always_middle=always_middle,
                         return_components=True,
                         random_mode=random,
+                        sex=per_row_sexes[i] if per_row_sexes is not None else None,
                     )
 
                     # Add documents for full names
@@ -562,12 +597,16 @@ def sample(
             # if a (uf, period, sex) partition is absent, so this is safe to
             # pass even when only some partitions have been ingested.
             batch_ufs: list[str] | None = None
-            batch_sexes: list[str] | None = None
+            batch_sexes: list[str] | None = per_row_sexes
             if experimental_uf_sex_conditioning:
-                import random as _stdlib_random  # noqa: PLC0415 - local to the experimental path
-
                 batch_ufs = [loc['state_abbr'] for loc in batch_locations]
-                batch_sexes = [_stdlib_random.choice(('M', 'F')) for _ in range(actual_qty)]
+                if batch_sexes is None:
+                    # Legacy experimental-flag behaviour: 50/50 sex draw when
+                    # no explicit sex_conditioning was requested but UF×sex
+                    # partitions are being targeted.
+                    import random as _stdlib_random  # noqa: PLC0415 - local to the experimental path
+
+                    batch_sexes = [_stdlib_random.choice(('M', 'F')) for _ in range(actual_qty)]
             batch_names = name_sampler.batch_sample_names(
                 actual_qty,
                 time_period=time_period,

@@ -1,0 +1,14 @@
+{
+  "source": "brasil.io/genero-nomes (Álvaro Justen / @turicas), built from the public IBGE Nomes API. Mirrored at https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz + Gemini gap-fill for names absent from genero-nomes (see docs/sources/gemini-gender-classifications.md; row's 'source' column carries the originating label per row).",
+  "url": "https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz",
+  "rows": 107933,
+  "fetched_at_utc": "2026-05-09T06:58:38+00:00",
+  "ingester": "scripts/ingest_to_parquet.py",
+  "partition": "sex_prior/scope=national",
+  "source_counts": {
+    "genero": 100787,
+    "gemini_M": 3870,
+    "gemini_F": 3153,
+    "gemini_U": 123
+  }
+}

@@ -175,6 +175,11 @@ class BrazilianNameSampler:
         # UF x period x sex caches: distinct from the period-only cache because
         # the on-disk partition path differs and keys are (uf, period, sex).
         self._first_name_uf_sex_alias: dict[tuple[str, str, str], AliasTable | None] = {}
+        # Period x sex caches (national, full long tail). Populated when the
+        # parquet/first_names/period=<P>/sex=<S>/ partitions exist (built from
+        # IBGE Nomes percentages * brasil.io/genero-nomes sex prior; see
+        # docs/data-origins.md).
+        self._first_name_period_sex_alias: dict[tuple[str, str], AliasTable | None] = {}
         self._surname_alias: AliasTable | None = None
         self._top_40_alias: AliasTable | None = None
         self._middle_name_alias: AliasTable | None = None
@@ -264,12 +269,17 @@ class BrazilianNameSampler:
 
         1. ``parquet_root/first_names/uf=<UF>/period=<P>/sex=<S>/`` — used
            when both ``uf`` and ``sex`` are provided AND the partition
-           file exists. This is the realistic path unlocked by
-           ``scripts.download_datasets --fetch-ibge-nomes``.
-        2. ``parquet_root/first_names/period=<P>/`` — the existing
+           file exists. Built from the IBGE Nomes v2 ranking endpoint
+           (top-20 only); narrow but UF-realistic.
+        2. ``parquet_root/first_names/period=<P>/sex=<S>/`` — period-x-sex
+           national, full long tail. Built from
+           ``names_data.json`` percentages * brasil.io/genero-nomes
+           sex prior. Used when ``sex`` is provided alone, or as the
+           back-fill when (1) is missing.
+        3. ``parquet_root/first_names/period=<P>/`` — the existing
            period-only Parquet partition, populated from
            ``names_data.json`` by ``scripts.ingest_to_parquet``.
-        3. The legacy in-memory ``names_data.json`` mapping — exercised
+        4. The legacy in-memory ``names_data.json`` mapping — exercised
            only by unit tests that override the distribution.
         """
         period_key = time_period.value
@@ -292,6 +302,22 @@ class BrazilianNameSampler:
             # Cache the negative result — there's no point re-stat'ing the
             # same missing partition for every draw of this period.
             self._first_name_uf_sex_alias[cache_key] = None
+
+        if sex is not None and self.parquet_root is not None:
+            ps_key = (period_key, sex)
+            cached_ps = self._first_name_period_sex_alias.get(ps_key)
+            if cached_ps is not None:
+                return cached_ps
+            spec = PartitionSpec.of(
+                self.parquet_root / 'first_names',
+                period=period_key,
+                sex=sex,
+            )
+            table = self._load_from_parquet(spec)
+            if table is not None:
+                self._first_name_period_sex_alias[ps_key] = table
+                return table
+            self._first_name_period_sex_alias[ps_key] = None
 
         cached = self._first_name_alias.get(period_key)
         if cached is not None:

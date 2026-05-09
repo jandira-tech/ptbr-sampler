@@ -29,6 +29,8 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import csv
+import datetime
 import json
 import sys
 from collections.abc import Iterable
@@ -39,6 +41,8 @@ import pyarrow.parquet as pq
 
 from ptbr_sampler.sampling.vocabulary import GivenNameVocabulary
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
 _SCHEMA = pa.schema(
     [
         pa.field('name', pa.dictionary(pa.int32(), pa.large_string())),
@@ -46,6 +50,52 @@ _SCHEMA = pa.schema(
         pa.field('weight', pa.float32()),
     ]
 )
+
+_SEX_PRIOR_SCHEMA = pa.schema(
+    [
+        pa.field('name', pa.dictionary(pa.int32(), pa.large_string())),
+        pa.field('count_male', pa.uint64()),
+        pa.field('count_female', pa.uint64()),
+        pa.field('count_total', pa.uint64()),
+        pa.field('p_male', pa.float32()),
+        pa.field('p_female', pa.float32()),
+        pa.field('classification', pa.large_string()),
+        pa.field('group_name', pa.large_string()),
+        # Provenance label so reviewers can audit which rows are empirical
+        # ('brasil.io/genero-nomes') vs LLM-tagged ('gemini-...').
+        pa.field('source', pa.large_string()),
+    ]
+)
+
+_GENERO_NOMES_URL = 'https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz'
+_GENERO_NOMES_PROVENANCE = (
+    'brasil.io/genero-nomes (Álvaro Justen / @turicas), built from the public '
+    'IBGE Nomes API. Mirrored at ' + _GENERO_NOMES_URL
+)
+_GENERO_NOMES_SOURCE_LABEL = 'brasil.io/genero-nomes'
+
+
+def _write_origin_sidecar(out_dir: Path, *, source: str, url: str, rows: int, extra: dict | None = None) -> None:
+    """Write a tiny ``data_origin.json`` next to a parquet partition.
+
+    Reviewers reading the bundled data should be able to trace any partition
+    back to the upstream source without grepping the ingester. Keep the
+    payload small and machine-readable.
+    """
+    payload: dict[str, object] = {
+        'source': source,
+        'url': url,
+        'rows': rows,
+        'fetched_at_utc': datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds'),
+        'ingester': 'scripts/ingest_to_parquet.py',
+    }
+    if extra:
+        payload.update(extra)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / 'data_origin.json').write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + '\n',
+        encoding='utf-8',
+    )
 
 
 def _write_partition(out_dir: Path, names: list[str], counts: list[int], weights: list[float]) -> None:
@@ -209,6 +259,348 @@ def ingest_first_names_uf_sex(raw_root: Path, out_root: Path) -> dict[tuple[str,
     return stats
 
 
+def _read_genero_nomes(csv_path: Path) -> dict[str, dict[str, float | int | str]]:
+    """Parse ``brasil.io/genero-nomes`` ``nomes.csv`` into a name-keyed dict.
+
+    Empty cells in ``frequency_male`` / ``frequency_female`` mean "not seen
+    for that sex" — they're zero, not unknown. ``classification`` is the M/F
+    label brasil.io assigns (the dataset has only F and M classes; no
+    Unisex/Indeterminate row in the published dump). Names are uppercase to
+    match the canonical first-name partitions. Each row carries
+    ``source = 'brasil.io/genero-nomes'`` so the ingester can stamp the
+    provenance through to the parquet ``source`` column.
+    """
+    by_name: dict[str, dict[str, float | int | str]] = {}
+    if not csv_path.exists():
+        return by_name
+    with csv_path.open(encoding='utf-8', newline='') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            name = (row.get('first_name') or '').strip().upper()
+            if not name:
+                continue
+            try:
+                cm = int(row.get('frequency_male') or 0)
+            except (TypeError, ValueError):
+                cm = 0
+            try:
+                cf = int(row.get('frequency_female') or 0)
+            except (TypeError, ValueError):
+                cf = 0
+            try:
+                ct = int(row.get('frequency_total') or 0)
+            except (TypeError, ValueError):
+                ct = 0
+            if ct <= 0:
+                ct = cm + cf
+            if ct <= 0:
+                continue
+            denom = cm + cf
+            if denom > 0:
+                p_male = cm / denom
+                p_female = cf / denom
+            else:
+                p_male = 0.0
+                p_female = 0.0
+            by_name[name] = {
+                'count_male': cm,
+                'count_female': cf,
+                'count_total': ct,
+                'p_male': p_male,
+                'p_female': p_female,
+                'classification': (row.get('classification') or '').strip(),
+                'group_name': (row.get('group_name') or '').strip(),
+                'source': _GENERO_NOMES_SOURCE_LABEL,
+            }
+    return by_name
+
+
+def _read_gemini_classifications(jsonl_path: Path) -> dict[str, dict[str, str]]:
+    """Read the Gemini gap-fill output produced by
+    ``scripts.classify_unmatched_names_gemini``.
+
+    Each line is ``{"name": "...", "gender": "M|F|U", "model": "...", ...}``.
+    Returns ``{name (uppercase): {'gender', 'model'}}``. ``U`` rows are
+    retained — the caller decides whether to drop them.
+    """
+    out: dict[str, dict[str, str]] = {}
+    if not jsonl_path.exists():
+        return out
+    with jsonl_path.open(encoding='utf-8') as f:
+        for raw in f:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                row = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            n = (row.get('name') or '').strip().upper()
+            g = (row.get('gender') or '').strip().upper()
+            m = (row.get('model') or '').strip()
+            if not n or g not in ('M', 'F', 'U'):
+                continue
+            out[n] = {'gender': g, 'model': m}
+    return out
+
+
+def _merge_sex_prior(
+    genero_csv: Path,
+    gemini_jsonl: Path,
+) -> tuple[dict[str, dict[str, float | int | str]], dict[str, int]]:
+    """Combine the genero-nomes empirical prior with the Gemini gap-fill.
+
+    Genero-nomes is the source of truth where it has a row. Gemini results
+    are layered in **only** for names that are absent from genero-nomes.
+    Gemini ``U`` (unknown) names are kept in the sex-prior table (with
+    ``p_male = p_female = 0``) for transparency, but they're filtered out
+    of the period × sex partitions because there's no defensible sex
+    weight to apply.
+
+    Returns ``(merged_dict, source_counts)`` where ``source_counts`` is
+    ``{'genero': N, 'gemini_M': N, 'gemini_F': N, 'gemini_U': N}`` — used
+    by the sidecar so reviewers can see how the row count breaks down.
+    """
+    merged = _read_genero_nomes(genero_csv)
+    gemini = _read_gemini_classifications(gemini_jsonl)
+    source_counts = {
+        'genero': len(merged),
+        'gemini_M': 0,
+        'gemini_F': 0,
+        'gemini_U': 0,
+    }
+    for name, info in gemini.items():
+        if name in merged:
+            continue  # genero-nomes wins
+        gender = info['gender']
+        model = info['model'] or 'gemini'
+        if gender == 'M':
+            merged[name] = {
+                'count_male': 1,
+                'count_female': 0,
+                'count_total': 1,
+                'p_male': 1.0,
+                'p_female': 0.0,
+                'classification': 'M',
+                'group_name': '',
+                'source': model,
+            }
+            source_counts['gemini_M'] += 1
+        elif gender == 'F':
+            merged[name] = {
+                'count_male': 0,
+                'count_female': 1,
+                'count_total': 1,
+                'p_male': 0.0,
+                'p_female': 1.0,
+                'classification': 'F',
+                'group_name': '',
+                'source': model,
+            }
+            source_counts['gemini_F'] += 1
+        else:  # 'U'
+            merged[name] = {
+                'count_male': 0,
+                'count_female': 0,
+                'count_total': 0,
+                'p_male': 0.0,
+                'p_female': 0.0,
+                'classification': 'U',
+                'group_name': '',
+                'source': model,
+            }
+            source_counts['gemini_U'] += 1
+    return merged, source_counts
+
+
+def ingest_sex_prior(csv_path: Path, out_root: Path, gemini_jsonl: Path | None = None) -> tuple[int, dict[str, int]]:
+    """Write ``parquet/sex_prior/scope=national/part.parquet`` from
+    genero-nomes, merged with the optional Gemini gap-fill.
+
+    Sources:
+      * brasil.io/genero-nomes (Álvaro Justen / @turicas; built from the
+        public IBGE Nomes API). Empirical, used wherever it has a row.
+      * Gemini ``classifications.jsonl`` (produced by
+        ``scripts.classify_unmatched_names_gemini``). Layered in only
+        for names absent from genero-nomes. Each row's ``source`` column
+        carries the originating label so consumers can audit.
+
+    Returns ``(row_count, source_counts)``.
+    """
+    by_name, source_counts = _merge_sex_prior(csv_path, gemini_jsonl or Path('/__nonexistent__'))
+    if not by_name:
+        return 0, source_counts
+    names: list[str] = []
+    cm: list[int] = []
+    cf: list[int] = []
+    ct: list[int] = []
+    pm: list[float] = []
+    pf: list[float] = []
+    cls: list[str] = []
+    grp: list[str] = []
+    src: list[str] = []
+    for name, info in by_name.items():
+        names.append(name)
+        cm.append(int(info['count_male']))
+        cf.append(int(info['count_female']))
+        ct.append(int(info['count_total']))
+        pm.append(float(info['p_male']))
+        pf.append(float(info['p_female']))
+        cls.append(str(info['classification']))
+        grp.append(str(info['group_name']))
+        src.append(str(info['source']))
+    table = pa.table(
+        {
+            'name': pa.array(names).dictionary_encode(),
+            'count_male': pa.array(cm, type=pa.uint64()),
+            'count_female': pa.array(cf, type=pa.uint64()),
+            'count_total': pa.array(ct, type=pa.uint64()),
+            'p_male': pa.array(pm, type=pa.float32()),
+            'p_female': pa.array(pf, type=pa.float32()),
+            'classification': pa.array(cls, type=pa.large_string()),
+            'group_name': pa.array(grp, type=pa.large_string()),
+            'source': pa.array(src, type=pa.large_string()),
+        },
+        schema=_SEX_PRIOR_SCHEMA,
+    )
+    partition_dir = out_root / 'sex_prior' / 'scope=national'
+    partition_dir.mkdir(parents=True, exist_ok=True)
+    pq.write_table(table, partition_dir / 'part.parquet', compression='zstd')
+    sidecar_source = _GENERO_NOMES_PROVENANCE
+    if any(source_counts[k] for k in ('gemini_M', 'gemini_F', 'gemini_U')):
+        sidecar_source = (
+            sidecar_source
+            + ' + Gemini gap-fill for names absent from genero-nomes '
+              "(see docs/sources/gemini-gender-classifications.md; row's "
+              "'source' column carries the originating label per row)."
+        )
+    _write_origin_sidecar(
+        partition_dir,
+        source=sidecar_source,
+        url=_GENERO_NOMES_URL,
+        rows=len(names),
+        extra={
+            'partition': 'sex_prior/scope=national',
+            'source_counts': source_counts,
+        },
+    )
+    return len(names), source_counts
+
+
+def ingest_first_names_period_sex(
+    src: Path,
+    csv_path: Path,
+    out_root: Path,
+    gemini_jsonl: Path | None = None,
+) -> dict[tuple[str, str], int]:
+    """Write ``parquet/first_names/period=<P>/sex=<S>/`` partitions.
+
+    Combines the period-only long tail from ``names_data.json`` (IBGE Nomes
+    API decade percentages — same data as ``datasets-br/prenomes``,
+    row-for-row; see docs/data-origins.md) with a per-name sex prior built
+    from:
+
+      * ``brasil.io/genero-nomes`` for the empirical 91.9 % of names, AND
+      * a Gemini ``M``/``F`` classification (model
+        ``gemini-3.1-flash-lite-preview``) for the remaining ~8 %.
+        ``U`` (unknown) Gemini classifications are skipped here — they're
+        kept in ``sex_prior`` for transparency but excluded from the
+        period × sex partitions because there's no defensible sex weight.
+
+    ``names_data.json`` ships ``percentage`` per (name, period) but no raw
+    counts, so we re-weight in probability space::
+
+        weight(name, period, sex=M) ∝ percentage(name, period) * p_male(name)
+        weight(name, period, sex=F) ∝ percentage(name, period) * p_female(name)
+
+    Then we normalise within each ``(period, sex)`` slice. Returns
+    ``{(period, sex): row_count}``. The full long tail is preserved.
+
+    Each partition's ``data_origin.json`` sidecar reports a
+    ``source_counts`` breakdown (genero / gemini_M / gemini_F) so reviewers
+    can see how many rows are LLM-tagged.
+    """
+    if not src.exists():
+        return {}
+    sex_prior, _ = _merge_sex_prior(csv_path, gemini_jsonl or Path('/__nonexistent__'))
+    if not sex_prior:
+        return {}
+    with src.open(encoding='utf-8') as f:
+        data = json.load(f)
+    periods = data.get('common_names_percentage', {})
+    stats: dict[tuple[str, str], int] = {}
+    matched_total = 0
+    unmatched_total = 0
+    gemini_used: dict[tuple[str, str], int] = {}
+    for period, payload in periods.items():
+        names_map = payload.get('names', {})
+        rows_m: list[tuple[str, float, str]] = []  # name, weight, source
+        rows_f: list[tuple[str, float, str]] = []
+        for name, info in names_map.items():
+            pct = float(info.get('percentage', 0.0) or 0.0)
+            if pct <= 0.0:
+                continue
+            key = str(name).upper()
+            prior = sex_prior.get(key)
+            if prior is None:
+                unmatched_total += 1
+                continue
+            matched_total += 1
+            row_source = str(prior['source'])
+            w_m = pct * float(prior['p_male'])
+            w_f = pct * float(prior['p_female'])
+            if w_m > 0.0:
+                rows_m.append((str(name), w_m, row_source))
+            if w_f > 0.0:
+                rows_f.append((str(name), w_f, row_source))
+        for sex, rows in (('M', rows_m), ('F', rows_f)):
+            if not rows:
+                continue
+            labels = [n for n, _, _ in rows]
+            raw_weights = [w for _, w, _ in rows]
+            weights = _normalise(raw_weights)
+            counts = [0] * len(labels)  # match the existing per-period parquet pattern
+            n_gemini_rows = sum(
+                1 for _, _, s in rows if s != _GENERO_NOMES_SOURCE_LABEL
+            )
+            partition_dir = out_root / 'first_names' / f'period={period}' / f'sex={sex}'
+            _write_partition(partition_dir, labels, counts, weights)
+            _write_origin_sidecar(
+                partition_dir,
+                source=(
+                    'period weights: IBGE Nomes API v2 decade percentages '
+                    '(via ptbr_sampler/data/names_data.json); sex prior: '
+                    + _GENERO_NOMES_PROVENANCE
+                    + (
+                        f' + Gemini gap-fill ({n_gemini_rows} rows in this partition; '
+                        'see docs/sources/gemini-gender-classifications.md)'
+                        if n_gemini_rows
+                        else ''
+                    )
+                ),
+                url=_GENERO_NOMES_URL,
+                rows=len(labels),
+                extra={
+                    'partition': f'first_names/period={period}/sex={sex}',
+                    'derivation': 'weight(name, period, sex) ∝ percentage(name, period) * p_sex(name); '
+                                  'normalised within each (period, sex).',
+                    'rows_from_genero_nomes': len(labels) - n_gemini_rows,
+                    'rows_from_gemini': n_gemini_rows,
+                },
+            )
+            stats[period, sex] = len(labels)
+            if n_gemini_rows:
+                gemini_used[period, sex] = n_gemini_rows
+    if matched_total or unmatched_total:
+        coverage = matched_total / (matched_total + unmatched_total) if (matched_total + unmatched_total) else 0.0
+        print(f'  sex-prior coverage across all (name, period) cells: {coverage:.1%} '
+              f'({matched_total:,} matched / {unmatched_total:,} unmatched)')
+    if gemini_used:
+        total_gemini = sum(gemini_used.values())
+        print(f'  Gemini gap-fill rows folded in across all partitions: {total_gemini:,}')
+    return stats
+
+
 def ingest_states(src: Path, out_root: Path) -> int:
     with src.open(encoding='utf-8') as f:
         data = json.load(f)
@@ -267,6 +659,34 @@ def main(argv: list[str] | None = None) -> int:
         print('  (no raw IBGE Nomes v2 data found — run "python -m scripts.download_datasets --fetch-ibge-nomes" first)')
     else:
         print(f'  partitions written: {len(uf_stats)}')
+
+    genero_csv = data_dir / 'raw' / 'genero_nomes' / 'nomes.csv'
+    gemini_jsonl = data_dir / 'raw' / 'gemini_gender' / 'classifications.jsonl'
+    print(f'Ingesting national sex prior from {genero_csv}...')
+    print(f'  source: {_GENERO_NOMES_URL}')
+    if gemini_jsonl.exists():
+        print(f'  + Gemini gap-fill: {gemini_jsonl.relative_to(_REPO_ROOT)}')
+    sex_prior_rows, source_counts = ingest_sex_prior(genero_csv, out_root, gemini_jsonl)
+    if sex_prior_rows == 0:
+        print('  (no genero-nomes data found — run "python -m scripts.download_datasets --fetch-genero-nomes" first)')
+    else:
+        breakdown = (
+            f"genero={source_counts['genero']:,}, "
+            f"gemini_M={source_counts['gemini_M']:,}, "
+            f"gemini_F={source_counts['gemini_F']:,}, "
+            f"gemini_U={source_counts['gemini_U']:,}"
+        )
+        print(f'  rows: {sex_prior_rows:,} ({breakdown})')
+
+    print('Ingesting first names (period x sex national) from period counts + sex prior...')
+    period_sex_stats = ingest_first_names_period_sex(
+        data_dir / 'names_data.json', genero_csv, out_root, gemini_jsonl
+    )
+    if not period_sex_stats:
+        print('  (sex prior unavailable — period x sex partitions skipped)')
+    else:
+        print(f'  partitions written: {len(period_sex_stats)} '
+              f'(periods: {len({p for p, _ in period_sex_stats})})')
 
     print('Ingesting national surnames...')
     n_surnames = ingest_surnames(data_dir / 'surnames_data.json', out_root)

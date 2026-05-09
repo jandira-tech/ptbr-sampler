@@ -36,6 +36,40 @@ command (see `ptbr_sampler/cli.py`).
     Default behaviour stays on the period-only path.
   - The full 2022-Census export (with surnames by UF) lives only in the
     web app; bulk download remains blocked.
+- **`sex` axis (long tail preserved) — bundled via genero-nomes + Gemini gap-fill:** the
+  brasil.io [`genero-nomes`](sources/genero-nomes.md) dump (curated by
+  Álvaro Justen / `@turicas`, built from the same IBGE Nomes API as our
+  period data) supplies a per-name sex prior across 100,787 first names
+  empirically. The remaining ~8 % of names in `names_data.json` (mostly
+  civil-registry typos and spelling variants) are filled in by
+  [Gemini gender classifications](sources/gemini-gender-classifications.md)
+  (`gemini-3.1-flash-lite-preview`, run via 100 concurrent workers with
+  quota-aware retry). Combined coverage of `(name, period)` cells is
+  **100.0 %**.
+  Combining the merged sex prior with the period-only percentages gives
+  **period × sex** partitions at full long-tail cardinality (8k–24k rows
+  per partition):
+  ```
+  weight(name, period, sex) ∝ percentage(name, period) * p_sex(name)
+  ```
+  normalised within each `(period, sex)` slice. Activate with
+  `sex_conditioning='M' | 'F' | 'mixed'` (`--sex-conditioning {M,F,mixed}`
+  on the CLI).
+  **Source attribution** is preserved end-to-end: the
+  `parquet/sex_prior/scope=national/part.parquet` partition carries a
+  `source` column distinguishing `brasil.io/genero-nomes` from
+  `gemini-3.1-flash-lite-preview`, and every period × sex partition's
+  `data_origin.json` sidecar reports `rows_from_genero_nomes` and
+  `rows_from_gemini` separately. Filter the sex_prior on `source ==
+  'brasil.io/genero-nomes'` if you need only empirical data.
+- **Equivalent national-decade dump for cross-checking:**
+  [`datasets-br/prenomes`](https://github.com/datasets-br/prenomes)
+  (`data/nomes-censos-ibge.csv`, 64,459 rows × 9 decade columns) holds
+  the **same** IBGE Nomes data we already ship in `names_data.json` —
+  per-period row counts match within ±2 rows. We do **not** re-ingest it
+  because it's redundant; it's listed here so a reviewer auditing the
+  sampler's "where do these names come from?" question has an external
+  reference to compare against.
 - **Time-horizon caveat:** the latest bucket is `UNTIL_2010` (`ate2010`).
   Recent cohorts (people born 2011–2024) are *not* faithfully represented
   by this distribution. Whole-population realism here matches IBGE's stock
@@ -218,6 +252,22 @@ python -m scripts.download_datasets
 #     trade-off (top-20 only).
 python -m scripts.download_datasets --fetch-ibge-nomes
 
+# 2c. (Optional, recommended) Download the brasil.io/genero-nomes sex
+#     prior (~6.5 MB national CSV, 100k names). Together with names_data.json
+#     it produces parquet/first_names/period=<P>/sex=<S>/ partitions at
+#     full long-tail cardinality (no top-N truncation), powering the
+#     --sex-conditioning {M,F,mixed} sampler flag. See
+#     docs/sources/genero-nomes.md for provenance details.
+python -m scripts.download_datasets --fetch-genero-nomes
+
+# 2d. (Optional, raises sex-prior coverage from 91.9 % to 100 %)
+#     Classify the ~8 % of names absent from genero-nomes using Gemini.
+#     Requires GEMINI_API_KEY and "uv pip install google-genai". 100
+#     concurrent workers, ~80 s for ~7,000 names. Output is JSONL,
+#     idempotent, with full per-row provenance. See
+#     docs/sources/gemini-gender-classifications.md.
+GEMINI_API_KEY=... python -m scripts.classify_unmatched_names_gemini
+
 # 2b. (For datasets the script lists as [MISS]) fetch them from the
 #     printed source URL and drop them under the indicated raw_local_path.
 #     Datasets behind web apps (IBGE Nomes 2022, Arpen 2024) are
@@ -265,6 +315,8 @@ that row. So it is safe to turn on after only a partial fetch.
 | Dataset | Source URL | Raw local path | Powers | Status |
 |---|---|---|---|---|
 | IBGE Nomes API v2 (first names by period) | <https://servicodados.ibge.gov.br/api/docs/nomes?versao=2> | `ptbr_sampler/data/names_data.json` | `parquet/first_names/period=<x>/` | bundled |
+| brasil.io/genero-nomes (sex prior, national long tail) | <https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz> | `ptbr_sampler/data/raw/genero_nomes/nomes.csv` | `parquet/sex_prior/scope=national/` + `parquet/first_names/period=<P>/sex=<S>/` | downloadable, opt-in |
+| Gemini gap-fill (LLM-tagged sex for the ~8 % of names absent from genero-nomes) | `gemini-3.1-flash-lite-preview` | `ptbr_sampler/data/raw/gemini_gender/classifications.jsonl` | `parquet/sex_prior/scope=national/` (`source` column) + period × sex partitions | downloadable, opt-in |
 | IBGE Nomes no Brasil 2022 (first names + surnames by UF, sex) | <https://www.ibge.gov.br/apps/nomes/> | `ptbr_sampler/data/raw/ibge_nomes_2022/` | future `surnames/uf=<UF>/` and `first_names/uf=<UF>/sex=<>/` | **not bundled** |
 | IBGE Estimativas da População 2024 | <https://ftp.ibge.gov.br/Estimativas_de_Populacao/Estimativas_2024/estimativa_dou_2024.pdf> | `ptbr_sampler/data/locations_data.json` | `parquet/states/` | bundled |
 | Arpen-Brasil 2024 newborn ranking | <https://arpenbrasil.org.br/press_releases/ranking-nacional-apos-sete-anos-nome-feminino-lidera-preferencia-no-brasil/> | `ptbr_sampler/data/raw/arpen_2024/` | benchmark only | **not bundled** |
