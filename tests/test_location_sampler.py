@@ -287,3 +287,25 @@ class TestFormatting:
         loc = sampler.get_random_location(only_cep=True, cep_without_dash=True)
         assert len(loc) == 8
         assert '-' not in loc
+
+
+def test_get_random_location_forwards_random_mode(mock_location_data, monkeypatch):
+    sampler = BrazilianLocationSampler(mock_location_data)
+    seen: list[bool] = []
+    original_state, original_city = sampler.get_state, sampler.get_city
+
+    def state(random_mode=False):
+        seen.append(random_mode)
+        return original_state(random_mode=random_mode)
+
+    def city(state_abbr=None, random_mode=False):
+        seen.append(random_mode)
+        return original_city(state_abbr, random_mode=random_mode)
+
+    monkeypatch.setattr(sampler, 'get_state', state)
+    monkeypatch.setattr(sampler, 'get_city', city)
+    for flags in ({}, {'city_only': True}, {'state_abbr_only': True}, {'state_full_only': True}, {'only_cep': True}):
+        seen.clear()
+        sampler.get_random_location(random_mode=True, **flags)
+        assert seen, flags
+        assert all(seen), flags

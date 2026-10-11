@@ -7,6 +7,7 @@ Core functionality for generating Brazilian name, location, and document samples
 import asyncio
 import copy
 import json
+import random as _stdlib_random
 from collections.abc import Callable
 from pathlib import Path
 
@@ -34,6 +35,15 @@ def _load_json_cached(path: str | Path) -> dict:
         with Path(path).open(encoding='utf-8') as f:
             _json_cache[key] = json.load(f)
     return _json_cache[key]
+
+
+def _coin_flip_sexes(n: int) -> list[str]:
+    """Draw ``n`` sexes 50/50 for rows with no sex given.
+
+    The module is imported as ``_stdlib_random`` because :func:`sample`
+    names its explicit-random flag ``random``.
+    """
+    return [_stdlib_random.choice(('M', 'F')) for _ in range(n)]
 
 
 def parse_result(
@@ -449,9 +459,7 @@ def sample(
             sex_conditioning_norm = sc
         per_row_sexes: list[str] | None = None
         if sex_conditioning_norm == 'MIXED':
-            import random as _stdlib_random  # noqa: PLC0415 - local to the conditional path
-
-            per_row_sexes = [_stdlib_random.choice(('M', 'F')) for _ in range(actual_qty)]
+            per_row_sexes = _coin_flip_sexes(actual_qty)
         elif sex_conditioning_norm in ('M', 'F'):
             per_row_sexes = [sex_conditioning_norm] * actual_qty
 
@@ -520,7 +528,11 @@ def sample(
                     progress_callback(i + 1, 'Generating specific documents')
 
         elif return_only_name or only_surname or only_middle:
-            # Name-only generation
+            # Name-only generation. First names take the same UF / sex
+            # conditioning as the full-profile batch path below.
+            name_only_sexes = per_row_sexes
+            if experimental_uf_sex_conditioning and name_only_sexes is None:
+                name_only_sexes = _coin_flip_sexes(actual_qty)
             for i in range(actual_qty):
                 documents = {}
                 name_components = None
@@ -556,7 +568,8 @@ def sample(
                         always_middle=always_middle,
                         return_components=True,
                         random_mode=random,
-                        sex=per_row_sexes[i] if per_row_sexes is not None else None,
+                        uf=state_abbr if experimental_uf_sex_conditioning else None,
+                        sex=name_only_sexes[i] if name_only_sexes is not None else None,
                     )
 
                     # Add documents for full names
@@ -602,11 +615,9 @@ def sample(
                 batch_ufs = [loc['state_abbr'] for loc in batch_locations]
                 if batch_sexes is None:
                     # Legacy experimental-flag behaviour: 50/50 sex draw when
-                    # no explicit sex_conditioning was requested but UF×sex
+                    # no explicit sex_conditioning was requested but UF x sex
                     # partitions are being targeted.
-                    import random as _stdlib_random  # noqa: PLC0415 - local to the experimental path
-
-                    batch_sexes = [_stdlib_random.choice(('M', 'F')) for _ in range(actual_qty)]
+                    batch_sexes = _coin_flip_sexes(actual_qty)
             batch_names = name_sampler.batch_sample_names(
                 actual_qty,
                 time_period=time_period,

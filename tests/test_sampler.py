@@ -189,3 +189,35 @@ class TestRandomMode:
         # Smoke-check: omitting ``random`` keyword keeps realistic path.
         result = _sample(qty=1)
         assert isinstance(result, dict)
+
+
+class TestUfSexConditioningNameOnly:
+    """``experimental_uf_sex_conditioning`` reaches the name-only path too."""
+
+    def _spy(self, monkeypatch):
+        from ptbr_sampler.br_name_class import BrazilianNameSampler
+
+        calls: list[dict] = []
+        original = BrazilianNameSampler.get_random_name
+
+        def spy(self, *args, **kwargs):
+            calls.append(kwargs)
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(BrazilianNameSampler, 'get_random_name', spy)
+        return calls
+
+    def test_name_only_draw_receives_the_row_uf_and_a_sex(self, monkeypatch):
+        calls = self._spy(monkeypatch)
+        results = _sample(qty=3, return_only_name=True, experimental_uf_sex_conditioning=True)
+
+        assert len(calls) == 3
+        for call, row in zip(calls, results, strict=True):
+            assert call['uf'] == row['state_abbr']
+            assert call['sex'] in ('M', 'F')
+
+    def test_name_only_draw_is_unconditioned_by_default(self, monkeypatch):
+        calls = self._spy(monkeypatch)
+        _sample(qty=2, return_only_name=True)
+
+        assert [(c['uf'], c['sex']) for c in calls] == [(None, None), (None, None)]

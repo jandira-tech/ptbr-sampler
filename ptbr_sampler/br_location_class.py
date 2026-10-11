@@ -315,6 +315,7 @@ class BrazilianLocationSampler:
         state_full_only: bool = False,
         only_cep: bool = False,
         cep_without_dash: bool = False,
+        random_mode: bool = False,
     ) -> str:
         """Get a random location with various formatting options.
 
@@ -324,23 +325,25 @@ class BrazilianLocationSampler:
             state_full_only: Return only full state name
             only_cep: Return only CEP
             cep_without_dash: Format CEP without dash
+            random_mode: When ``True``, pick states and cities uniformly
+                instead of by population, as in :meth:`get_state_and_city`
 
         Returns:
             Formatted location string according to specified options
         """
         if only_cep:
-            city_name, _ = self.get_city()
+            city_name, _ = self.get_city(random_mode=random_mode)
             cep = self._get_random_cep_for_city(city_name)
             return self._format_cep(cep, not cep_without_dash)
 
         if state_abbr_only:
-            return self.get_state()[1]
+            return self.get_state(random_mode=random_mode)[1]
 
         if state_full_only:
-            return self.get_state()[0]
+            return self.get_state(random_mode=random_mode)[0]
 
         if city_only:
-            return self.get_city()[0]
+            return self.get_city(random_mode=random_mode)[0]
 
-        state_name, state_abbr, city_name = self.get_state_and_city()
+        state_name, state_abbr, city_name = self.get_state_and_city(random_mode=random_mode)
         return self.format_full_location(city_name, state_name, state_abbr, True, cep_without_dash)
