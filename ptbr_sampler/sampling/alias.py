@@ -137,5 +137,18 @@ class AliasTable:
         idx = draw(self.prob, self.alias, k, rng)
         return self.labels[idx]
 
+    def sample_uniform(self, k: int, rng: np.random.Generator) -> np.ndarray:
+        """Draw ``k`` labels uniformly across the support, ignoring weights.
+
+        This is the explicit-random escape hatch documented in
+        ``docs/architecture.md`` (``random=True``). The realistic default is
+        :meth:`sample`, which honours the empirical distribution.
+        """
+        if k < 0:
+            raise ValueError('k must be non-negative')
+        n = self.labels.shape[0]
+        idx = rng.integers(0, n, size=k)
+        return self.labels[idx]
+
     def __len__(self) -> int:
         return int(self.labels.shape[0])

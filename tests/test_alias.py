@@ -96,6 +96,26 @@ class TestAliasTable:
         draws = t.sample(10, rng)
         assert set(draws.tolist()).issubset({'silva', 'santos'})
 
+    def test_sample_uniform_ignores_weights(self):
+        """``sample_uniform`` is the random=True escape hatch — its
+        empirical distribution should be flat, even when the underlying
+        counts are heavily skewed."""
+        t = AliasTable.from_counts(['a', 'b', 'c', 'd'], [1_000_000, 1, 1, 1])
+        rng = np.random.default_rng(0)
+        draws = t.sample_uniform(40_000, rng)
+        from collections import Counter
+
+        counts = Counter(draws.tolist())
+        # Every label should land within ~10% of the uniform expectation.
+        expected = 40_000 / 4
+        for label in ['a', 'b', 'c', 'd']:
+            assert 0.9 * expected < counts[label] < 1.1 * expected
+
+    def test_sample_uniform_negative_k_rejected(self):
+        t = AliasTable.from_counts(['a'], [1])
+        with pytest.raises(ValueError):
+            t.sample_uniform(-1, np.random.default_rng(0))
+
     def test_cost_is_independent_of_support_size(self):
         """Sanity check: a 50k-cell alias table is not massively slower to
         draw from than a 5-cell one. Exact timings are platform-dependent,

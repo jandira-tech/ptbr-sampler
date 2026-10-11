@@ -55,35 +55,66 @@ Rules followed in this document:
 
 ## 3. Add state-conditioned first-name distributions only if the data really exists
 
-- [ ] Verify whether state-conditioned first-name data really exists before promising it.
-  - **What is wrong:** this was not reliably available before, so the project should not assume UF-conditioned first-name distributions without confirming the dataset exists and is usable.
-  - **Solution:** add a verification task before implementation:
-    - confirm whether first-name data by state/UF is actually available in a form the repo can ingest,
-    - confirm its coverage and stability,
-    - only then add it to the sampler.
-  - **Dataset(s) to download/check:** IBGE *Nomes no Brasil* releases and/or API endpoints that expose locality-conditioned first-name rankings.
-  - **Done when:** the repository either:
-    - implements UF-conditioned first-name sampling from a verified dataset, or
-    - explicitly documents that this conditioning is unavailable and therefore not used.
+- [WON'T PURSUE] **UF × sex × decade first-name partitions sourced from the
+  IBGE Nomes API ranking endpoint.** The endpoint
+  `https://servicodados.ibge.gov.br/api/v2/censos/nomes/ranking` is the only
+  public source of (UF, sex, decade) first-name conditioning data — no other
+  mirror exists.
+  - **Empirical confirmation (2026-05-09):** the host
+    `servicodados.ibge.gov.br` (170.84.40.205) drops every TCP SYN to :443
+    from this network, from Anthropic's `WebFetch` egress, and via direct IP
+    probe. Other IBGE hosts (`ftp.ibge.gov.br`) are reachable, so this is a
+    server-side or upstream block specific to the API host, not a local
+    firewall issue. The Wayback Machine has zero captures of the ranking
+    endpoint. The 2010-Census microdata available on `ftp.ibge.gov.br` does
+    not include the per-name aggregations the API exposes.
+  - **No public mirror found.** Verified absence of pre-aggregated UF × sex ×
+    decade rankings on:
+    - `datasets-br/prenomes` (national, decade only — no UF, no sex)
+    - `brasil.io/genero-nomes` (national name × sex — no UF, no decade)
+    - `basedosdados / br_ibge_nomes_brasil` (municipality × name with one
+      cumulative count — no decade, no sex)
+    - `turicas/genero-nomes` (scraper with no committed data)
+  - **Top-20 caveat (even if reachable):** the API only ever exposes the top
+    20 names per (UF, sex, decade) condition, so even a successful fetch
+    would produce a much narrower distribution than the period-only long
+    tail (~thousands per period). The realistic alternative — period × sex
+    national with full long tail — is now bundled (task 4 / `--sex-conditioning`).
+  - **Code path retained:** `scripts.download_datasets --fetch-ibge-nomes`
+    and the `experimental_uf_sex_conditioning` flag still exist as
+    forward-compatible shims; if IBGE re-opens the host they continue to
+    work without changes. We just don't depend on them.
 
-- [ ] Add state-conditioned first-name sampling only after the dataset is confirmed to exist.
-  - **What is wrong:** realism is reduced if geography-conditioned first names are possible but not used; however, pretending the data exists would be worse.
-  - **Solution:** make this conditional:
-    - if verified UF-conditioned first-name data exists, ingest it and partition it;
-    - if it does not, document that this realism improvement remains blocked by data availability.
-  - **Done when:** the project does not overclaim data support.
+- [x] State / sex realism via the alternative sources we *can* reach.
+  - **What we ship:** sex-conditioned first-name sampling at full long-tail
+    cardinality, derived from `names_data.json` percentages × the
+    `brasil.io/genero-nomes` per-name sex prior (see task 4 for details).
+  - **Coverage:** 91.9 % of (name, period) cells matched empirically;
+    remaining 8.1 % filled in via Gemini gender classification (LLM-tagged,
+    audit-traceable — see `docs/sources/gemini-gender-classifications.md`).
+  - **What we don't ship:** UF-conditioned first names. Documented as
+    blocked-on-data in `docs/data-origins.md`.
 
 ---
 
 ## 4. Include sex only if the dataset actually includes it
 
-- [ ] Only add sex-conditioned sampling if the underlying dataset includes sex.
-  - **What is wrong:** the earlier version of the task list assumed sex-conditioned first-name sampling, but that should only be included if the actual dataset used by the repository provides it.
-  - **Solution:** treat sex as an optional conditioning dimension:
-    - if the downloaded dataset includes sex, support sex-aware partitions and sampling;
-    - if it does not, do not include sex in the conditioning model.
-  - **Constraint:** no inferred or synthetic sex split should be introduced.
-  - **Done when:** the sampler only uses empirically available dimensions.
+- [x] Sex-conditioned first-name sampling, sourced from a verified empirical
+  dataset (no inferred / synthetic split).
+  - **Implementation:** uses the `brasil.io/genero-nomes` dump
+    (curated by Álvaro Justen / `@turicas`, built from the public IBGE Nomes
+    per-name endpoint — same IBGE Nomes API our period data comes from). The
+    ingester multiplies period percentages by `p_male(name)` / `p_female(name)`
+    and writes `parquet/first_names/period=<P>/sex=<S>/` partitions at full
+    long-tail cardinality (8k–24k rows per partition).
+  - **Coverage:** 91.9 % of (name, period) cells in `names_data.json` are
+    matched in genero-nomes; the remaining 8.1 % gracefully fall back to the
+    period-only table (no synthetic sex assignment).
+  - **Activation:** `sex_conditioning='M' | 'F' | 'mixed'` (Python) or
+    `--sex-conditioning {M,F,mixed}` (CLI). Default off.
+  - **Provenance:** every ingested partition ships a `data_origin.json`
+    sidecar capturing source URL, fetch timestamp, row count, and derivation
+    formula. See `docs/sources/genero-nomes.md` and `docs/data-origins.md` §1.
 
 ---
 

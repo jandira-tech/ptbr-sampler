@@ -162,3 +162,73 @@ class TestQAlias:
         result = _sample(qty=1, q=3)
         assert isinstance(result, list)
         assert len(result) == 3
+
+
+class TestRandomMode:
+    """The random=True escape hatch documented in the README and
+    docs/architecture.md. We can't easily test the empirical-distribution
+    flattening end-to-end in a smoke test (city/state space is too big),
+    but we can confirm the flag is plumbed through and the sampler still
+    produces the same output shape."""
+
+    def test_random_mode_returns_same_shape(self):
+        result = _sample(qty=1, random=True)
+        assert isinstance(result, dict)
+        for key in ('name', 'city', 'state', 'state_abbr', 'cpf', 'rg'):
+            assert key in result
+
+    def test_random_mode_batch(self):
+        results = _sample(qty=5, random=True)
+        assert isinstance(results, list)
+        assert len(results) == 5
+        for r in results:
+            assert r['name']
+            assert r['city']
+
+    def test_random_mode_default_is_false(self):
+        # Smoke-check: omitting ``random`` keyword keeps realistic path.
+        result = _sample(qty=1)
+        assert isinstance(result, dict)
+
+
+class TestUfSexConditioningNameOnly:
+    """``experimental_uf_sex_conditioning`` reaches the name-only path too."""
+
+    def _spy(self, monkeypatch):
+        from ptbr_sampler.br_name_class import BrazilianNameSampler
+
+        calls: list[dict] = []
+        original = BrazilianNameSampler.get_random_name
+
+        def spy(self, *args, **kwargs):
+            calls.append(kwargs)
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(BrazilianNameSampler, 'get_random_name', spy)
+        return calls
+
+    def test_name_only_draw_receives_the_row_uf_and_a_sex(self, monkeypatch):
+        calls = self._spy(monkeypatch)
+        results = _sample(qty=3, return_only_name=True, experimental_uf_sex_conditioning=True)
+
+        assert len(calls) == 3
+        for call, row in zip(calls, results, strict=True):
+            assert call['uf'] == row['state_abbr']
+            assert call['sex'] in ('M', 'F')
+
+    def test_name_only_draw_is_unconditioned_by_default(self, monkeypatch):
+        calls = self._spy(monkeypatch)
+        _sample(qty=2, return_only_name=True)
+
+        assert [(c['uf'], c['sex']) for c in calls] == [(None, None), (None, None)]
+
+    @pytest.mark.parametrize('fork', ['only_surname', 'only_middle'])
+    def test_surname_and_middle_forks_draw_no_sex(self, monkeypatch, fork):
+        """Those forks never read a sex, so the flag must not spend RNG draws on one."""
+        import ptbr_sampler.sampler as sampler_module
+
+        flips: list[int] = []
+        monkeypatch.setattr(sampler_module, '_coin_flip_sexes', lambda n: flips.append(n) or ['F'] * n)
+        _sample(qty=2, experimental_uf_sex_conditioning=True, **{fork: True})
+
+        assert flips == []

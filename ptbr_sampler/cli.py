@@ -56,6 +56,43 @@ BATCH = typer.Option(
 EASY = typer.Option(
     None, '--easy', '-e', help='Easy mode with integer qty (enables API calls, all data, and auto-saves)', rich_help_panel='Basic Options'
 )
+RANDOM_MODE = typer.Option(
+    False,
+    '--random',
+    help=(
+        'Explicit random mode (opt-out of realism): uniform location and name draws, '
+        'flat 50% middle-name flag. Default is realism-by-default (population-weighted).'
+    ),
+    rich_help_panel='Basic Options',
+)
+EXPERIMENTAL_UF_SEX = typer.Option(
+    False,
+    '--experimental-uf-sex',
+    help=(
+        'EXPERIMENTAL: condition first-name draws on the sampled UF and a '
+        '50/50-drawn sex when the parquet/first_names/uf=<UF>/period=<P>/sex=<S>/ '
+        'partitions exist (produced by "python -m scripts.download_datasets '
+        '--fetch-ibge-nomes" + "python -m scripts.ingest_to_parquet"). The IBGE '
+        'Nomes v2 ranking endpoint exposes only the top-20 names per condition, '
+        'so the conditioned pool is much narrower than the unconditioned '
+        'period table; default is OFF.'
+    ),
+    rich_help_panel='Basic Options',
+)
+SEX_CONDITIONING = typer.Option(
+    None,
+    '--sex-conditioning',
+    help=(
+        'Condition first-name draws on sex using the period x sex national '
+        'partitions (parquet/first_names/period=<P>/sex=<S>/). Built from '
+        'IBGE Nomes period percentages multiplied by the brasil.io/genero-nomes '
+        'sex prior — see docs/data-origins.md. Full long tail preserved. '
+        "Accepts 'M' (male only), 'F' (female only), or 'mixed' (50/50 per row). "
+        'Default off (period-only table). Combine with --experimental-uf-sex '
+        'to add UF on top.'
+    ),
+    rich_help_panel='Basic Options',
+)
 
 # Location options
 CITY_ONLY = typer.Option(False, '--city-only', '-c', help='Return only city names', rich_help_panel='Location Options')
@@ -345,6 +382,9 @@ def sample(
     batch: int = BATCH,
     easy: int = EASY,
     append_to_jsonl: bool = APPEND_TO_JSONL,
+    random: bool = RANDOM_MODE,
+    experimental_uf_sex: bool = EXPERIMENTAL_UF_SEX,
+    sex_conditioning: str | None = SEX_CONDITIONING,
 ) -> None:
     """Generate random Brazilian samples with comprehensive information.
 
@@ -572,6 +612,9 @@ def sample(
                             all_data=all_data,
                             progress_callback=progress_callback,
                             append_to_jsonl=(append_to_jsonl or not first_batch),  # Force append for all batches after the first
+                            random=random,
+                            experimental_uf_sex_conditioning=experimental_uf_sex,
+                            sex_conditioning=sex_conditioning,
                         )
                         logger.info(f'Batch {batch_num} processed successfully')
                     except Exception as e:
@@ -690,6 +733,9 @@ def sample(
                         all_data=all_data,
                         progress_callback=progress_callback,
                         append_to_jsonl=append_to_jsonl,
+                        random=random,
+                        experimental_uf_sex_conditioning=experimental_uf_sex,
+                        sex_conditioning=sex_conditioning,
                     )
                     logger.info(f'All {qty} samples processed successfully')
                 except Exception as e:

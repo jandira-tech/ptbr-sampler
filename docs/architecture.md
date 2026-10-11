@@ -99,14 +99,60 @@ This removes a latent source of statistical drift between the two paths.
 the ingested weights per condition. This catches alias-table bugs and
 data-ingestion regressions.
 
+## Realism vs. random mode
+
+The default sampler path is **realism-by-default**: geography is drawn first
+(population-weighted state, then population-weighted city within that state),
+and names are drawn from the alias tables that encode the IBGE-derived
+empirical frequencies.
+
+Callers can opt out of realism via `random=True` (Python API) or `--random`
+(CLI). The escape hatch:
+
+- draws states and cities **uniformly** instead of population-weighted,
+- draws first names, middle names, and surnames **uniformly** across the
+  alias tables (`AliasTable.sample_uniform`) instead of frequency-weighted,
+- replaces the empirical 30.99% middle-name flag with a flat 50% coin flip.
+
+This is intentional: `random=True` is for callers who explicitly want
+maximally non-deterministic, distribution-free output. The default
+remains realism-tracking.
+
+The realistic default only conditions on **dimensions that actually exist
+in the bundled data**: `period` for first names, `scope=national` for
+surnames, and population shares for geography. UF-, sex-, and
+period-conditioned surname realism remain blocked on the IBGE 2022
+ingest (see `docs/data-origins.md` and the README "Known realism gaps").
+
 ## Known gaps (not fixed by the architecture)
 
 1. **Middle-name vocabulary contamination.** `ptbr_sampler/data/middle_names.json`
    contains surnames (`Araújo`, `Borges`, `Bezerra`, …), the administrative
    token `Cancelado`, and a bare `-`. No alias table fixes dirty tokens. A
    vocabulary-filtering pass against the first-name whitelist lives in
-   `ptbr_sampler/sampling/vocabulary.py` and `scripts/clean_middle_names.py`.
-2. **Sex conditioning in the current first-name file.** The committed
-   `names_data.json` has no sex dimension. The IBGE 2022 release does. Until
-   2022-conditioned data is ingested into `first_names/uf=…/decade=…/sex=…/`,
-   first names will be sex-mixed in output.
+   `ptbr_sampler/sampling/vocabulary.py`; ingestion through
+   `scripts/ingest_to_parquet.py` applies it by default and writes the
+   cleaned distribution to `parquet/middle_names/`. Pass
+   `--skip-middle-names-filter` to inspect the raw distribution.
+2. **Sex conditioning — experimental, top-20.** The committed
+   `names_data.json` has no sex dimension; the default path stays
+   sex-mixed. The IBGE Nomes v2 ranking endpoint exposes
+   `(UF, sex, decade)` triples (top-20 each), and
+   `scripts/download_datasets.py --fetch-ibge-nomes` ingests them into
+   `first_names/uf=<UF>/period=<P>/sex=<S>/`. Turn it on with
+   `experimental_uf_sex_conditioning=True` (Python) or
+   `--experimental-uf-sex` (CLI). The sampler still falls back to the
+   period-only table per row when a specific partition is missing.
+3. **UF-conditioned surnames.** The 2022-Census surname tables by UF
+   live in the IBGE web app only — no public API, no bulk download.
+   Surnames stay on the pooled-national distribution today.
+4. **Time horizon capped at `UNTIL_2010`.** The bundled first-name buckets
+   stop at the 2010 Census. Recent cohorts (born 2011–2024) are not
+   directly represented; whole-population realism for "people alive
+   today" is still useful, but newborn-flow realism for 2024 needs the
+   Arpen 2024 ranking as a separate benchmark (`docs/sources/arpen-2024-rankings.md`).
+5. **`percentage_with_second = 30.99%`.** Computed from the raw
+   `total_with_second_names / total_people` ratio in `middle_names.json`;
+   transparent for that corpus, but the corpus itself is the authorial
+   extraction, not an IBGE dissemination. Read it as a transparent
+   estimate, not as a population-level statistic.

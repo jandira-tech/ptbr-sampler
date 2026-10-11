@@ -22,9 +22,60 @@ command (see `ptbr_sampler/cli.py`).
   published "up to 1929" and then by decade from 1930 onward.
 - **Dimensions bundled today:** `period` ∈ {`ate1930`, `ate1940`, `ate1950`,
   `ate1960`, `ate1970`, `ate1980`, `ate1990`, `ate2000`, `ate2010`}.
-- **Missing dimensions (planned):** `uf` and `sex`. The 2022 Census release
-  (2025) adds both — the Parquet layout already carries those partition keys
-  ready to receive the drop-in.
+- **Missing dimensions (planned, partially unblocked):**
+  - `uf` and `sex` — the 2022 Census release (2025) adds both. The
+    Parquet layout already carries those partition keys.
+  - **Now downloadable** via the IBGE Nomes v2 ranking endpoint
+    (top-20 only per condition). Run `python -m scripts.download_datasets
+    --fetch-ibge-nomes` then `python -m scripts.ingest_to_parquet` to
+    populate `parquet/first_names/uf=<UF>/period=<P>/sex=<S>/`. The
+    sampler will use those partitions when the
+    `experimental_uf_sex_conditioning` flag is on.
+  - **Top-20 caveat:** the conditioned pool is ~20 names per
+    condition, vs. ~thousands per period in the unconditioned table.
+    Default behaviour stays on the period-only path.
+  - The full 2022-Census export (with surnames by UF) lives only in the
+    web app; bulk download remains blocked.
+- **`sex` axis (long tail preserved) — bundled via genero-nomes + Gemini gap-fill:** the
+  brasil.io [`genero-nomes`](sources/genero-nomes.md) dump (curated by
+  Álvaro Justen / `@turicas`, built from the same IBGE Nomes API as our
+  period data) supplies a per-name sex prior across 100,787 first names
+  empirically. The remaining ~8 % of names in `names_data.json` (mostly
+  civil-registry typos and spelling variants) are filled in by
+  [Gemini gender classifications](sources/gemini-gender-classifications.md)
+  (`gemini-3.1-flash-lite-preview`, run via 100 concurrent workers with
+  quota-aware retry). Combined coverage of `(name, period)` cells is
+  **100.0 %**.
+  Combining the merged sex prior with the period-only percentages gives
+  **period × sex** partitions at full long-tail cardinality (8k–24k rows
+  per partition):
+  ```text
+  weight(name, period, sex) ∝ percentage(name, period) * p_sex(name)
+  ```
+  normalised within each `(period, sex)` slice. Activate with
+  `sex_conditioning='M' | 'F' | 'mixed'` (`--sex-conditioning {M,F,mixed}`
+  on the CLI).
+  **Source attribution** is preserved end-to-end: the
+  `parquet/sex_prior/scope=national/part.parquet` partition carries a
+  `source` column distinguishing `brasil.io/genero-nomes` from
+  `gemini-3.1-flash-lite-preview`, and every period × sex partition's
+  `data_origin.json` sidecar reports `rows_from_genero_nomes` and
+  `rows_from_gemini` separately. Filter the sex_prior on `source ==
+  'brasil.io/genero-nomes'` if you need only empirical data.
+- **Equivalent national-decade dump for cross-checking:**
+  [`datasets-br/prenomes`](https://github.com/datasets-br/prenomes)
+  (`data/nomes-censos-ibge.csv`, 64,459 rows × 9 decade columns) holds
+  the **same** IBGE Nomes data we already ship in `names_data.json` —
+  per-period row counts match within ±2 rows. We do **not** re-ingest it
+  because it's redundant; it's listed here so a reviewer auditing the
+  sampler's "where do these names come from?" question has an external
+  reference to compare against.
+- **Time-horizon caveat:** the latest bucket is `UNTIL_2010` (`ate2010`).
+  Recent cohorts (people born 2011–2024) are *not* faithfully represented
+  by this distribution. Whole-population realism here matches IBGE's stock
+  data; for newborn-flow realism cross-check against the Arpen 2024
+  ranking documented in `docs/sources/arpen-2024-rankings.md`. Extending
+  to 2022-Census-conditioned buckets requires the IBGE 2022 export.
 - **Primary source URL:** <https://servicodados.ibge.gov.br/api/docs/nomes?versao=2>
 - **Release behind the 2022 upgrade:** <https://www.ibge.gov.br/apps/nomes/>
 - **See also:** `docs/sources/ibge-nomes-no-brasil-2022.md`.
@@ -39,11 +90,27 @@ command (see `ptbr_sampler/cli.py`).
   frequencies; the national distribution is consistent with what IBGE now
   publishes for the 2022 Census (`Silva` 16.76%, `Santos` ~11%).
 - **Dimensions bundled today:** `scope=national`.
-- **Missing dimensions (planned):** `uf` and `period`. These are the
-  partitions where IBGE 2022 data shows the largest regional variation
-  (`Santos` 43.38% in Sergipe, `Silva` 35.75% in Alagoas, `Silva` 34.23% in
-  Pernambuco) — the feature that the `deep-research-report(4).md` audit
-  flagged as the single biggest realism gap.
+- **Missing dimensions (planned, blocked on data ingest):** `uf` and
+  `period`. These are the partitions where IBGE 2022 data shows the
+  largest regional variation (`Santos` 43.38% in Sergipe, `Silva` 35.75% in
+  Alagoas, `Silva` 34.23% in Pernambuco) — the feature that the
+  `deep-research-report(4).md` audit flagged as the single biggest realism
+  gap. Until the IBGE 2022 surname export is ingested, surname realism is
+  pooled-national.
+- **About `top_40`:** the JSON payload also exposes a curated 40-row
+  subset under the `top_40` key, used when callers pass `top_40=True`.
+  This is a **historical-data convenience mode**: at the time the legacy
+  extract was built, only the top 40 surnames were reliably published, so
+  the subset was preserved for callers that explicitly want the
+  fast-and-narrow path. It is **not** more realistic than the full
+  ~86k-entry table — the full table tracks the empirical distribution
+  more faithfully. `top_40` is kept for now, but should be re-evaluated
+  once IBGE 2022 surname data is ingested (see `todo.md` task 7).
+- **Two-surname realism note:** the most common Brazilian-civil-naming
+  convention is **at least two surnames** (one from each parental line).
+  The default sampler returns two surnames; `with_only_one_surname=True`
+  is a compatibility / convenience override and should not be read as
+  the realistic default. See README "Known realism gaps".
 - **Primary source URL:** <https://www.ibge.gov.br/apps/nomes/>
 - **See also:** `docs/sources/ibge-nomes-no-brasil-2022.md`.
 
@@ -58,13 +125,32 @@ command (see `ptbr_sampler/cli.py`).
   variable is "first name only". The Arpen-Brasil 2024 ranking is the
   closest public benchmark but measures newborn flow, not population stock.
 - **Dimensions bundled today:** none — a single national Bernoulli "has
-  second name?" rate (~31%) plus a multinomial over ~1,200 second tokens.
-- **Data quality note:** the raw JSON mixes second given names with
+  second name?" rate plus a multinomial over ~1,200 second tokens.
+- **`percentage_with_second = 30.99%` provenance:** computed directly from
+  the raw extract — the JSON payload reports
+  `total_people = 5,293,204`, `total_with_second_names = 1,640,514`, and
+  `1,640,514 / 5,293,204 = 30.99%`. So the rate **is** grounded in the
+  extract, but the extract itself is the authorial pipeline (not IBGE),
+  so the figure should be read as "empirical for this corpus" rather
+  than as a population-level statistic. If a stronger empirical source
+  becomes available, this default should be revisited (see `todo.md`
+  task 10). Read it as a transparent estimate, not as an IBGE-published
+  fact.
+- **Cleaning pipeline:** the raw JSON mixes second given names with
   surnames (`Araújo`, `Borges`, `Bezerra`, …), the administrative token
   `Cancelado`, and a bare hyphen. Ingestion filters these through
   `ptbr_sampler/sampling/vocabulary.py` (given-name whitelist + canonical
   surname blocklist). 302 of 1,187 tokens (26%) are dropped during
-  ingestion.
+  ingestion. The cleaning logic is reproducible:
+
+  1. Build a given-name whitelist from `names_data.json` (every name that
+     appears in any IBGE-derived first-name period).
+  2. Build a canonical-surname blocklist from `surnames_data.json`.
+  3. Run `python -m scripts.ingest_to_parquet` — middle-name rows
+     surviving the whitelist + blocklist filter are written to
+     `ptbr_sampler/data/parquet/middle_names/part.parquet`.
+  4. Pass `--skip-middle-names-filter` to `ingest_to_parquet` to bypass
+     the cleanup and inspect the raw distribution.
 - **Benchmark:** <https://arpenbrasil.org.br/press_releases/ranking-nacional-apos-sete-anos-nome-feminino-lidera-preferencia-no-brasil/>
 - **See also:** `docs/sources/arpen-2024-rankings.md`.
 
@@ -147,6 +233,101 @@ command (see `ptbr_sampler/cli.py`).
   city; the subscriber digits are synthetic (Brazilian-mobile prefix 9 +
   eight synthetic digits).
 - **Primary reference:** <https://www.anatel.gov.br/consumidor/tudo-sobre-telefonia-fixa/codigos-de-area>
+
+---
+
+## Download-and-rebuild walkthrough
+
+This is the single explicit first-step workflow (`todo.md` task 1 + 11):
+how to start from zero and produce the Parquet layout the sampler reads.
+
+```bash
+# 1. Inventory: which datasets are present locally and what powers them?
+python -m scripts.download_datasets
+
+# 2a. (Optional, EXPERIMENTAL) Download the IBGE Nomes API v2 UF x sex x
+#     decade rankings (top-20 names per condition, ~540 small JSON files).
+#     This unblocks UF- and sex-conditioned realism for first names. See
+#     the "Experimental UF / sex conditioning" section below for the
+#     trade-off (top-20 only).
+python -m scripts.download_datasets --fetch-ibge-nomes
+
+# 2c. (Optional, recommended) Download the brasil.io/genero-nomes sex
+#     prior (~6.5 MB national CSV, 100k names). Together with names_data.json
+#     it produces parquet/first_names/period=<P>/sex=<S>/ partitions at
+#     full long-tail cardinality (no top-N truncation), powering the
+#     --sex-conditioning {M,F,mixed} sampler flag. See
+#     docs/sources/genero-nomes.md for provenance details.
+python -m scripts.download_datasets --fetch-genero-nomes
+
+# 2d. (Optional, raises sex-prior coverage from 91.9 % to 100 %)
+#     Classify the ~8 % of names absent from genero-nomes using Gemini.
+#     Requires GEMINI_API_KEY and "uv pip install google-genai". 100
+#     concurrent workers, ~80 s for ~7,000 names. Output is JSONL,
+#     idempotent, with full per-row provenance. See
+#     docs/sources/gemini-gender-classifications.md.
+GEMINI_API_KEY=... python -m scripts.classify_unmatched_names_gemini
+
+# 2b. (For datasets the script lists as [MISS]) fetch them from the
+#     printed source URL and drop them under the indicated raw_local_path.
+#     Datasets behind web apps (IBGE Nomes 2022, Arpen 2024) are
+#     intentionally left to interactive download because they have no
+#     public bulk-download endpoint.
+
+# 3. Rebuild the partitioned Parquet layout. This consumes both the JSON
+#    sources under ptbr_sampler/data/ AND any raw IBGE v2 rankings under
+#    ptbr_sampler/data/raw/ibge_nomes_v2/, producing both the
+#    period-only partitions AND the uf=<UF>/period=<P>/sex=<S>/ partitions
+#    when raw data exists.
+python -m scripts.ingest_to_parquet
+
+# 4. Re-run the smoke and statistical tests:
+uv run --extra test pytest -q
+```
+
+### Network requirements
+
+The fetcher hits `servicodados.ibge.gov.br` over HTTPS. CI sandboxes that
+restrict outbound traffic (the one this repo is developed in, for
+example) will fail at the first request with `Host not in allowlist` or
+HTTP 403. Run `--fetch-ibge-nomes` on a machine with general internet
+egress.
+
+### Experimental UF / sex conditioning
+
+`scripts.download_datasets --fetch-ibge-nomes` calls the IBGE Nomes v2
+ranking endpoint (`/api/v2/censos/nomes/ranking?localidade=<UF>&sexo=<>&decada=<>`),
+which returns **only the top 20 names per (UF, sex, decade) condition**.
+
+Once those rows are ingested into
+`parquet/first_names/uf=<UF>/period=<P>/sex=<S>/`, the sampler can
+condition first-name draws on UF and sex by passing
+`experimental_uf_sex_conditioning=True` (Python) or
+`--experimental-uf-sex` (CLI). It is **off by default** because the
+conditioned pool (~20 names per condition) is much narrower than the
+unconditioned period-only table (~thousands of names per period) — so
+turning it on trades distribution breadth for regional / sex realism.
+
+When the flag is on but a specific `(UF, period, sex)` partition is
+missing, the sampler silently falls back to the period-only table for
+that row. So it is safe to turn on after only a partial fetch.
+
+| Dataset | Source URL | Raw local path | Powers | Status |
+|---|---|---|---|---|
+| IBGE Nomes API v2 (first names by period) | <https://servicodados.ibge.gov.br/api/docs/nomes?versao=2> | `ptbr_sampler/data/names_data.json` | `parquet/first_names/period=<x>/` | bundled |
+| brasil.io/genero-nomes (sex prior, national long tail) | <https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz> | `ptbr_sampler/data/raw/genero_nomes/nomes.csv` | `parquet/sex_prior/scope=national/` + `parquet/first_names/period=<P>/sex=<S>/` | downloadable, opt-in |
+| Gemini gap-fill (LLM-tagged sex for the ~8 % of names absent from genero-nomes) | `gemini-3.1-flash-lite-preview` | `ptbr_sampler/data/raw/gemini_gender/classifications.jsonl` | `parquet/sex_prior/scope=national/` (`source` column) + period × sex partitions | downloadable, opt-in |
+| IBGE Nomes no Brasil 2022 (first names + surnames by UF, sex) | <https://www.ibge.gov.br/apps/nomes/> | `ptbr_sampler/data/raw/ibge_nomes_2022/` | future `surnames/uf=<UF>/` and `first_names/uf=<UF>/sex=<sex>/` | **not bundled** |
+| IBGE Estimativas da População 2024 | <https://ftp.ibge.gov.br/Estimativas_de_Populacao/Estimativas_2024/estimativa_dou_2024.pdf> | `ptbr_sampler/data/locations_data.json` | `parquet/states/` | bundled |
+| Arpen-Brasil 2024 newborn ranking | <https://arpenbrasil.org.br/press_releases/ranking-nacional-apos-sete-anos-nome-feminino-lidera-preferencia-no-brasil/> | `ptbr_sampler/data/raw/arpen_2024/` | benchmark only | **not bundled** |
+| Surnames national | <https://www.ibge.gov.br/apps/nomes/> | `ptbr_sampler/data/surnames_data.json` | `parquet/surnames/scope=national/` | bundled |
+| Middle names raw extract | authorial pipeline | `ptbr_sampler/data/middle_names.json` | `parquet/middle_names/` | bundled |
+| Cities + CEP ranges + DDD | <https://buscacepinter.correios.com.br/> | `ptbr_sampler/data/cities_with_ceps.json` | states+city draws | bundled |
+
+The `[MISS]` rows in `python -m scripts.download_datasets` are
+informational, not a failure: the sampler runs end-to-end with the
+bundled datasets only. Adding the missing rows is what unlocks
+UF-conditioned realism (see "Known realism gaps" in the README).
 
 ---
 

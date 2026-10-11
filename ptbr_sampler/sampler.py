@@ -7,6 +7,7 @@ Core functionality for generating Brazilian name, location, and document samples
 import asyncio
 import copy
 import json
+import random as _stdlib_random
 from collections.abc import Callable
 from pathlib import Path
 
@@ -34,6 +35,15 @@ def _load_json_cached(path: str | Path) -> dict:
         with Path(path).open(encoding='utf-8') as f:
             _json_cache[key] = json.load(f)
     return _json_cache[key]
+
+
+def _coin_flip_sexes(n: int) -> list[str]:
+    """Draw ``n`` sexes 50/50 for rows with no sex given.
+
+    The module is imported as ``_stdlib_random`` because :func:`sample`
+    names its explicit-random flag ``random``.
+    """
+    return [_stdlib_random.choice(('M', 'F')) for _ in range(n)]
 
 
 def parse_result(
@@ -284,10 +294,13 @@ def sample(
     all_data: bool,
     progress_callback: Callable[[int, str], None] | None = None,
     append_to_jsonl: bool = False,
+    random: bool = False,
+    experimental_uf_sex_conditioning: bool = False,
+    sex_conditioning: str | None = None,
 ) -> dict | list[dict]:
     """
     Generate randomized Brazilian profiles composed of name, location, and document fields according to the supplied flags.
-    
+
     Parameters:
         qty (int): Number of samples to generate.
         q (int | None): Alias for `qty`; if provided, takes precedence.
@@ -315,12 +328,46 @@ def sample(
         only_document (bool): If True, produce document-only results (no name/location unless combined via other flags).
         surnames_path (str | Path): Path to surnames data used by the name sampler.
         json_path (str | Path): Path to bundled city/state JSON used to initialize the location sampler.
-        locations_path (str | Path): Optional override JSON with custom `cities`/`states` to update the location sampler; failures are logged and ignored.
+        locations_path (str | Path): Optional override JSON with custom `cities`/`states` to update the
+            location sampler; failures are logged and ignored.
         save_to_jsonl (str | None): If provided, path to write results as newline-delimited JSON; saved via an async writer.
         all_data (bool): If True, enable all `always_*` outputs and disable mutually exclusive `only_*`/`only_*` output restrictions.
         progress_callback (Callable[[int, str], None] | None): Optional callback receiving (completed_count, message) to report progress.
         append_to_jsonl (bool): If True, append to `save_to_jsonl` file instead of overwriting.
-    
+        random (bool): If True, switch to the explicit-random escape hatch:
+            uniform location sampling (no population weighting), uniform name
+            draws (no frequency weighting), and a flat 50% middle-name flag in
+            place of the empirical 30.99% rate. The default (False) keeps
+            realism-by-default sampling — geography first via population
+            weights, then names from the IBGE-derived alias tables. See the
+            "Realism vs. random mode" section in the README for details.
+        experimental_uf_sex_conditioning (bool): If True AND the
+            ``parquet/first_names/uf=<UF>/period=<P>/sex=<S>/`` partitions
+            exist on disk (produced by ``python -m scripts.download_datasets
+            --fetch-ibge-nomes`` followed by ``python -m
+            scripts.ingest_to_parquet``), each first-name draw is conditioned
+            on the row's sampled UF and a 50/50-drawn sex. **Experimental
+            because the IBGE Nomes v2 ranking endpoint only exposes the top
+            20 names per (UF, sex, decade) condition, so the conditioned
+            pool is much narrower than the unconditioned period-only table
+            (~thousands of names per period).** Default ``False`` keeps
+            the period-only path. Rows whose partition is missing fall back
+            to the period-only table individually.
+        sex_conditioning (str | None): Drive first-name sampling from the
+            ``parquet/first_names/period=<P>/sex=<S>/`` partitions
+            (national, full long tail — built from IBGE Nomes percentages
+            multiplied by the brasil.io/genero-nomes sex prior; see
+            ``docs/data-origins.md``). Accepts:
+              * ``'M'`` — every row drawn from the male partition
+              * ``'F'`` — every row drawn from the female partition
+              * ``'mixed'`` — 50/50 per row
+              * ``None`` (default) — no sex conditioning, period-only table
+            Compatible with ``experimental_uf_sex_conditioning``: when both
+            are on, UF still comes from the sampled location and sex from
+            this argument. When the per-row partition is missing, the
+            sampler falls back through the resolution chain documented in
+            ``BrazilianNameSampler._first_names_table``.
+
     Returns:
         dict: A single generated sample when a single result was requested.
         list[dict]: A list of generated samples when multiple results were requested.
@@ -400,13 +447,28 @@ def sample(
         results: list[tuple[str, NameComponents, dict[str, str]]] = []
         state_city_info: list[tuple[str, str, str]] = []
 
+        # Resolve sex_conditioning once and pre-compute the per-row sex list
+        # so every name-generation branch (single-row, batch, or
+        # return-only-name) honours the same conditioning.
+        sex_conditioning_norm: str | None = None
+        if sex_conditioning is not None:
+            sc = str(sex_conditioning).strip().upper()
+            if sc not in ('M', 'F', 'MIXED'):
+                raise ValueError(f"sex_conditioning must be 'M', 'F', 'mixed', or None; got {sex_conditioning!r}")
+            sex_conditioning_norm = sc
+        per_row_sexes: list[str] | None = None
+        if sex_conditioning_norm == 'MIXED':
+            per_row_sexes = _coin_flip_sexes(actual_qty)
+        elif sex_conditioning_norm in ('M', 'F'):
+            per_row_sexes = [sex_conditioning_norm] * actual_qty
+
         if only_document:
             # Document-only generation with proper state handling
             for i in range(actual_qty):
                 documents = {}
 
                 # Generate location first to get proper state for RG
-                state_name, state_abbr, city_name = location_sampler.get_state_and_city()
+                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random)
                 state_city_info.append((state_name, state_abbr, city_name))
 
                 # Generate all requested documents
@@ -440,7 +502,7 @@ def sample(
                 # No need to reload location data - already loaded once at the beginning
 
                 # Generate location first to get proper state for RG
-                state_name, state_abbr, city_name = location_sampler.get_state_and_city()
+                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random)
                 state_city_info.append((state_name, state_abbr, city_name))
                 if only_cpf:
                     documents['cpf'] = doc_sampler.generate_cpf()
@@ -465,7 +527,13 @@ def sample(
                     progress_callback(i + 1, 'Generating specific documents')
 
         elif return_only_name or only_surname or only_middle:
-            # Name-only generation
+            # Name-only generation. First names take the same UF / sex
+            # conditioning as the full-profile batch path below; the surname
+            # and middle-name forks draw no first name, so they flip no coins.
+            name_only_sexes = per_row_sexes
+            draws_first_names = not (only_surname or only_middle)
+            if experimental_uf_sex_conditioning and name_only_sexes is None and draws_first_names:
+                name_only_sexes = _coin_flip_sexes(actual_qty)
             for i in range(actual_qty):
                 documents = {}
                 name_components = None
@@ -473,15 +541,27 @@ def sample(
                 # No need to reload location data - already loaded once at the beginning
 
                 # Generate location first to get proper state and DDD
-                state_name, state_abbr, city_name = location_sampler.get_state_and_city()
+                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random)
                 state_city_info.append((state_name, state_abbr, city_name))
 
                 if only_surname:
                     name_components = NameComponents(
-                        '', None, name_sampler.get_random_surname(top_40=top_40, raw=name_raw, with_only_one_surname=with_only_one_surname)
+                        '',
+                        None,
+                        name_sampler.get_random_surname(
+                            top_40=top_40,
+                            raw=name_raw,
+                            with_only_one_surname=with_only_one_surname,
+                            random_mode=random,
+                        ),
                     )
                 elif only_middle:
-                    name_components = name_sampler.get_random_name(raw=name_raw, only_middle=True, return_components=True)
+                    name_components = name_sampler.get_random_name(
+                        raw=name_raw,
+                        only_middle=True,
+                        return_components=True,
+                        random_mode=random,
+                    )
                 else:
                     name_components = name_sampler.get_random_name(
                         time_period=time_period,
@@ -491,6 +571,9 @@ def sample(
                         with_only_one_surname=with_only_one_surname,
                         always_middle=always_middle,
                         return_components=True,
+                        random_mode=random,
+                        uf=state_abbr if experimental_uf_sex_conditioning else None,
+                        sex=name_only_sexes[i] if name_only_sexes is not None else None,
                     )
 
                     # Add documents for full names
@@ -524,7 +607,21 @@ def sample(
             # through the same vectorised alias lookup. ``--batch`` is a
             # flush-to-disk cadence (see ``save_to_jsonl`` below), not a
             # sampling-strategy switch.
-            batch_locations = location_sampler.batch_sample_locations(actual_qty)
+            batch_locations = location_sampler.batch_sample_locations(actual_qty, random_mode=random)
+            # Build per-row UF / sex when the experimental conditioning is on.
+            # Sex is drawn 50/50 because the bundled data has no sex prior;
+            # downstream the name sampler falls back to the period-only table
+            # if a (uf, period, sex) partition is absent, so this is safe to
+            # pass even when only some partitions have been ingested.
+            batch_ufs: list[str] | None = None
+            batch_sexes: list[str] | None = per_row_sexes
+            if experimental_uf_sex_conditioning:
+                batch_ufs = [loc['state_abbr'] for loc in batch_locations]
+                if batch_sexes is None:
+                    # Legacy experimental-flag behaviour: 50/50 sex draw when
+                    # no explicit sex_conditioning was requested but UF x sex
+                    # partitions are being targeted.
+                    batch_sexes = _coin_flip_sexes(actual_qty)
             batch_names = name_sampler.batch_sample_names(
                 actual_qty,
                 time_period=time_period,
@@ -533,6 +630,9 @@ def sample(
                 top_40=top_40,
                 with_only_one_surname=with_only_one_surname,
                 always_middle=always_middle,
+                random_mode=random,
+                ufs=batch_ufs,
+                sexes=batch_sexes,
             )
 
             for i in range(actual_qty):

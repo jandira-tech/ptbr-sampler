@@ -47,12 +47,47 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
         notes='See docs/sources/ibge-nomes-no-brasil-2022.md',
     ),
     DataOrigin(
+        kind='Sex prior (national, long tail)',
+        summary=(
+            'Per-name male/female frequencies powering period x sex sampling. '
+            'Two sources merged by ingest_to_parquet.py: '
+            '(1) brasil.io/genero-nomes (curated by Álvaro Justen / @turicas, '
+            'built by walking the same IBGE Nomes API our period data comes '
+            'from) — empirical, ~93 % of rows; '
+            '(2) Gemini classifications (gemini-3.1-flash-lite-preview, run '
+            'locally via 100 concurrent workers) — LLM-tagged gap-fill for '
+            'names absent from genero-nomes, ~7 % of rows. '
+            'Combined sex-prior coverage of names_data cells: 100.0 %. '
+            'Long tail preserved: 8k-24k rows per (period, sex) partition. '
+            'Each parquet row carries a "source" column so reviewers can '
+            'filter to empirical-only if they need it.'
+        ),
+        files=(
+            _PACKAGE_DATA / 'raw' / 'genero_nomes' / 'nomes.csv',
+            _PACKAGE_DATA / 'raw' / 'gemini_gender' / 'classifications.jsonl',
+            _PACKAGE_DATA / 'parquet' / 'sex_prior',
+            _PACKAGE_DATA / 'parquet' / 'first_names',
+        ),
+        dimensions=('name', 'count_male', 'count_female', 'p_male', 'p_female', 'classification', 'source'),
+        primary_url='https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz',
+        notes=(
+            'See docs/sources/genero-nomes.md and '
+            'docs/sources/gemini-gender-classifications.md. '
+            'Fetch with "python -m scripts.download_datasets --fetch-genero-nomes" + '
+            '"GEMINI_API_KEY=... python -m scripts.classify_unmatched_names_gemini". '
+            'Each ingested partition ships a data_origin.json sidecar with '
+            'a source breakdown (rows_from_genero_nomes vs rows_from_gemini).'
+        ),
+    ),
+    DataOrigin(
         kind='Surnames',
         summary=(
             'National surname distribution consistent with IBGE 2022 Census '
             'figures (Silva 16.76%, Santos ~11%). UF x period conditioning '
             'is the largest realism gap flagged by the audit; the Parquet '
-            'layout is ready to receive it.'
+            'layout is ready to receive it. The bundled JSON also exposes '
+            'a "top_40" convenience subset (historical-data mode); the '
+            'full ~86k-entry table is the realism-preserving default.'
         ),
         files=(
             _PACKAGE_DATA / 'surnames_data.json',
@@ -60,6 +95,11 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
         ),
         dimensions=('scope=national',),
         primary_url='https://www.ibge.gov.br/apps/nomes/',
+        notes=(
+            'Two-surname realism note: Brazilian civil naming overwhelmingly '
+            'uses at least two surnames; with_only_one_surname=True is a '
+            'compatibility override, not the realistic default.'
+        ),
     ),
     DataOrigin(
         kind='Middle names',
@@ -68,7 +108,11 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
             'disseminates only first names, so this benchmark is indirect. '
             'Ingestion filters surname leakage (Araújo, Borges, …), the '
             '"Cancelado" token, and bare hyphens against a given-name '
-            'whitelist (~302 of 1,187 tokens dropped).'
+            'whitelist (~302 of 1,187 tokens dropped). '
+            'percentage_with_second = 30.99% is computed directly from '
+            'total_with_second_names / total_people in the raw extract '
+            '(1,640,514 / 5,293,204) — transparent for this corpus, but '
+            'the corpus itself is authorial, not IBGE-published.'
         ),
         files=(
             _PACKAGE_DATA / 'middle_names.json',
@@ -78,7 +122,7 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
         primary_url=(
             'https://arpenbrasil.org.br/press_releases/ranking-nacional-apos-sete-anos-nome-feminino-lidera-preferencia-no-brasil/'
         ),
-        notes='See docs/sources/arpen-2024-rankings.md',
+        notes='See docs/sources/arpen-2024-rankings.md and docs/data-origins.md (cleaning pipeline).',
     ),
     DataOrigin(
         kind='States (UFs)',

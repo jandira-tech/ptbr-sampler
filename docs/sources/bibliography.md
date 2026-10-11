@@ -117,6 +117,39 @@ against IBGE boundaries during validation.
 
 - <https://ipeagit.github.io/geobr/>
 
+### 8. `genero-nomes` (Brasil.IO / Álvaro Justen / @turicas)
+
+Per-name male/female frequency table built from the public IBGE Nomes API
+(per-name endpoint walked across the full long tail). Provides the sex
+prior that powers our `period × sex` first-name partitions
+(`parquet/first_names/period=<P>/sex=<S>/`). Same provenance lineage as our
+period data — Brasil.IO scraped the same IBGE Nomes API we pull
+period-level data from, just on the per-name endpoint instead of the
+ranking one.
+
+- Dataset files: <https://brasil.io/dataset/genero-nomes/files/>
+- Direct download: <https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz>
+- Methodology + scraper: <https://github.com/turicas/genero-nomes>
+- Brasil.IO methodology blog post:
+  <https://blog.brasil.io/2019/05/31/classificando-nomes-por-genero-usando-dados-publicos/index.html>
+- Local source page: `docs/sources/genero-nomes.md`
+
+### 9. Gemini gender classifications (`gemini-3.1-flash-lite-preview`)
+
+Gap-fill source for the ~8 % of names in `names_data.json` absent from
+`genero-nomes` (mostly civil-registry typos and spelling variants). LLM-
+derived, **not** empirical IBGE data. Runs locally via
+`scripts/classify_unmatched_names_gemini.py` with 100 concurrent workers
+and quota-aware retry; outputs to
+`ptbr_sampler/data/raw/gemini_gender/classifications.jsonl`. Every parquet
+row this source contributes is tagged with `source =
+'gemini-3.1-flash-lite-preview'` so reviewers can audit and, if they
+need, filter back to the empirical-only subset.
+
+- Model docs: <https://ai.google.dev/gemini-api/docs/models>
+- API key: <https://aistudio.google.com/apikey>
+- Local methodology + audit-trail spec: `docs/sources/gemini-gender-classifications.md`
+
 ## Repository's own deep-research audit
 
 `deep-research-report(4).md` (committed at the repo root) is the statistical

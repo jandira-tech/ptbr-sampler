@@ -51,6 +51,11 @@ uv run ptbr sample --qty 1
 
 # Gere apenas documentos específicos
 uv run ptbr sample --only-cpf --only-rg --qty 3
+
+# Modo "realismo desativado" (saída intencionalmente menos realista):
+# localização uniforme entre estados/cidades, nomes uniformes nas tabelas,
+# meio nome com 50/50 em vez do 30,99% empírico.
+uv run ptbr sample --qty 5 --random
 ```
 
 ### API Python
@@ -203,6 +208,148 @@ Para gerar a camada Parquet a partir dos JSONs legados:
 ```bash
 python -m scripts.ingest_to_parquet
 ```
+
+## 🧭 Realismo por padrão (e modo aleatório explícito)
+
+O caminho padrão é **realismo por padrão**:
+
+1. a geografia é amostrada primeiro, com pesos proporcionais à população
+   (estado e cidade);
+2. os nomes são amostrados a partir das tabelas de alias derivadas das
+   distribuições empíricas (IBGE, registros civis), conforme as
+   dimensões realmente disponíveis nos dados.
+
+Quem quiser saída intencionalmente menos realista pode optar por
+`random=True` (Python) ou `--random` (CLI):
+
+```python
+from sample import sample
+sample(q=5)                # realismo por padrão (recomendado)
+sample(q=5, random=True)   # modo aleatório explícito
+```
+
+No modo aleatório o amostrador **ignora** os pesos populacionais para a
+localização, **ignora** os pesos de frequência para nomes/sobrenomes, e
+substitui a taxa empírica de meio-nome (30,99%) por um sorteio
+uniforme 50/50. Isto é por desenho — o objetivo do projeto continua
+sendo realismo, e o flag deixa essa escolha explícita.
+
+Importante: o modo realista **só** condiciona em dimensões que
+realmente existem nos dados disponíveis. Hoje isso significa: período
+para nomes, escopo nacional para sobrenomes, e participação populacional
+para geografia. Não há condicionamento por UF nem por sexo no payload
+distribuído — ver "Lacunas de realismo conhecidas" abaixo.
+
+## 📥 Baixar dados e reconstruir os Parquets
+
+Se quiser reconstruir os artefatos do zero (`todo.md` itens 1 e 11):
+
+```bash
+# 1. Inventário: o que está presente localmente, e o que cada dataset alimenta?
+python -m scripts.download_datasets
+
+# 2a. (Opcional, EXPERIMENTAL) Baixar os rankings UF × sexo × década do
+#     IBGE Nomes v2 (~540 chamadas, top-20 por condição). Isso destrava o
+#     condicionamento por UF/sexo para nomes; ver caveat abaixo.
+python -m scripts.download_datasets --fetch-ibge-nomes
+
+# 2b. Para qualquer linha [MISS] do passo 1, baixe a fonte e coloque em
+#    ptbr_sampler/data/raw/<nome>/. Datasets distribuídos só como webapp
+#    (IBGE Nomes 2022, Arpen 2024) ficam manuais por design.
+
+# 3. Reconstrua o layout Parquet a partir dos JSONs e dos rankings raw:
+python -m scripts.ingest_to_parquet
+
+# 4. Re-rode os testes:
+uv run --extra test pytest -q
+```
+
+Cada dataset, a URL canônica, o caminho local e o que ele alimenta
+estão tabelados em [`docs/data-origins.md`](docs/data-origins.md) na
+seção "Download-and-rebuild walkthrough".
+
+**Requisitos de rede:** o fetch chama `servicodados.ibge.gov.br` via
+HTTPS; sandboxes que restringem egress (este repositório é desenvolvido
+em um deles) falham com "Host not in allowlist" / 403. Rode em uma
+máquina com saída de internet liberada.
+
+> **Handoff entre máquinas.** Se você está rodando o fetch em outra
+> máquina e voltando para o Claude Code depois, siga o roteiro em
+> [`docs/handoff-fetch-and-ingest.md`](docs/handoff-fetch-and-ingest.md)
+> e o template de retorno em
+> [`docs/handoff-resume-with-claude.md`](docs/handoff-resume-with-claude.md).
+
+### Condicionamento UF × sexo (experimental)
+
+Quando os rankings do passo 2a são ingeridos, o amostrador pode
+condicionar nomes em `(UF, período, sexo)` — mas isso é **opt-in**:
+
+```python
+from sample import sample
+sample(q=5, experimental_uf_sex_conditioning=True)
+```
+
+```bash
+uv run ptbr sample --qty 5 --experimental-uf-sex
+```
+
+**Caveat (importante):** o endpoint de ranking do IBGE Nomes v2 retorna
+apenas os **top 20** nomes por condição. A pool condicionada é portanto
+muito mais estreita do que a tabela period-only (~milhares de nomes por
+período), então ligar o flag troca diversidade distribucional por
+realismo regional/sexo. Por isso o default segue period-only.
+
+Quando uma partição `(UF, período, sexo)` específica está ausente, o
+amostrador cai silenciosamente para a tabela period-only para aquela
+linha — então o flag é seguro mesmo após um fetch parcial.
+
+## ⚠️ Lacunas de realismo conhecidas
+
+Resumo operacional dos pontos onde os dados disponíveis hoje **limitam**
+o realismo da amostragem. Os detalhes completos estão em
+`docs/data-origins.md`, `docs/architecture.md` e `deep-research-report(4).md`.
+
+- **Condicionamento por UF/sexo para *nomes* — experimental, top-20.**
+  O endpoint IBGE Nomes v2 expõe top-20 nomes por
+  `(UF, sexo, década)`. A ingesta gravar partições
+  `parquet/first_names/uf=<UF>/period=<P>/sex=<S>/` quando rodada e o
+  amostrador as usa via `experimental_uf_sex_conditioning=True`. Default
+  fica em period-only porque ~20 nomes/condição é muito menos do que
+  ~milhares/período no caminho não-condicionado.
+- **Sem condicionamento por UF para *sobrenomes*.** A release IBGE Nomes
+  no Brasil 2022 publica sobrenomes por UF apenas no webapp (sem API /
+  endpoint de download). Hoje sobrenomes seguem distribuição pooled
+  nacional — `Santos` 43,38% em Sergipe e `Silva` 35,75% em Alagoas
+  ficam subestimados. Bloqueado por dado, não por código.
+- **Sem condicionamento por sexo no caminho default.** Pelo mesmo
+  motivo do item anterior: o `names_data.json` agrupa M/F. O sampler
+  só usa sexo quando o flag experimental está ligado E os partições
+  ingeridas existem.
+- **Horizonte de tempo limitado a `UNTIL_2010`.** O último bucket
+  cobre nascimentos até 2010 (estoque IBGE). Coortes recentes (2011–2024)
+  ficam fora; o ranking Arpen 2024 serve como benchmark de fluxo de
+  recém-nascidos, mas não substitui o estoque populacional.
+- **`top_40` é modo histórico.** Ele existe porque, no extrato legado,
+  só os 40 maiores sobrenomes estavam consolidadamente disponíveis. A
+  tabela completa (~86 mil entradas) é mais realista. `top_40` permanece
+  como conveniência; não o use esperando que seja o caminho preservador
+  de realismo.
+- **Convenção de dois sobrenomes.** A convenção brasileira
+  predominante é ter pelo menos dois sobrenomes (um por linhagem
+  parental). O default mantém isso. `with_only_one_surname=True` é
+  modo de compatibilidade/conveniência, **não** o realista.
+- **Provenance de `middle_names.json`.** Extrato de cartórios civis
+  filtrado por whitelist de nomes próprios e blocklist de sobrenomes
+  (ver `ptbr_sampler/sampling/vocabulary.py`); pipeline reproduzível por
+  `python -m scripts.ingest_to_parquet`. IBGE *Nomes no Brasil* só
+  dissemina primeiro nome, então essa fonte é autoral por necessidade.
+  Documentação detalhada em `docs/data-origins.md`.
+- **`percentage_with_second = 30,99%`.** Calculado diretamente do
+  extrato (`1.640.514 / 5.293.204`). Transparente para esse corpus,
+  mas o corpus é autoral. Leia como estimativa explícita, não como
+  fato IBGE.
+- **`random=True` afrouxa todas as dimensões.** Ele é o complemento
+  honesto do realismo: quem quiser saída uniforme tem como pedir.
 
 ## 📄 Licença
 
