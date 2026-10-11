@@ -26,6 +26,11 @@ from ptbr_sampler.sampling.store import PartitionSpec, PartitionStore, alias_fro
 _DEFAULT_PARQUET_ROOT = Path(__file__).resolve().parent / 'data' / 'parquet'
 
 
+def _alias_draw(table: AliasTable, n: int, rng: np.random.Generator, *, random_mode: bool) -> np.ndarray:
+    """``n`` indices from ``table``: uniform over its support in random mode, else weighted."""
+    return table.sample_uniform(n, rng) if random_mode else table.sample(n, rng)
+
+
 class TimePeriod(StrEnum):
     """Time periods available in the dataset."""
 
@@ -407,7 +412,7 @@ class BrazilianNameSampler:
         if table is None:
             return ''
         rng = _rng_from_python_random()
-        draws = table.sample_uniform(1, rng) if random_mode else table.sample(1, rng)
+        draws = _alias_draw(table, 1, rng, random_mode=random_mode)
         return str(draws[0])
 
     # ------------------------------------------------------------------
@@ -538,7 +543,7 @@ class BrazilianNameSampler:
         """
         rng = _rng_from_python_random()
         table = self._top_40_table() if top_40 else self._surnames_table()
-        draws = table.sample_uniform(2, rng) if random_mode else table.sample(2, rng)
+        draws = _alias_draw(table, 2, rng, random_mode=random_mode)
         surname1 = str(draws[0])
         surname2 = str(draws[1])
         return self._assemble_surname(
@@ -592,11 +597,11 @@ class BrazilianNameSampler:
             return [NameComponents(first_names[i], middle_names[i], '') for i in range(n)]
 
         surname_table = self._top_40_table() if top_40 else self._surnames_table()
-        surname_draws_a = surname_table.sample_uniform(n, rng) if random_mode else surname_table.sample(n, rng)
+        surname_draws_a = _alias_draw(surname_table, n, rng, random_mode=random_mode)
         if with_only_one_surname:
             surname_draws_b: np.ndarray | None = None
         else:
-            surname_draws_b = surname_table.sample_uniform(n, rng) if random_mode else surname_table.sample(n, rng)
+            surname_draws_b = _alias_draw(surname_table, n, rng, random_mode=random_mode)
 
         results: list[NameComponents] = []
         for i in range(n):
@@ -645,7 +650,7 @@ class BrazilianNameSampler:
         # Fast path — single unconditioned table for every row.
         if per_row_ufs is None or per_row_sexes is None:
             table = self._first_names_table(time_period)
-            draws = table.sample_uniform(n, rng) if random_mode else table.sample(n, rng)
+            draws = _alias_draw(table, n, rng, random_mode=random_mode)
             return [(str(name).upper() if raw else str(name)) for name in draws]
 
         # Conditional path — bucket by (uf, sex) and draw per bucket so we
@@ -662,7 +667,7 @@ class BrazilianNameSampler:
         for (bucket_uf, bucket_sex), indices in buckets.items():
             table = self._first_names_table(time_period, uf=bucket_uf, sex=bucket_sex)
             count = len(indices)
-            draws = table.sample_uniform(count, rng) if random_mode else table.sample(count, rng)
+            draws = _alias_draw(table, count, rng, random_mode=random_mode)
             for j, row_idx in enumerate(indices):
                 s = str(draws[j])
                 names_out[row_idx] = s.upper() if raw else s
@@ -685,7 +690,7 @@ class BrazilianNameSampler:
             return middle_names
 
         def _draw_n(k: int) -> np.ndarray:
-            return table.sample_uniform(k, rng) if random_mode else table.sample(k, rng)
+            return _alias_draw(table, k, rng, random_mode=random_mode)
 
         if always_middle:
             draws = _draw_n(n)
