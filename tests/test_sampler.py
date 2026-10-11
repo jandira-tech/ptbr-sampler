@@ -221,3 +221,14 @@ class TestUfSexConditioningNameOnly:
         _sample(qty=2, return_only_name=True)
 
         assert [(c['uf'], c['sex']) for c in calls] == [(None, None), (None, None)]
+
+    @pytest.mark.parametrize('fork', ['only_surname', 'only_middle'])
+    def test_surname_and_middle_forks_draw_no_sex(self, monkeypatch, fork):
+        """Those forks never read a sex, so the flag must not spend RNG draws on one."""
+        import ptbr_sampler.sampler as sampler_module
+
+        flips: list[int] = []
+        monkeypatch.setattr(sampler_module, '_coin_flip_sexes', lambda n: flips.append(n) or ['F'] * n)
+        _sample(qty=2, experimental_uf_sex_conditioning=True, **{fork: True})
+
+        assert flips == []

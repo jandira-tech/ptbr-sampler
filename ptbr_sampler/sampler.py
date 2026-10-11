@@ -328,7 +328,8 @@ def sample(
         only_document (bool): If True, produce document-only results (no name/location unless combined via other flags).
         surnames_path (str | Path): Path to surnames data used by the name sampler.
         json_path (str | Path): Path to bundled city/state JSON used to initialize the location sampler.
-        locations_path (str | Path): Optional override JSON with custom `cities`/`states` to update the location sampler; failures are logged and ignored.
+        locations_path (str | Path): Optional override JSON with custom `cities`/`states` to update the
+            location sampler; failures are logged and ignored.
         save_to_jsonl (str | None): If provided, path to write results as newline-delimited JSON; saved via an async writer.
         all_data (bool): If True, enable all `always_*` outputs and disable mutually exclusive `only_*`/`only_*` output restrictions.
         progress_callback (Callable[[int, str], None] | None): Optional callback receiving (completed_count, message) to report progress.
@@ -527,9 +528,11 @@ def sample(
 
         elif return_only_name or only_surname or only_middle:
             # Name-only generation. First names take the same UF / sex
-            # conditioning as the full-profile batch path below.
+            # conditioning as the full-profile batch path below; the surname
+            # and middle-name forks draw no first name, so they flip no coins.
             name_only_sexes = per_row_sexes
-            if experimental_uf_sex_conditioning and name_only_sexes is None:
+            draws_first_names = not (only_surname or only_middle)
+            if experimental_uf_sex_conditioning and name_only_sexes is None and draws_first_names:
                 name_only_sexes = _coin_flip_sexes(actual_qty)
             for i in range(actual_qty):
                 documents = {}
