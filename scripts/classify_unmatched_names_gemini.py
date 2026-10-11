@@ -127,30 +127,36 @@ def _load_existing_classifications(path: Path) -> dict[str, str]:
                 continue  # skip corrupted lines; will be re-classified on next run
             if not isinstance(row, dict):
                 continue
-            n = (row.get('name') or '').strip().upper()
-            g = (row.get('gender') or '').strip().upper()
+            n, g = row.get('name'), row.get('gender')
+            if not isinstance(n, str) or not isinstance(g, str):
+                continue
+            n, g = n.strip().upper(), g.strip().upper()
             if n and g in ('M', 'F', 'U'):
                 out[n] = g
     return out
 
 
 def _display_path(path: Path) -> str:
-    """``path`` relative to the repository when it lives inside it, else as given."""
+    """``path`` relative to the repository when it lives inside it, else absolute."""
+    resolved = path.resolve()
     try:
-        return str(path.resolve().relative_to(_REPO_ROOT))
+        return str(resolved.relative_to(_REPO_ROOT))
     except ValueError:
-        return str(path)
+        return str(resolved)
 
 
-def compute_unmatched_names(existing_jsonl: Path = _GEMINI_JSONL, *, limit: int | None = None) -> list[str]:
+def compute_unmatched_names(existing_jsonl: Path | None = None, *, limit: int | None = None) -> list[str]:
     """Cross-reference and return the names that still need classification.
 
-    Names already in ``existing_jsonl`` (the run's ``--output``) count as done,
-    so a rerun against the same file resumes instead of starting over.
+    Names in the shipped classifications file always count as done. Names in
+    ``existing_jsonl`` (the run's ``--output``) count too, so a rerun against
+    the same file resumes instead of starting over.
     """
     all_names = _load_names_data_unique(_NAMES_DATA_JSON)
     covered = _load_genero_nomes_keys(_GENERO_NOMES_CSV)
-    already = set(_load_existing_classifications(existing_jsonl))
+    already = set(_load_existing_classifications(_GEMINI_JSONL))
+    if existing_jsonl is not None:
+        already |= set(_load_existing_classifications(existing_jsonl))
     pending = sorted(n for n in all_names if n not in covered and n not in already)
     if limit is not None:
         pending = pending[:limit]
@@ -292,7 +298,9 @@ def main(argv: list[str] | None = None) -> int:
     pending = compute_unmatched_names(args.output, limit=args.limit)
     print(f'Total unique names in names_data.json: {len(_load_names_data_unique(_NAMES_DATA_JSON)):,}')
     print(f'Already covered by genero-nomes: {len(_load_genero_nomes_keys(_GENERO_NOMES_CSV)):,}')
-    print(f'Already classified by Gemini (existing JSONL): {len(_load_existing_classifications(args.output)):,}')
+    print(f'Already classified by Gemini (shipped JSONL): {len(_load_existing_classifications(_GEMINI_JSONL)):,}')
+    if args.output.resolve() != _GEMINI_JSONL.resolve():
+        print(f'Already classified in --output: {len(_load_existing_classifications(args.output)):,}')
     print(f'Pending classification: {len(pending):,}')
     print(f'Model: {args.model}')
     print(f'Workers: {args.workers}')

@@ -297,8 +297,11 @@ class TestPartitionStore:
         target.write_text(
             json.dumps(
                 {
-                    'uf': 'SP', 'localidade': '35', 'sexo': 'F',
-                    'decada': 2010, 'period': 'ate2010',
+                    'uf': 'SP',
+                    'localidade': '35',
+                    'sexo': 'F',
+                    'decada': 2010,
+                    'period': 'ate2010',
                     'res': [
                         {'nome': 'CONDITIONED_ONLY_NAME', 'frequencia': 999, 'ranking': 1},
                     ],
@@ -422,6 +425,13 @@ def test_uf_sex_ingest_skips_malformed_rows(tmp_path: Path):
 
 def test_gemini_reader_skips_non_object_lines(tmp_path: Path):
     path = tmp_path / 'classifications.jsonl'
-    path.write_text('["MARIA"]\n{"name": "ana", "gender": "F", "model": "m"}\n', encoding='utf-8')
+    path.write_text(
+        '["MARIA"]\n{"name": 123, "gender": "F"}\n{"name": "bia", "gender": "F", "model": 7}\n'
+        '{"name": "ana", "gender": "F", "model": "m"}\n',
+        encoding='utf-8',
+    )
 
-    assert list(ingest_to_parquet._read_gemini_classifications(path)) == ['ANA']
+    assert ingest_to_parquet._read_gemini_classifications(path) == {
+        'BIA': {'gender': 'F', 'model': ''},
+        'ANA': {'gender': 'F', 'model': 'm'},
+    }

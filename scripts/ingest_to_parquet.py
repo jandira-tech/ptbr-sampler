@@ -347,9 +347,11 @@ def _read_gemini_classifications(jsonl_path: Path) -> dict[str, dict[str, str]]:
                 continue
             if not isinstance(row, dict):
                 continue
-            n = (row.get('name') or '').strip().upper()
-            g = (row.get('gender') or '').strip().upper()
-            m = (row.get('model') or '').strip()
+            n, g, m = row.get('name'), row.get('gender'), row.get('model')
+            if not isinstance(n, str) or not isinstance(g, str):
+                continue
+            n, g = n.strip().upper(), g.strip().upper()
+            m = m.strip() if isinstance(m, str) else ''
             if not n or g not in ('M', 'F', 'U'):
                 continue
             out[n] = {'gender': g, 'model': m}

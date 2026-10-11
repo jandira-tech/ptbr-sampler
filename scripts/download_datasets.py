@@ -246,7 +246,7 @@ def _validate_json_shape(path: Path) -> str | None:
     if 'second_names' in data:
         n_second = len(data.get('second_names', {}))
         pct = data.get('percentage_with_second')
-        pct_str = f'{pct:.4f}%' if isinstance(pct, int | float) else 'n/a'
+        pct_str = f'{pct:.4f}%' if isinstance(pct, int | float) and not isinstance(pct, bool) else 'n/a'
         return f'second_names: {n_second} rows; percentage_with_second={pct_str}'
     if 'states' in data and 'cities' in data:
         return f'states: {len(data["states"])}; cities: {len(data["cities"])}'
