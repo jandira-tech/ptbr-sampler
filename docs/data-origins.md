@@ -49,7 +49,7 @@ command (see `ptbr_sampler/cli.py`).
   Combining the merged sex prior with the period-only percentages gives
   **period × sex** partitions at full long-tail cardinality (8k–24k rows
   per partition):
-  ```
+  ```text
   weight(name, period, sex) ∝ percentage(name, period) * p_sex(name)
   ```
   normalised within each `(period, sex)` slice. Activate with
@@ -317,7 +317,7 @@ that row. So it is safe to turn on after only a partial fetch.
 | IBGE Nomes API v2 (first names by period) | <https://servicodados.ibge.gov.br/api/docs/nomes?versao=2> | `ptbr_sampler/data/names_data.json` | `parquet/first_names/period=<x>/` | bundled |
 | brasil.io/genero-nomes (sex prior, national long tail) | <https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz> | `ptbr_sampler/data/raw/genero_nomes/nomes.csv` | `parquet/sex_prior/scope=national/` + `parquet/first_names/period=<P>/sex=<S>/` | downloadable, opt-in |
 | Gemini gap-fill (LLM-tagged sex for the ~8 % of names absent from genero-nomes) | `gemini-3.1-flash-lite-preview` | `ptbr_sampler/data/raw/gemini_gender/classifications.jsonl` | `parquet/sex_prior/scope=national/` (`source` column) + period × sex partitions | downloadable, opt-in |
-| IBGE Nomes no Brasil 2022 (first names + surnames by UF, sex) | <https://www.ibge.gov.br/apps/nomes/> | `ptbr_sampler/data/raw/ibge_nomes_2022/` | future `surnames/uf=<UF>/` and `first_names/uf=<UF>/sex=<>/` | **not bundled** |
+| IBGE Nomes no Brasil 2022 (first names + surnames by UF, sex) | <https://www.ibge.gov.br/apps/nomes/> | `ptbr_sampler/data/raw/ibge_nomes_2022/` | future `surnames/uf=<UF>/` and `first_names/uf=<UF>/sex=<sex>/` | **not bundled** |
 | IBGE Estimativas da População 2024 | <https://ftp.ibge.gov.br/Estimativas_de_Populacao/Estimativas_2024/estimativa_dou_2024.pdf> | `ptbr_sampler/data/locations_data.json` | `parquet/states/` | bundled |
 | Arpen-Brasil 2024 newborn ranking | <https://arpenbrasil.org.br/press_releases/ranking-nacional-apos-sete-anos-nome-feminino-lidera-preferencia-no-brasil/> | `ptbr_sampler/data/raw/arpen_2024/` | benchmark only | **not bundled** |
 | Surnames national | <https://www.ibge.gov.br/apps/nomes/> | `ptbr_sampler/data/surnames_data.json` | `parquet/surnames/scope=national/` | bundled |

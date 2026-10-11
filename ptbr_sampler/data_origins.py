@@ -58,7 +58,7 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
             'locally via 100 concurrent workers) — LLM-tagged gap-fill for '
             'names absent from genero-nomes, ~7 % of rows. '
             'Combined sex-prior coverage of names_data cells: 100.0 %. '
-            'Long tail preserved: 8k–24k rows per (period, sex) partition. '
+            'Long tail preserved: 8k-24k rows per (period, sex) partition. '
             'Each parquet row carries a "source" column so reviewers can '
             'filter to empirical-only if they need it.'
         ),

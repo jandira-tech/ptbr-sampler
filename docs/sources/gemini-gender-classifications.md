@@ -31,7 +31,7 @@ rigorously **labelled** LLM call rather than leave it open.
 
 ### Model
 
-```
+```text
 gemini-3.1-flash-lite-preview
 ```
 
@@ -42,7 +42,7 @@ classifying one name per request.
 
 ### Prompt (verbatim)
 
-```
+```text
 You are classifying Brazilian Portuguese first names by gender. The name is "{name}". Reply with EXACTLY one character — and nothing else:
   M  -> commonly given to males in Brazil
   F  -> commonly given to females in Brazil

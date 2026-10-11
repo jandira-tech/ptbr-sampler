@@ -12,13 +12,14 @@ back so Claude can resume implementation.
 - Python 3.12+
 - `uv` installed (or substitute `pip install -e ".[test]"`)
 - General internet egress (no IBGE / Anatel / Correios firewall rules)
-- Repo checked out at the head of branch
-  `claude/implement-todo-update-docs-64fIT`
+- Repo checked out at the head of `main`, on a new branch for the data
+  (`<data-branch>` below)
 - Working directory: repo root
 
 ```bash
-git checkout claude/implement-todo-update-docs-64fIT
-git pull origin claude/implement-todo-update-docs-64fIT
+git switch main
+git pull origin main
+git switch -c <data-branch>
 uv sync --extra test
 ```
 
@@ -36,7 +37,7 @@ Expected output ends with something like:
 2 dataset(s) not present locally — see source URLs above.
 Once raw datasets are in place, rebuild Parquet with:
     python -m scripts.ingest_to_parquet
-To fetch IBGE Nomes API v2 UF x sexo x decada rankings (~540 calls):
+To fetch IBGE Nomes API v2 UF x sexo x decada rankings (~486 calls):
     python -m scripts.download_datasets --fetch-ibge-nomes
 ```
 
@@ -138,7 +139,7 @@ find ptbr_sampler/data/parquet/first_names -name part.parquet | wc -l
 uv run --extra test pytest -q
 ```
 
-All 427 tests should still pass. The new partitions should not change
+The full test suite should still pass. The new partitions should not change
 default sampler behaviour (the experimental flag is off by default), so
 this is mostly a regression check.
 
@@ -179,7 +180,7 @@ about Git LFS if the team prefers.
 git add ptbr_sampler/data/parquet/first_names ptbr_sampler/data/raw/ibge_nomes_v2
 git status   # confirm what's about to be committed
 git commit -m "Ingest IBGE Nomes v2 UF x período x sexo rankings"
-git push origin claude/implement-todo-update-docs-64fIT
+git push -u origin <data-branch>   # then open a PR into main
 ```
 
 If you'd rather not commit raw + parquet, push only the parquet

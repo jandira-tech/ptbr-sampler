@@ -121,7 +121,7 @@ Once the data lands, summarise in CHANGELOG.md:
 ```
 We ran the fetches off-sandbox. Here's the state:
 
-Branch: claude/implement-todo-update-docs-64fIT @ <commit-sha>
+Branch: <data-branch> @ <commit-sha>
 Raw JSON files written: <N>
 Parquet partitions: <M>
 Test suite: <pass/fail>
