@@ -1,5 +1,5 @@
 // Direct adapter for cep-promise-node
-import cepPromise from './src/utils/cep-promise-node/dist/cep-promise.min.js';
+import cepPromise from 'cep-promise';
 
 // Process command line arguments
 const args = process.argv.slice(2);
