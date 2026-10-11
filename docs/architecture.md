@@ -54,6 +54,11 @@ fully vectorisable. See `ptbr_sampler/sampling/alias.py` for the implementation.
 The cost structure is now identical for `k=1` and `k=100_000` — the property
 we want. See the scaling table in `README.md`.
 
+The alternatives weighed before the alias method (SQLite, NumPy, binary
+search over cumulative weights, a hybrid cache) and their benchmark script
+are kept on the git tag `archive/updates-2026-02-01`, not on `main`. Read
+them with `git show archive/updates-2026-02-01:OPTIMIZATION_SOLUTIONS.md`.
+
 ## 3. Lazy-load with bounded LRU
 
 Population is concentrated — SP/MG/RJ alone cover ~40% of state draws, which
