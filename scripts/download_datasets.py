@@ -7,7 +7,7 @@ Parquet" — end-to-end, not just declarative). Specifically:
   rankings per ``(UF, sexo, decada)`` triple. This is the conditioned
   data that unblocks tasks 3 and 4 (UF- and sex-conditioned realism).
 * IBGE Nomes API v2 (``/api/v2/censos/nomes/{nome}``): per-name decade
-  series, used to back-fill counts when a UF×sex×decade ranking is thin.
+  series, used to back-fill counts when a UF x sex x decade ranking is thin.
 * Local JSON sources already bundled with the repo (period-only first
   names, national surnames, middle names, locations) — these are
   ingested by :mod:`scripts.ingest_to_parquet`; this script just chains
@@ -231,7 +231,8 @@ def _validate_json_shape(path: Path) -> str | None:
     if 'second_names' in data:
         n_second = len(data.get('second_names', {}))
         pct = data.get('percentage_with_second')
-        return f'second_names: {n_second} rows; percentage_with_second={pct:.4f}%'
+        pct_str = f'{pct:.4f}%' if isinstance(pct, int | float) else 'n/a'
+        return f'second_names: {n_second} rows; percentage_with_second={pct_str}'
     if 'states' in data and 'cities' in data:
         return f"states: {len(data['states'])}; cities: {len(data['cities'])}"
     if 'cities' in data:
@@ -273,6 +274,17 @@ def report() -> int:
 # IBGE Nomes API v2 fetcher
 # ----------------------------------------------------------------------
 
+def _https_request(url: str, user_agent: str) -> urllib.request.Request:
+    """Build a request for one of the public HTTPS endpoints above.
+
+    ``urllib`` also opens ``file:`` and custom schemes; refusing anything but
+    ``https://`` keeps a mistyped constant from reading the local disk.
+    """
+    if not url.startswith('https://'):
+        raise ValueError(f'refusing non-HTTPS dataset URL: {url}')
+    return urllib.request.Request(url, headers={'User-Agent': user_agent})  # noqa: S310 - scheme checked above
+
+
 def _fetch_ranking(
     localidade: str,
     sexo: str,
@@ -292,8 +304,8 @@ def _fetch_ranking(
         {'localidade': localidade, 'sexo': sexo, 'decada': decada},
     )
     url = f'{_RANKING_URL}?{qs}'
-    req = urllib.request.Request(url, headers={'User-Agent': user_agent})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - public IBGE HTTPS endpoint
+    req = _https_request(url, user_agent)
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - https only, see _https_request
         payload = json.load(resp)
     if not payload:
         return []
@@ -394,10 +406,9 @@ def fetch_genero_nomes(
         return csv_path
     print(f'  source: {url}')
     print(f'  target: {gz_path.relative_to(_REPO_ROOT)}')
-    req = urllib.request.Request(url, headers={'User-Agent': user_agent})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - public Brasil.IO HTTPS endpoint
-        with gz_path.open('wb') as f:
-            shutil.copyfileobj(resp, f)
+    req = _https_request(url, user_agent)
+    with urllib.request.urlopen(req, timeout=timeout) as resp, gz_path.open('wb') as f:  # noqa: S310 - https only, see _https_request
+        shutil.copyfileobj(resp, f)
     with gzip.open(gz_path, 'rb') as zin, csv_path.open('wb') as zout:
         shutil.copyfileobj(zin, zout)
     size_mib = csv_path.stat().st_size / (1024 * 1024)
@@ -437,7 +448,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    missing = report()
+    report()
 
     if args.fetch_ibge_nomes:
         print('\nFetching IBGE Nomes API v2 (UF x sexo x decada)...')
@@ -455,7 +466,7 @@ def main(argv: list[str] | None = None) -> int:
         if rc != 0:
             return rc
 
-    return 0 if missing == 0 else 0  # missing raw files is informational, not a failure
+    return 0  # missing raw files is informational, not a failure
 
 
 if __name__ == '__main__':  # pragma: no cover

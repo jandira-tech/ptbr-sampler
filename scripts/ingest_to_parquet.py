@@ -68,6 +68,7 @@ _SEX_PRIOR_SCHEMA = pa.schema(
 )
 
 _GENERO_NOMES_URL = 'https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz'
+_IBGE_NOMES_V2_URL = 'https://servicodados.ibge.gov.br/api/v2/censos/nomes/ranking'
 _GENERO_NOMES_PROVENANCE = (
     'brasil.io/genero-nomes (Álvaro Justen / @turicas), built from the public '
     'IBGE Nomes API. Mirrored at ' + _GENERO_NOMES_URL
@@ -237,6 +238,8 @@ def ingest_first_names_uf_sex(raw_root: Path, out_root: Path) -> dict[tuple[str,
                 counts: list[int] = []
                 pcts: list[float] = []
                 for row in rows:
+                    if not isinstance(row, dict):
+                        continue
                     name = row.get('nome')
                     freq = row.get('frequencia')
                     if not name or freq is None:
@@ -253,8 +256,16 @@ def ingest_first_names_uf_sex(raw_root: Path, out_root: Path) -> dict[tuple[str,
                 if not labels:
                     continue
                 weights = _normalise(pcts)
-                partition_dir = out_root / 'first_names' / f'uf={uf}' / f'period={period}' / f'sex={sex}'
+                partition = f'first_names/uf={uf}/period={period}/sex={sex}'
+                partition_dir = out_root / partition
                 _write_partition(partition_dir, labels, counts, weights)
+                _write_origin_sidecar(
+                    partition_dir,
+                    source='IBGE Nomes API v2 ranking endpoint (top 20 names per UF, sex and decade)',
+                    url=_IBGE_NOMES_V2_URL,
+                    rows=len(labels),
+                    extra={'partition': partition},
+                )
                 stats[uf, period, sex] = len(labels)
     return stats
 

@@ -386,3 +386,35 @@ class TestPartitionStore:
         store = PartitionStore()
         table = store.get(spec)
         assert set(str(s) for s in table.labels) == {'a', 'b'}
+
+
+def _write_uf_raw(raw_root: Path, res: list) -> None:
+    target = raw_root / 'uf=SP' / 'period=ate2010' / 'sex=F.json'
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps({'uf': 'SP', 'res': res}), encoding='utf-8')
+
+
+def test_uf_sex_ingest_writes_origin_sidecar(tmp_path: Path):
+    """UF x period x sex partitions carry ``data_origin.json`` like every other partition."""
+    raw_root = tmp_path / 'raw'
+    out = tmp_path / 'parquet'
+    _write_uf_raw(raw_root, [{'nome': 'MARIA', 'frequencia': 1000, 'ranking': 1}])
+
+    ingest_to_parquet.ingest_first_names_uf_sex(raw_root, out)
+
+    sidecar = out / 'first_names' / 'uf=SP' / 'period=ate2010' / 'sex=F' / 'data_origin.json'
+    origin = json.loads(sidecar.read_text(encoding='utf-8'))
+    assert origin['rows'] == 1
+    assert origin['partition'] == 'first_names/uf=SP/period=ate2010/sex=F'
+    assert 'IBGE Nomes API v2' in origin['source']
+
+
+def test_uf_sex_ingest_skips_malformed_rows(tmp_path: Path):
+    """A non-object entry in ``res`` is skipped, not an AttributeError."""
+    raw_root = tmp_path / 'raw'
+    out = tmp_path / 'parquet'
+    _write_uf_raw(raw_root, ['MARIA', None, {'nome': 'ANA', 'frequencia': 500, 'ranking': 2}])
+
+    stats = ingest_to_parquet.ingest_first_names_uf_sex(raw_root, out)
+
+    assert stats == {('SP', 'ate2010', 'F'): 1}

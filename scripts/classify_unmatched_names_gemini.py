@@ -117,13 +117,15 @@ def _load_existing_classifications(path: Path) -> dict[str, str]:
     out: dict[str, str] = {}
     with path.open(encoding='utf-8') as f:
         for raw in f:
-            raw = raw.strip()
-            if not raw:
+            line = raw.strip()
+            if not line:
                 continue
             try:
-                row = json.loads(raw)
+                row = json.loads(line)
             except json.JSONDecodeError:
                 continue  # skip corrupted lines; will be re-classified on next run
+            if not isinstance(row, dict):
+                continue
             n = (row.get('name') or '').strip().upper()
             g = (row.get('gender') or '').strip().upper()
             if n and g in ('M', 'F', 'U'):
@@ -131,11 +133,23 @@ def _load_existing_classifications(path: Path) -> dict[str, str]:
     return out
 
 
-def compute_unmatched_names(limit: int | None = None) -> list[str]:
-    """Cross-reference and return the names that still need classification."""
+def _display_path(path: Path) -> str:
+    """``path`` relative to the repository when it lives inside it, else as given."""
+    try:
+        return str(path.resolve().relative_to(_REPO_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def compute_unmatched_names(existing_jsonl: Path = _GEMINI_JSONL, *, limit: int | None = None) -> list[str]:
+    """Cross-reference and return the names that still need classification.
+
+    Names already in ``existing_jsonl`` (the run's ``--output``) count as done,
+    so a rerun against the same file resumes instead of starting over.
+    """
     all_names = _load_names_data_unique(_NAMES_DATA_JSON)
     covered = _load_genero_nomes_keys(_GENERO_NOMES_CSV)
-    already = set(_load_existing_classifications(_GEMINI_JSONL))
+    already = set(_load_existing_classifications(existing_jsonl))
     pending = sorted(n for n in all_names if n not in covered and n not in already)
     if limit is not None:
         pending = pending[:limit]
@@ -207,7 +221,7 @@ def classify_one(client, name: str, *, model: str, max_retries: int = 6, retry_b
 
     On 429 (RESOURCE_EXHAUSTED) we honour the server-suggested retryDelay
     (typically ~30s for the per-minute quota window). For other errors we
-    fall back to exponential backoff. Total max wait ≈ 6 × ~30s = 3 min
+    fall back to exponential backoff. Total max wait ~ 6 x ~30s = 3 min
     per name — slow but predictable.
     """
     prompt = _PROMPT_TEMPLATE.format(name=name)
@@ -251,9 +265,8 @@ def classify_one(client, name: str, *, model: str, max_retries: int = 6, retry_b
 def _append_jsonl(path: Path, row: dict, lock: threading.Lock) -> None:
     """Thread-safe append of a single JSONL row."""
     line = json.dumps(row, ensure_ascii=False) + '\n'
-    with lock:
-        with path.open('a', encoding='utf-8') as f:
-            f.write(line)
+    with lock, path.open('a', encoding='utf-8') as f:
+        f.write(line)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -270,21 +283,21 @@ def main(argv: list[str] | None = None) -> int:
         '--output',
         type=Path,
         default=_GEMINI_JSONL,
-        help=f'JSONL output (default: {_GEMINI_JSONL.relative_to(_REPO_ROOT)})',
+        help=f'JSONL output (default: {_display_path(_GEMINI_JSONL)})',
     )
     args = parser.parse_args(argv)
 
-    pending = compute_unmatched_names(limit=args.limit)
+    pending = compute_unmatched_names(args.output, limit=args.limit)
     print(f'Total unique names in names_data.json: '
           f'{len(_load_names_data_unique(_NAMES_DATA_JSON)):,}')
     print(f'Already covered by genero-nomes: '
           f'{len(_load_genero_nomes_keys(_GENERO_NOMES_CSV)):,}')
     print(f'Already classified by Gemini (existing JSONL): '
-          f'{len(_load_existing_classifications(_GEMINI_JSONL)):,}')
+          f'{len(_load_existing_classifications(args.output)):,}')
     print(f'Pending classification: {len(pending):,}')
     print(f'Model: {args.model}')
     print(f'Workers: {args.workers}')
-    print(f'Output: {args.output.relative_to(_REPO_ROOT)}')
+    print(f'Output: {_display_path(args.output)}')
 
     if not pending:
         print('Nothing to do.')
@@ -356,7 +369,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f'  U (unknown): {counters["U"]:,}')
     print(f'  errors:     {counters["errors"]:,}')
     print(f'  elapsed:    {elapsed:.1f}s')
-    print(f'  output:     {args.output.relative_to(_REPO_ROOT)}')
+    print(f'  output:     {_display_path(args.output)}')
     print('\nNext step: re-run "python -m scripts.ingest_to_parquet" to fold '
           'the new classifications into parquet/sex_prior/scope=national/ '
           'and the period x sex partitions. The ingester tracks the source '
