@@ -70,7 +70,7 @@ EXPERIMENTAL_UF_SEX = typer.Option(
     '--experimental-uf-sex',
     help=(
         'EXPERIMENTAL: condition first-name draws on the sampled UF and a '
-        "50/50-drawn sex when the parquet/first_names/uf=<UF>/period=<P>/sex=<S>/ "
+        '50/50-drawn sex when the parquet/first_names/uf=<UF>/period=<P>/sex=<S>/ '
         'partitions exist (produced by "python -m scripts.download_datasets '
         '--fetch-ibge-nomes" + "python -m scripts.ingest_to_parquet"). The IBGE '
         'Nomes v2 ranking endpoint exposes only the top-20 names per condition, '

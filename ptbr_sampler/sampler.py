@@ -300,7 +300,7 @@ def sample(
 ) -> dict | list[dict]:
     """
     Generate randomized Brazilian profiles composed of name, location, and document fields according to the supplied flags.
-    
+
     Parameters:
         qty (int): Number of samples to generate.
         q (int | None): Alias for `qty`; if provided, takes precedence.
@@ -453,9 +453,7 @@ def sample(
         if sex_conditioning is not None:
             sc = str(sex_conditioning).strip().upper()
             if sc not in ('M', 'F', 'MIXED'):
-                raise ValueError(
-                    f"sex_conditioning must be 'M', 'F', 'mixed', or None; got {sex_conditioning!r}"
-                )
+                raise ValueError(f"sex_conditioning must be 'M', 'F', 'mixed', or None; got {sex_conditioning!r}")
             sex_conditioning_norm = sc
         per_row_sexes: list[str] | None = None
         if sex_conditioning_norm == 'MIXED':
@@ -556,7 +554,10 @@ def sample(
                     )
                 elif only_middle:
                     name_components = name_sampler.get_random_name(
-                        raw=name_raw, only_middle=True, return_components=True, random_mode=random,
+                        raw=name_raw,
+                        only_middle=True,
+                        return_components=True,
+                        random_mode=random,
                     )
                 else:
                     name_components = name_sampler.get_random_name(

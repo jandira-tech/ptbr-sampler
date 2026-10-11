@@ -590,7 +590,11 @@ class BrazilianNameSampler:
         )
 
         middle_names: list[str | None] = self._draw_middle_names(
-            n, raw=raw, always_middle=always_middle, rng=rng, random_mode=random_mode,
+            n,
+            raw=raw,
+            always_middle=always_middle,
+            rng=rng,
+            random_mode=random_mode,
         )
 
         if not include_surname:
