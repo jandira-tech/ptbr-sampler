@@ -2,7 +2,17 @@ import asyncio
 import json
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any
+
+# The Node script that resolves CEPs through the `cep-promise` npm package,
+# found beside this module so the lookup works from any working directory.
+CEP_SERVICE = Path(__file__).with_name('cep_service.js')
+
+
+def node_command(*ceps: str) -> list[str]:
+    """The argv that runs cep_service.js on the given CEPs."""
+    return ['node', str(CEP_SERVICE), *ceps]
 
 
 async def get_cep_data(cep: str) -> dict[str, Any]:
@@ -27,9 +37,7 @@ async def get_cep_data(cep: str) -> dict[str, Any]:
         try:
             # Use the cep_service.js directly
             process = await asyncio.create_subprocess_exec(
-                'node',
-                'src/utils/cep_service.js',
-                cep,
+                *node_command(cep),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )

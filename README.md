@@ -36,6 +36,9 @@ cd ptbr-sampler
 
 # Instale as dependências (recomenda-se usar um ambiente virtual)
 uv sync
+
+# Consulta de CEPs reais (Node.js): instala o pacote cep-promise
+npm install
 ```
 
 ## 🎯 Início Rápido
@@ -147,6 +150,7 @@ uv run pytest
   - Typer (framework CLI)
   - Rich (formatação de terminal)
   - pytest (testes)
+- Node.js e `npm install` (só para a consulta de CEPs reais via `cep-promise`)
 
 ## 📖 Documentação
 
