@@ -80,6 +80,7 @@ _PROMPT_TEMPLATE = (
 # Inputs
 # ---------------------------------------------------------------------
 
+
 def _load_names_data_unique(path: Path) -> set[str]:
     """Return every distinct first name that appears in ``names_data.json``.
 
@@ -160,14 +161,14 @@ def compute_unmatched_names(existing_jsonl: Path = _GEMINI_JSONL, *, limit: int 
 # Gemini call
 # ---------------------------------------------------------------------
 
+
 def _build_client(api_key: str):
     """Return a google-genai client; fail fast with an actionable message."""
     try:
         from google import genai  # noqa: PLC0415 - import lazily so --dry-run works without the SDK
     except ImportError as err:  # pragma: no cover - import guard
         raise SystemExit(
-            'google-genai is not installed. Run "uv pip install google-genai" '
-            '(or "pip install google-genai") and re-run this script.'
+            'google-genai is not installed. Run "uv pip install google-genai" (or "pip install google-genai") and re-run this script.'
         ) from err
     return genai.Client(api_key=api_key)
 
@@ -248,7 +249,7 @@ def classify_one(client, name: str, *, model: str, max_retries: int = 6, retry_b
                 # Add a small jitter so 100 workers don't all wake at the same instant.
                 time.sleep(quota_delay + 1.0 + (attempt * 0.5))
             else:
-                time.sleep(retry_base ** attempt)
+                time.sleep(retry_base**attempt)
     return {
         'name': name,
         'gender': 'U',
@@ -261,6 +262,7 @@ def classify_one(client, name: str, *, model: str, max_retries: int = 6, retry_b
 # ---------------------------------------------------------------------
 # Driver
 # ---------------------------------------------------------------------
+
 
 def _append_jsonl(path: Path, row: dict, lock: threading.Lock) -> None:
     """Thread-safe append of a single JSONL row."""
@@ -288,12 +290,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     pending = compute_unmatched_names(args.output, limit=args.limit)
-    print(f'Total unique names in names_data.json: '
-          f'{len(_load_names_data_unique(_NAMES_DATA_JSON)):,}')
-    print(f'Already covered by genero-nomes: '
-          f'{len(_load_genero_nomes_keys(_GENERO_NOMES_CSV)):,}')
-    print(f'Already classified by Gemini (existing JSONL): '
-          f'{len(_load_existing_classifications(args.output)):,}')
+    print(f'Total unique names in names_data.json: {len(_load_names_data_unique(_NAMES_DATA_JSON)):,}')
+    print(f'Already covered by genero-nomes: {len(_load_genero_nomes_keys(_GENERO_NOMES_CSV)):,}')
+    print(f'Already classified by Gemini (existing JSONL): {len(_load_existing_classifications(args.output)):,}')
     print(f'Pending classification: {len(pending):,}')
     print(f'Model: {args.model}')
     print(f'Workers: {args.workers}')
@@ -370,11 +369,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f'  errors:     {counters["errors"]:,}')
     print(f'  elapsed:    {elapsed:.1f}s')
     print(f'  output:     {_display_path(args.output)}')
-    print('\nNext step: re-run "python -m scripts.ingest_to_parquet" to fold '
-          'the new classifications into parquet/sex_prior/scope=national/ '
-          'and the period x sex partitions. The ingester tracks the source '
-          '(brasil.io/genero-nomes vs gemini-3.1-flash-lite-preview) in a '
-          '"source" column so reviewers can audit which rows are LLM-derived.')
+    print(
+        '\nNext step: re-run "python -m scripts.ingest_to_parquet" to fold '
+        'the new classifications into parquet/sex_prior/scope=national/ '
+        'and the period x sex partitions. The ingester tracks the source '
+        '(brasil.io/genero-nomes vs gemini-3.1-flash-lite-preview) in a '
+        '"source" column so reviewers can audit which rows are LLM-derived.'
+    )
     return 0
 
 

@@ -60,11 +60,33 @@ _GENERO_NOMES_URL = 'https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz'
 # IBGE municipal codes for the 26 UFs + the Federal District. Using the
 # 2-digit UF codes returns one row per (sexo, decada) per UF.
 UF_CODES: dict[str, str] = {
-    'RO': '11', 'AC': '12', 'AM': '13', 'RR': '14', 'PA': '15', 'AP': '16',
-    'TO': '17', 'MA': '21', 'PI': '22', 'CE': '23', 'RN': '24', 'PB': '25',
-    'PE': '26', 'AL': '27', 'SE': '28', 'BA': '29', 'MG': '31', 'ES': '32',
-    'RJ': '33', 'SP': '35', 'PR': '41', 'SC': '42', 'RS': '43', 'MS': '50',
-    'MT': '51', 'GO': '52', 'DF': '53',
+    'RO': '11',
+    'AC': '12',
+    'AM': '13',
+    'RR': '14',
+    'PA': '15',
+    'AP': '16',
+    'TO': '17',
+    'MA': '21',
+    'PI': '22',
+    'CE': '23',
+    'RN': '24',
+    'PB': '25',
+    'PE': '26',
+    'AL': '27',
+    'SE': '28',
+    'BA': '29',
+    'MG': '31',
+    'ES': '32',
+    'RJ': '33',
+    'SP': '35',
+    'PR': '41',
+    'SC': '42',
+    'RS': '43',
+    'MS': '50',
+    'MT': '51',
+    'GO': '52',
+    'DF': '53',
 }
 
 # Decades that the IBGE Nomes API v2 exposes. 1930 corresponds to the
@@ -92,8 +114,7 @@ TARGETS: tuple[DatasetTarget, ...] = (
     DatasetTarget(
         label='IBGE Nomes API v2 — period-only payload',
         description=(
-            'Decade-of-birth frequencies for given names (2010 Census). The '
-            'bundled names_data.json was extracted from the same API.'
+            'Decade-of-birth frequencies for given names (2010 Census). The bundled names_data.json was extracted from the same API.'
         ),
         source_url='https://servicodados.ibge.gov.br/api/docs/nomes?versao=2',
         raw_local_path=_DATA_DIR / 'names_data.json',
@@ -109,16 +130,13 @@ TARGETS: tuple[DatasetTarget, ...] = (
         ),
         source_url=_RANKING_URL,
         raw_local_path=_NOMES_V2_RAW,
-        powers=(
-            'parquet/first_names/uf=<UF>/period=ate<YYYY>/sex=<M|F>/part.parquet '
-            '(unblocks UF and sex conditioning).'
-        ),
+        powers=('parquet/first_names/uf=<UF>/period=ate<YYYY>/sex=<M|F>/part.parquet (unblocks UF and sex conditioning).'),
     ),
     DatasetTarget(
         label='brasil.io / genero-nomes (Álvaro Justen / turicas)',
         description=(
             'Per-name male/female frequencies (~100k names, national). Built '
-            "by Brasil.IO from the IBGE Nomes API; same provenance lineage "
+            'by Brasil.IO from the IBGE Nomes API; same provenance lineage '
             'as our period-only data. Powers the sex prior P(sex|name) used '
             'for the period x sex first-name partitions. Fetch with '
             '--fetch-genero-nomes.'
@@ -168,8 +186,7 @@ TARGETS: tuple[DatasetTarget, ...] = (
     DatasetTarget(
         label='Surnames national (legacy 2010-era extract)',
         description=(
-            'Pooled national surname distribution consistent with IBGE 2022 '
-            'headline figures. Currently bundled as surnames_data.json.'
+            'Pooled national surname distribution consistent with IBGE 2022 headline figures. Currently bundled as surnames_data.json.'
         ),
         source_url='https://www.ibge.gov.br/apps/nomes/',
         raw_local_path=_DATA_DIR / 'surnames_data.json',
@@ -188,10 +205,7 @@ TARGETS: tuple[DatasetTarget, ...] = (
     ),
     DatasetTarget(
         label='Cities + CEP ranges + DDD',
-        description=(
-            'Municipal population shares (IBGE 2024), Correios CEP prefix '
-            'bands, and Anatel DDD allocation. Bundled today.'
-        ),
+        description=('Municipal population shares (IBGE 2024), Correios CEP prefix bands, and Anatel DDD allocation. Bundled today.'),
         source_url='https://buscacepinter.correios.com.br/',
         raw_local_path=_DATA_DIR / 'cities_with_ceps.json',
         powers='ptbr_sampler/data/parquet/states + city draws (no Parquet partition for cities yet).',
@@ -202,6 +216,7 @@ TARGETS: tuple[DatasetTarget, ...] = (
 # ----------------------------------------------------------------------
 # Status report
 # ----------------------------------------------------------------------
+
 
 def _file_status(path: Path) -> tuple[bool, str]:
     if not path.exists():
@@ -234,9 +249,9 @@ def _validate_json_shape(path: Path) -> str | None:
         pct_str = f'{pct:.4f}%' if isinstance(pct, int | float) else 'n/a'
         return f'second_names: {n_second} rows; percentage_with_second={pct_str}'
     if 'states' in data and 'cities' in data:
-        return f"states: {len(data['states'])}; cities: {len(data['cities'])}"
+        return f'states: {len(data["states"])}; cities: {len(data["cities"])}'
     if 'cities' in data:
-        return f"cities: {len(data['cities'])}"
+        return f'cities: {len(data["cities"])}'
     return f'top-level keys: {list(data)[:5]}'
 
 
@@ -273,6 +288,7 @@ def report() -> int:
 # ----------------------------------------------------------------------
 # IBGE Nomes API v2 fetcher
 # ----------------------------------------------------------------------
+
 
 def _https_request(url: str, user_agent: str) -> urllib.request.Request:
     """Build a request for one of the public HTTPS endpoints above.
@@ -420,6 +436,7 @@ def fetch_genero_nomes(
 # Entry point
 # ----------------------------------------------------------------------
 
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -461,6 +478,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.rebuild:
         from scripts.ingest_to_parquet import main as ingest_main  # noqa: PLC0415 - keep ingest import lazy
+
         print('\nRebuilding Parquet layout...')
         rc = ingest_main([])
         if rc != 0:

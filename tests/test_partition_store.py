@@ -418,3 +418,10 @@ def test_uf_sex_ingest_skips_malformed_rows(tmp_path: Path):
     stats = ingest_to_parquet.ingest_first_names_uf_sex(raw_root, out)
 
     assert stats == {('SP', 'ate2010', 'F'): 1}
+
+
+def test_gemini_reader_skips_non_object_lines(tmp_path: Path):
+    path = tmp_path / 'classifications.jsonl'
+    path.write_text('["MARIA"]\n{"name": "ana", "gender": "F", "model": "m"}\n', encoding='utf-8')
+
+    assert list(ingest_to_parquet._read_gemini_classifications(path)) == ['ANA']
