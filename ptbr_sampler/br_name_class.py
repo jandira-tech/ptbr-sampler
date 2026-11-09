@@ -13,6 +13,8 @@ is the module-global Python stream, preserving ``random.seed(...)`` behavior.
 
 import json
 import random
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -192,23 +194,13 @@ class BrazilianNameSampler:
         self.middle_names_data = self._load_middle_names(middle_names_path) if middle_names_path else None
         self._validate_data()
 
-        # Alias-table caches. Built lazily on first use so construction
-        # cost (~a few ms per period) is paid only if the period is drawn.
-        self._first_name_alias: dict[str, AliasTable | None] = {}
-        self._cohort_first_name_alias: dict[tuple[str, str, str | None], AliasTable | None] = {}
-        self._historical_first_name_alias: dict[tuple[str, str | None], AliasTable | None] = {}
-        self._surname_uf_alias: dict[str | None, AliasTable] = {}
-        self._top_40_uf_alias: dict[str | None, AliasTable] = {}
-        # UF x period x sex caches retained for JSON-era/custom-root compatibility.
-        self._first_name_uf_sex_alias: dict[tuple[str, str, str], AliasTable | None] = {}
-        # Period x sex caches (national, full long tail). Populated when the
-        # parquet/first_names/period=<P>/sex=<S>/ partitions exist (built from
-        # IBGE Nomes percentages * brasil.io/genero-nomes sex prior; see
-        # docs/data-origins.md).
-        self._first_name_period_sex_alias: dict[tuple[str, str], AliasTable | None] = {}
-        self._surname_alias: AliasTable | None = None
-        self._top_40_alias: AliasTable | None = None
-        self._middle_name_alias: AliasTable | None = None
+        # One cache bounds every alias category coherently. PartitionStore's
+        # LRU alone cannot bound residency while sampler references remain.
+        if lru_size < 1:
+            raise ValueError('lru_size must be >= 1')
+        self._alias_cache: OrderedDict[tuple, AliasTable | None] = OrderedDict()
+        self._alias_cache_lock = threading.RLock()
+        self._alias_cache_size = lru_size
 
         # Wire the partitioned Parquet store. The store is consulted before
         # the legacy JSON path — this is the change that actually puts the
@@ -275,6 +267,21 @@ class BrazilianNameSampler:
     # Lazy alias-table builders
     # ------------------------------------------------------------------
 
+    def _cached_alias(self, key: tuple) -> tuple[bool, AliasTable | None]:
+        with self._alias_cache_lock:
+            if key not in self._alias_cache:
+                return False, None
+            table = self._alias_cache[key]
+            self._alias_cache.move_to_end(key)
+            return True, table
+
+    def _cache_alias(self, key: tuple, table: AliasTable | None) -> None:
+        with self._alias_cache_lock:
+            self._alias_cache[key] = table
+            self._alias_cache.move_to_end(key)
+            while len(self._alias_cache) > self._alias_cache_size:
+                self._alias_cache.popitem(last=False)
+
     def _load_from_parquet(self, spec: PartitionSpec) -> AliasTable | None:
         """Load an alias table from a Parquet partition if the store is live."""
         if self._partition_store is None:
@@ -318,11 +325,10 @@ class BrazilianNameSampler:
         if selected_period is None:
             period_key = TimePeriod.UNTIL_2010.value
             if self.parquet_root is not None:
-                key = (selected_cohort.value, normalized_uf or 'BR', normalized_sex)
-                if key in self._cohort_first_name_alias:
-                    table = self._cohort_first_name_alias[key]
-                    if table is not None:
-                        return table
+                key = ('cohort', selected_cohort.value, normalized_uf or 'BR', normalized_sex)
+                found, table = self._cached_alias(key)
+                if found and table is not None:
+                    return table
                 filters: dict[str, str] = {'cohort': selected_cohort.value}
                 filters['scope'] = 'national'
                 if normalized_uf:
@@ -335,7 +341,7 @@ class BrazilianNameSampler:
                         filters['sex'] = normalized_sex
                     spec = PartitionSpec.of(self.parquet_root / 'cohorts', **filters)
                 table = self._load_from_parquet(spec)
-                self._cohort_first_name_alias[key] = table
+                self._cache_alias(key, table)
                 if table is not None:
                     return table
                 raise FileNotFoundError(f'missing modern cohort table: cohort={selected_cohort.value}')
@@ -343,11 +349,10 @@ class BrazilianNameSampler:
             period_key = selected_period.value
             modern_period = selected_period in (TimePeriod.UNTIL_2020, TimePeriod.AFTER_2010)
             if self._require_modern_data or (self.parquet_root is not None and modern_period):
-                historical_key = (period_key, normalized_sex)
-                if historical_key in self._historical_first_name_alias:
-                    cached = self._historical_first_name_alias[historical_key]
-                    if cached is not None:
-                        return cached
+                historical_key = ('historical', period_key, normalized_sex)
+                found, cached = self._cached_alias(historical_key)
+                if found and cached is not None:
+                    return cached
                 historical_period = 'until2020' if selected_period is TimePeriod.UNTIL_2020 else period_key.removeprefix('ate')
                 if normalized_sex and selected_period in (TimePeriod.UNTIL_2020, TimePeriod.AFTER_2010):
                     spec = PartitionSpec.of(self.parquet_root / 'ibge2022' / 'historical', period=historical_period, sex=normalized_sex)
@@ -356,7 +361,7 @@ class BrazilianNameSampler:
                 else:
                     spec = PartitionSpec.of(self.parquet_root / 'ibge2022' / 'historical', period=historical_period)
                 table = self._load_from_parquet(spec)
-                self._historical_first_name_alias[historical_key] = table
+                self._cache_alias(historical_key, table)
                 if table is not None:
                     return table
                 raise FileNotFoundError(f'missing modern historical table: period={period_key}')
@@ -367,42 +372,45 @@ class BrazilianNameSampler:
         # Legacy periods and custom JSON/Parquet fixtures retain their original
         # condition-specific lookup order. This path never serves bundled data.
         if normalized_uf is not None and normalized_sex is not None and self.parquet_root is not None:
-            cache_key = (normalized_uf, period_key, normalized_sex)
-            cached_uf = self._first_name_uf_sex_alias.get(cache_key)
-            if cached_uf is not None:
+            cache_key = ('first_name_uf_sex', normalized_uf, period_key, normalized_sex)
+            found, cached_uf = self._cached_alias(cache_key)
+            if found and cached_uf is not None:
                 return cached_uf
             spec = PartitionSpec.of(self.parquet_root / 'first_names', uf=normalized_uf, period=period_key, sex=normalized_sex)
             table = self._load_from_parquet(spec)
             if table is not None:
-                self._first_name_uf_sex_alias[cache_key] = table
+                self._cache_alias(cache_key, table)
                 return table
-            self._first_name_uf_sex_alias[cache_key] = None
+            self._cache_alias(cache_key, None)
         if normalized_sex is not None and self.parquet_root is not None:
-            ps_key = (period_key, normalized_sex)
-            cached_ps = self._first_name_period_sex_alias.get(ps_key)
-            if cached_ps is not None:
+            ps_key = ('first_name_period_sex', period_key, normalized_sex)
+            found, cached_ps = self._cached_alias(ps_key)
+            if found and cached_ps is not None:
                 return cached_ps
             table = self._load_from_parquet(PartitionSpec.of(self.parquet_root / 'first_names', period=period_key, sex=normalized_sex))
             if table is not None:
-                self._first_name_period_sex_alias[ps_key] = table
+                self._cache_alias(ps_key, table)
                 return table
-            self._first_name_period_sex_alias[ps_key] = None
-        cached = self._first_name_alias.get(period_key)
-        if cached is not None:
+            self._cache_alias(ps_key, None)
+        period_cache_key = ('first_name_period', period_key)
+        found, cached = self._cached_alias(period_cache_key)
+        if found and cached is not None:
             return cached
         if self.parquet_root is not None:
             table = self._load_from_parquet(PartitionSpec.of(self.parquet_root / 'first_names', period=period_key))
             if table is not None:
-                self._first_name_alias[period_key] = table
+                self._cache_alias(period_cache_key, table)
                 return table
         table = alias_from_mapping(self.name_data[period_key]['names'])
-        self._first_name_alias[period_key] = table
+        self._cache_alias(period_cache_key, table)
         return table
 
     def _surnames_table(self, uf: str | None = None) -> AliasTable:
         normalized_uf = uf.upper() if uf is not None else None
-        if normalized_uf in self._surname_uf_alias:
-            return self._surname_uf_alias[normalized_uf]
+        cache_key = ('surnames', normalized_uf)
+        found, cached = self._cached_alias(cache_key)
+        if found and cached is not None:
+            return cached
         if self.parquet_root is not None:
             root = self.parquet_root / 'ibge2022' / 'surnames' if self._require_modern_data else self.parquet_root / 'surnames'
             filters = {'uf': normalized_uf} if normalized_uf else {'scope': 'national'}
@@ -410,43 +418,44 @@ class BrazilianNameSampler:
             if table is None and normalized_uf:
                 table = self._load_from_parquet(PartitionSpec.of(root, scope='national'))
             if table is not None:
-                self._surname_uf_alias[normalized_uf] = table
-                if normalized_uf is None:
-                    self._surname_alias = table
+                self._cache_alias(cache_key, table)
                 return table
         source = {k: v for k, v in self.surname_data.items() if k != 'top_40'}
         table = alias_from_mapping(source)
-        self._surname_uf_alias[normalized_uf] = table
-        self._surname_alias = table
+        self._cache_alias(cache_key, table)
         return table
 
     def _top_40_table(self, uf: str | None = None) -> AliasTable:
         normalized_uf = uf.upper() if uf is not None else None
-        if normalized_uf in self._top_40_uf_alias:
-            return self._top_40_uf_alias[normalized_uf]
+        cache_key = ('top_40', normalized_uf)
+        found, cached = self._cached_alias(cache_key)
+        if found and cached is not None:
+            return cached
         if self._require_modern_data or (normalized_uf is not None and self.parquet_root is not None):
             full = self._surnames_table(normalized_uf)
             # Stable descending sort preserves source order for tied weights.
             indices = sorted(range(len(full)), key=lambda index: -float(full.weights[index]))[:40]
             table = AliasTable.from_weights([str(full.labels[index]) for index in indices], full.weights[indices])
-            self._top_40_uf_alias[normalized_uf] = table
+            self._cache_alias(cache_key, table)
             return table
-        if self._top_40_alias is not None:
-            return self._top_40_alias
         if not self.top_40_surnames:
-            return self._surnames_table()
-        self._top_40_alias = alias_from_mapping(self.top_40_surnames)
-        return self._top_40_alias
+            table = self._surnames_table()
+        else:
+            table = alias_from_mapping(self.top_40_surnames)
+        self._cache_alias(cache_key, table)
+        return table
 
     def _middle_names_table(self) -> AliasTable | None:
-        if self._middle_name_alias is not None:
-            return self._middle_name_alias
+        cache_key = ('middle_names',)
+        found, cached = self._cached_alias(cache_key)
+        if found:
+            return cached
 
         if self.parquet_root is not None:
             spec = PartitionSpec(root=self.parquet_root / 'middle_names', filters=())
             table = self._load_from_parquet(spec)
             if table is not None:
-                self._middle_name_alias = table
+                self._cache_alias(cache_key, table)
                 return table
 
         if not self.middle_names_data:
@@ -456,7 +465,7 @@ class BrazilianNameSampler:
             table = alias_from_mapping(second_names)
         except ValueError:
             return None
-        self._middle_name_alias = table
+        self._cache_alias(cache_key, table)
         return table
 
     # ------------------------------------------------------------------

@@ -17,6 +17,7 @@ optionally, ``weight`` (float32). If ``weight`` is absent it is derived from
 
 from __future__ import annotations
 
+import threading
 from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -70,6 +71,7 @@ class PartitionStore:
             raise ValueError('max_entries must be >= 1')
         self._max = max_entries
         self._cache: OrderedDict[tuple, AliasTable] = OrderedDict()
+        self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -78,33 +80,40 @@ class PartitionStore:
     def get(self, spec: PartitionSpec) -> AliasTable:
         """Return the alias table for ``spec``, loading on miss."""
         key = spec.key()
-        hit = self._cache.get(key)
-        if hit is not None:
+        # Keep the lock during I/O: only one caller may load a missing
+        # partition, and lookups cannot race eviction between get/move_to_end.
+        with self._lock:
+            hit = self._cache.get(key)
+            if hit is not None:
+                self._cache.move_to_end(key)
+                return hit
+            table = self._load(spec)
+            self._cache[key] = table
             self._cache.move_to_end(key)
-            return hit
-        table = self._load(spec)
-        self._cache[key] = table
-        self._cache.move_to_end(key)
-        while len(self._cache) > self._max:
-            self._cache.popitem(last=False)
-        return table
+            while len(self._cache) > self._max:
+                self._cache.popitem(last=False)
+            return table
 
     def register(self, spec: PartitionSpec, table: AliasTable) -> None:
         """Pre-seed the cache with an in-memory table (used by tests)."""
         key = spec.key()
-        self._cache[key] = table
-        self._cache.move_to_end(key)
-        while len(self._cache) > self._max:
-            self._cache.popitem(last=False)
+        with self._lock:
+            self._cache[key] = table
+            self._cache.move_to_end(key)
+            while len(self._cache) > self._max:
+                self._cache.popitem(last=False)
 
     def clear(self) -> None:
-        self._cache.clear()
+        with self._lock:
+            self._cache.clear()
 
     def __contains__(self, spec: PartitionSpec) -> bool:
-        return spec.key() in self._cache
+        with self._lock:
+            return spec.key() in self._cache
 
     def __len__(self) -> int:
-        return len(self._cache)
+        with self._lock:
+            return len(self._cache)
 
     # ------------------------------------------------------------------
     # I/O

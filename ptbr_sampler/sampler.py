@@ -8,8 +8,10 @@ import asyncio
 import copy
 import json
 import random as _stdlib_random
+import threading
 from collections import OrderedDict
 from collections.abc import Callable
+from functools import wraps
 from pathlib import Path
 
 import aiofiles
@@ -28,6 +30,18 @@ _json_cache: dict[str, dict] = {}
 # random streams and scalar document generators remain strictly per call.
 _sampler_cache: OrderedDict[tuple, tuple[BrazilianLocationSampler, BrazilianNameSampler]] = OrderedDict()
 _SAMPLER_CACHE_SIZE = 8
+_sampler_cache_lock = threading.RLock()
+
+
+def _synchronized_sampler_cache(function):
+    """Make cache lookup, construction, and eviction one atomic operation."""
+
+    @wraps(function)
+    def synchronized(*args, **kwargs):
+        with _sampler_cache_lock:
+            return function(*args, **kwargs)
+
+    return synchronized
 
 
 def _load_json_cached(path: str | Path) -> dict:
@@ -57,6 +71,7 @@ def _resolved_cache_path(path: str | Path | None) -> str | None:
     return str(Path(path).resolve()) if path is not None else None
 
 
+@_synchronized_sampler_cache
 def _get_cached_samplers(
     *,
     json_path: str | Path,
@@ -519,9 +534,12 @@ def sample(
                 raise ValueError(f"sex_conditioning must be 'M', 'F', 'mixed', or None; got {sex_conditioning!r}")
             sex_conditioning_norm = sc
         per_row_sexes: list[str] | None = None
-        if sex_conditioning_norm == 'MIXED':
+        samples_first_names = not (
+            only_document or any([only_cpf, only_pis, only_cnpj, only_cei, only_rg, only_fone]) or only_surname or only_middle
+        )
+        if samples_first_names and sex_conditioning_norm == 'MIXED':
             per_row_sexes = _coin_flip_sexes(actual_qty, rng=rng)
-        elif sex_conditioning_norm in ('M', 'F'):
+        elif samples_first_names and sex_conditioning_norm in ('M', 'F'):
             per_row_sexes = [sex_conditioning_norm] * actual_qty
 
         if only_document:
