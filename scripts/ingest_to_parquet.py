@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import argparse
 import csv
-import datetime
+import datetime as dt
 import json
 import sys
 from collections.abc import Iterable
@@ -86,7 +86,7 @@ def _write_origin_sidecar(out_dir: Path, *, source: str, url: str, rows: int, ex
         'source': source,
         'url': url,
         'rows': rows,
-        'fetched_at_utc': datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds'),
+        'fetched_at_utc': dt.datetime.now(dt.UTC).isoformat(timespec='seconds'),
         'ingester': 'scripts/ingest_to_parquet.py',
     }
     if extra:

@@ -206,14 +206,17 @@ class GivenNameVocabulary:
     def from_iterable(cls, names: Iterable[str], surnames: Iterable[str] | None = None) -> GivenNameVocabulary:
         """
         Create a GivenNameVocabulary from iterables of given names and optional surnames.
-        
+
         Parameters:
-            names (Iterable[str]): Iterable of given-name tokens to include in the vocabulary; tokens are normalized and folded.
-            surnames (Iterable[str] | None): Optional iterable of surname tokens whose folded forms will be added to the surname blocklist in addition to the canonical surnames.
-        
+            names (Iterable[str]): Iterable of given-name tokens to include in the vocabulary;
+                tokens are normalized and folded.
+            surnames (Iterable[str] | None): Optional iterable of surname tokens whose folded forms
+                will be added to the surname blocklist in addition to the canonical surnames.
+
         Returns:
-            GivenNameVocabulary: Instance whose `folded` set contains the folded given names and whose `surname_blocklist` contains the canonical surnames plus any provided folded surnames.
-        
+            GivenNameVocabulary: Instance whose `folded` set contains the folded given names and
+                whose `surname_blocklist` contains the canonical surnames plus provided folded surnames.
+
         Raises:
             ValueError: If `names` contains no valid names after folding.
         """
@@ -235,7 +238,8 @@ class GivenNameVocabulary:
             token (str): Input token to test; it will be normalized (folded) before membership checks.
 
         Returns:
-            `True` if the folded token is in the vocabulary's accepted given-name set and not present in the surname blocklist, `False` otherwise.
+            `True` if the folded token is in the vocabulary's accepted given-name set and not
+            present in the surname blocklist, `False` otherwise.
         """
         folded = _fold(str(token))
         if folded in self.surname_blocklist:
