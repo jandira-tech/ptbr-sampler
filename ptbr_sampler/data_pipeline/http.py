@@ -86,6 +86,8 @@ class HttpClient:
         raise HttpError(f'{url} failed after {self.retries + 1} attempts: {last_error}') from last_error
 
     def download(self, source: Source, destination: Path, *, timeout: float = 60, refresh: bool = False) -> dict[str, Any]:
+        if not source.url.startswith('https://'):
+            raise ValueError('only HTTPS sources are allowed')
         metadata_path = destination.with_suffix(destination.suffix + '.meta.json')
         if destination.exists() and metadata_path.exists() and not refresh:
             if source.expected_bytes is not None and destination.stat().st_size != source.expected_bytes:

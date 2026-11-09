@@ -77,6 +77,20 @@ def source_for(payload: bytes) -> Source:
     return Source('test', 'raw', 'https://example.org/data.bin', 'data.bin', hashlib.sha256(payload).hexdigest(), len(payload), 'v1')
 
 
+def test_download_rejects_http_before_network_or_file_creation(tmp_path: Path):
+    requests = []
+    source = Source('insecure', 'raw', 'http://example.org/data.bin', 'data.bin')
+
+    def transport(request, timeout):
+        requests.append(request.full_url)
+        raise AssertionError('network must not be reached')
+
+    with pytest.raises(ValueError, match='only HTTPS'):
+        HttpClient(stream_transport=transport).download(source, tmp_path / 'data.bin')
+    assert requests == []
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_download_resumes_partial_file_with_range(tmp_path: Path):
     payload = b'abcdef'
     part = tmp_path / 'data.bin.part'
