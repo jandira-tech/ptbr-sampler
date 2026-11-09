@@ -154,10 +154,11 @@ class BrazilianNameSampler:
         * the legacy in-memory dicts (used by unit tests that pass bespoke
           mock data and by callers that haven't migrated).
 
-        When ``parquet_root`` is given and the partition file for a
-        requested condition exists, it takes precedence. Otherwise the JSON
-        dict is consulted. This keeps every ``mock_name_data`` test working
-        without forcing Parquet on callers that didn't ask for it.
+        When ``parquet_root`` is given, cohort and new-period tables are read
+        from its Parquet layout regardless of whether it is the bundled root.
+        Legacy periods retain their original JSON-compatible lookup order.
+        JSON-only fixtures may use their legacy data only for default current
+        draws; an explicitly requested modern cohort must be present.
 
         Args:
             json_file_path: Path to JSON file or pre-loaded data dictionary
@@ -301,9 +302,9 @@ class BrazilianNameSampler:
         """Resolve a cohort or an explicit historical period exactly once.
 
         Cohort tables are precomputed national/UF marginals, optionally with
-        the national IBGE sex prior already applied. JSON-only/custom roots
-        retain the legacy fallback; the bundled modern root never substitutes
-        stale JSON when a selected artifact is missing or corrupt.
+        the national IBGE sex prior already applied. Any explicit Parquet root
+        supplies these tables; only JSON-only default-current requests retain
+        the legacy fallback. Missing selected modern artifacts raise clearly.
         """
         selected_cohort = Cohort(cohort)
         selected_period = TimePeriod(time_period) if time_period is not None else None
@@ -316,7 +317,7 @@ class BrazilianNameSampler:
 
         if selected_period is None:
             period_key = TimePeriod.UNTIL_2010.value
-            if self._require_modern_data:
+            if self.parquet_root is not None:
                 key = (selected_cohort.value, normalized_uf or 'BR', normalized_sex)
                 if key in self._cohort_first_name_alias:
                     table = self._cohort_first_name_alias[key]
@@ -340,7 +341,8 @@ class BrazilianNameSampler:
                 raise FileNotFoundError(f'missing modern cohort table: cohort={selected_cohort.value}')
         else:
             period_key = selected_period.value
-            if self._require_modern_data:
+            modern_period = selected_period in (TimePeriod.UNTIL_2020, TimePeriod.AFTER_2010)
+            if self._require_modern_data or (self.parquet_root is not None and modern_period):
                 historical_key = (period_key, normalized_sex)
                 if historical_key in self._historical_first_name_alias:
                     cached = self._historical_first_name_alias[historical_key]
@@ -358,6 +360,9 @@ class BrazilianNameSampler:
                 if table is not None:
                     return table
                 raise FileNotFoundError(f'missing modern historical table: period={period_key}')
+
+        if selected_period is None and selected_cohort is not Cohort.CURRENT:
+            raise ValueError(f'cohort={selected_cohort.value} requires parquet_root with the selected cohort artifact')
 
         # Legacy periods and custom JSON/Parquet fixtures retain their original
         # condition-specific lookup order. This path never serves bundled data.
@@ -509,15 +514,17 @@ class BrazilianNameSampler:
                 instead of honouring the empirical frequency weights. This is
                 the explicit-random escape hatch documented in the README.
                 Default ``False`` keeps the realism-by-default behaviour.
-            uf: Federation Unit abbreviation (e.g. ``'SP'``). When passed
-                together with ``sex`` and a matching Parquet partition
-                exists, the first-name draw is conditioned on
-                ``(uf, period, sex)``. When the partition is missing, the
-                sampler falls back to the period-only table — so this
-                argument is safe to pass even when the IBGE Nomes v2 raw
-                data has not been ingested yet.
-            sex: Either ``'M'`` or ``'F'``. Same fallback behaviour as
-                ``uf``.
+            time_period: Optional legacy IBGE period, or the new national
+                ``UNTIL_2020`` / ``AFTER_2010`` historical distributions.
+                The default draws from the cohort selected by ``cohort``.
+            cohort: ``current`` blends census2022 and newborn2025;
+                ``census2022`` and ``newborn2025`` require no explicit period.
+            uf: Federation Unit abbreviation (e.g. ``'SP'``) for a cohort's
+                precomputed UF distribution. Historical or JSON-only lookups
+                retain their documented legacy sex/UF condition order.
+                Missing explicitly selected modern artifacts raise clearly.
+            sex: Either ``'M'`` or ``'F'`` for cohort sex conditionals;
+                legacy and new national historical periods also accept it.
         """
         if only_middle:
             middle_name = self._get_random_middle_name(random_mode=random_mode)
@@ -574,13 +581,13 @@ class BrazilianNameSampler:
             random_mode: When ``True``, draw uniformly from each table
                 instead of honouring the empirical frequencies. Default
                 ``False`` keeps the realism-by-default behaviour.
-            ufs: Per-row UF list. When provided alongside ``sexes`` (and
-                with matching ``(uf, period, sex)`` Parquet partitions on
-                disk), each first-name draw is conditioned on its row's
-                UF / sex. Falls back to the period-only table when a
-                partition is missing.
-            sexes: Per-row sex list (``'M'``/``'F'``). Used together with
-                ``ufs``.
+            cohort: Selected modern cohort (default ``current``) when no
+                explicit ``time_period`` is supplied.
+            ufs: Per-row UF list selecting a cohort's precomputed UF
+                distribution. Legacy periods retain their custom Parquet
+                sex/UF lookup and JSON fallback behavior.
+            sexes: Per-row sex list (``'M'``/``'F'``), usable with cohorts,
+                legacy periods, and new national historical conditionals.
         """
         if n <= 0:
             return []

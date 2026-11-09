@@ -78,6 +78,34 @@ def test_json_only_fixture_retains_legacy_fallback(mock_name_data):
     assert set(map(str, sampler._top_40_table(uf='SP').labels)) == {'Silva', 'Santos'}
 
 
+def test_custom_parquet_root_loads_cohorts_instead_of_legacy_ate2010(tmp_path, mock_name_data):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    for cohort, label in [('current', 'CUSTOM_CURRENT'), ('census2022', 'CUSTOM_CENSUS'), ('newborn2025', 'CUSTOM_NEWBORN')]:
+        directory = tmp_path / 'cohorts' / f'cohort={cohort}' / 'scope=national'
+        directory.mkdir(parents=True)
+        pq.write_table(pa.table({'name': [label], 'count': [1], 'weight': [1.0]}), directory / 'part.parquet')
+        sampler = BrazilianNameSampler(mock_name_data, parquet_root=tmp_path)
+        table = sampler._first_names_table(cohort=cohort)
+        assert list(map(str, table.labels)) == [label]
+        assert sampler.get_random_name(cohort=cohort, include_surname=False) == label
+
+
+def test_explicit_cohort_missing_from_custom_root_fails_clearly(tmp_path, mock_name_data):
+    sampler = BrazilianNameSampler(mock_name_data, parquet_root=tmp_path)
+    with pytest.raises(FileNotFoundError, match='cohort=newborn2025'):
+        sampler._first_names_table(cohort='newborn2025')
+    with pytest.raises(FileNotFoundError, match='cohort=current'):
+        sampler._first_names_table()
+
+
+def test_explicit_cohort_without_parquet_does_not_use_legacy(tmp_path, mock_name_data):
+    sampler = BrazilianNameSampler(mock_name_data)
+    with pytest.raises(ValueError, match='census2022.*parquet_root|newborn2025.*parquet_root'):
+        sampler._first_names_table(cohort='newborn2025')
+
+
 def test_bundled_root_missing_fails_instead_of_json_fallback(tmp_path, monkeypatch):
     import ptbr_sampler.br_name_class as names
 
@@ -115,7 +143,9 @@ def test_top40_stable_ties_and_random_uniform_support(monkeypatch):
     assert list(map(str, top.labels)) == ['a', 'b', 'c']
 
     calls = []
-    monkeypatch.setattr('ptbr_sampler.br_name_class._alias_draw', lambda table, n, rng, *, random_mode: calls.append(random_mode) or table.labels[:n])
+    monkeypatch.setattr(
+        'ptbr_sampler.br_name_class._alias_draw', lambda table, n, rng, *, random_mode: calls.append(random_mode) or table.labels[:n]
+    )
     sampler.get_random_surname(uf='SP', with_only_one_surname=True, random_mode=True)
     assert calls == [True]
 

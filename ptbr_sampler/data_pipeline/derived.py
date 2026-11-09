@@ -27,8 +27,15 @@ SexPriors = Mapping[str, Mapping[str, float]]
 
 
 def _normalise(values: Mapping[str, float], *, preserve_zeros: bool = False) -> dict[str, float]:
-    clean = {str(name).casefold(): float(weight) for name, weight in values.items() if preserve_zeros or float(weight) > 0}
-    if not clean or any(not math.isfinite(weight) or weight < 0 for weight in clean.values()):
+    clean: dict[str, float] = {}
+    for name, weight in values.items():
+        numeric_weight = float(weight)
+        if not math.isfinite(numeric_weight) or numeric_weight < 0:
+            raise ValueError('derived distribution must contain finite nonnegative weights')
+        if preserve_zeros or numeric_weight > 0:
+            key = str(name).casefold()
+            clean[key] = clean.get(key, 0.0) + numeric_weight
+    if not clean:
         raise ValueError('derived distribution must contain finite nonnegative weights')
     total = math.fsum(clean.values())
     if not math.isfinite(total) or total <= 0:
@@ -97,6 +104,30 @@ def derive_national_marginal(uf_distributions: Mapping[str, Weights], official_p
     return _normalise(result, preserve_zeros=True)
 
 
+def combine_empirical_sex_rows(rows: list[tuple[str, int, int]]) -> list[tuple[str, int, int]]:
+    """Aggregate count evidence before casefolding labels in sex priors."""
+    combined: dict[str, tuple[int, int]] = {}
+    for name, male, female in rows:
+        if male < 0 or female < 0:
+            raise ValueError('empirical sex counts must be nonnegative')
+        key = str(name).casefold()
+        previous_male, previous_female = combined.get(key, (0, 0))
+        combined[key] = previous_male + int(male), previous_female + int(female)
+    return [(name, male, female) for name, (male, female) in combined.items()]
+
+
+def combine_sex_priors(rows: list[tuple[str, int, int]]) -> dict[str, dict[str, float]]:
+    """Combine case variants by counts, not by overwriting normalized priors."""
+    combined = combine_empirical_sex_rows(rows)
+    return {
+        name: {
+            'p_male': male / (male + female) if male + female else 0.0,
+            'p_female': female / (male + female) if male + female else 0.0,
+        }
+        for name, male, female in combined
+    }
+
+
 def apply_national_sex_prior(distribution: Weights, sex_priors: SexPriors, sex: str) -> dict[str, float]:
     """Apply the national IBGE empirical prior and drop unknown-sex rows.
 
@@ -108,14 +139,24 @@ def apply_national_sex_prior(distribution: Weights, sex_priors: SexPriors, sex: 
     if selected not in {'M', 'F'}:
         raise ValueError("sex must be 'M' or 'F'")
     key = 'p_male' if selected == 'M' else 'p_female'
+    normalized_priors: SexPriors = {}
+    for name, prior in sex_priors.items():
+        folded = str(name).casefold()
+        if folded in normalized_priors:
+            raise ValueError('duplicate casefolded sex prior; combine empirical counts before normalization')
+        normalized_priors[folded] = prior
     source = _normalise(distribution, preserve_zeros=True)
-    conditioned = {name: weight * float(sex_priors[name][key]) for name, weight in source.items() if name in sex_priors}
+    conditioned = {name: weight * float(normalized_priors[name][key]) for name, weight in source.items() if name in normalized_priors}
     return _normalise(conditioned, preserve_zeros=True)
 
 
 def rows_from_weight_table(rows: list[dict[str, Any]]) -> dict[str, float]:
-    """Read all labels, retaining zero-mass stock-bin rows as support evidence."""
-    return {row['name']: float(row['weight']) for row in rows}
+    """Read all labels, retaining zero-mass rows and combining duplicates."""
+    result: dict[str, float] = {}
+    for row in rows:
+        name = str(row['name'])
+        result[name] = result.get(name, 0.0) + float(row['weight'])
+    return result
 
 
 _DERIVED_SCHEMA = pa.schema([('name', pa.large_string()), ('count', pa.uint64()), ('weight', pa.float64())])
@@ -148,7 +189,7 @@ def build_cohorts(
     arpen = parquet_root / 'arpen2025'
     tail = _read_weights(ibge / 'historical' / 'period=after2010' / 'part.parquet')
     sex_rows = pq.read_table(ibge / 'sex_prior' / 'scope=national' / 'part.parquet').to_pylist()
-    sex_priors = {row['name'].casefold(): row for row in sex_rows}
+    sex_priors = combine_sex_priors([(row['name'], row['count_male'], row['count_female']) for row in sex_rows])
     births = {row['uf']: row['count'] for row in pq.read_table(arpen / 'births' / 'part.parquet').to_pylist()}
     locations = json.loads(locations_path.read_text(encoding='utf-8'))
     populations = {state['state_abbr']: int(state['state_population']) for state in locations['states'].values()}
@@ -163,7 +204,9 @@ def build_cohorts(
         for uf in UF_CODES:
             census = _read_weights(ibge / 'first_names' / f'uf={uf}' / 'part.parquet')
             simple_rows = pq.read_table(arpen / 'simple' / f'uf={uf}' / 'part.parquet', columns=['name', 'count']).to_pylist()
-            observed = {row['name']: row['count'] for row in simple_rows}
+            observed: Counts = {}
+            for row in simple_rows:
+                observed[row['name']] = observed.get(row['name'], 0) + row['count']
             newborn = derive_newborn_distribution(observed, births=births[uf], national_post2010=tail)
             alpha = births[uf] / populations[uf]
             current = blend_distributions(census, newborn, alpha=alpha)

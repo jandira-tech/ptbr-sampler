@@ -10,6 +10,7 @@ import pytest
 from ptbr_sampler.data_pipeline.derived import (
     apply_national_sex_prior,
     blend_distributions,
+    combine_sex_priors,
     derive_national_marginal,
     derive_newborn_distribution,
 )
@@ -37,9 +38,7 @@ def test_newborn_hand_calculated_observed_residual_and_tail_exclusion():
 
 
 def test_newborn_preserves_zero_mass_tail_labels_without_inventing_probability():
-    result = derive_newborn_distribution(
-        {'ANA': 5}, births=10, national_post2010={'ana': 0.2, 'liz': 0.8, 'zero-stock-bin': 0.0}
-    )
+    result = derive_newborn_distribution({'ANA': 5}, births=10, national_post2010={'ana': 0.2, 'liz': 0.8, 'zero-stock-bin': 0.0})
     assert set(result) == {'ana', 'liz', 'zero-stock-bin'}
     assert result['ana'] == pytest.approx(0.5)
     assert result['liz'] == pytest.approx(0.5)
@@ -59,6 +58,18 @@ def test_current_hand_calculated_union_blend():
     assert math.isclose(sum(result.values()), 1.0)
 
 
+def test_casefold_collisions_are_combined_not_overwritten():
+    result = blend_distributions({'Ana': 0.25, 'ANA': 0.25, 'Bia': 0.5}, {'ana': 1.0}, alpha=0.0)
+    assert result == pytest.approx({'ana': 0.5, 'bia': 0.5})
+
+
+def test_casefold_collisions_in_empirical_sex_priors_are_combined_or_rejected():
+    priors = combine_sex_priors([('Ana', 1, 3), ('ANA', 3, 1), ('Bia', 1, 1)])
+    assert priors == {'ana': {'p_male': 0.5, 'p_female': 0.5}, 'bia': {'p_male': 0.5, 'p_female': 0.5}}
+    with pytest.raises(ValueError, match='casefold.*duplicate|duplicate.*casefold'):
+        apply_national_sex_prior({'ana': 1.0}, {'Ana': {'p_male': 0.5}, 'ANA': {'p_male': 0.5}}, 'M')
+
+
 def test_national_marginal_uses_official_population_not_arpen_or_rows():
     result = derive_national_marginal({'SP': {'a': 1.0}, 'AC': {'a': 0.25, 'b': 0.75}}, {'SP': 100, 'AC': 300})
     assert result == pytest.approx({'a': 0.4375, 'b': 0.5625})
@@ -76,18 +87,14 @@ def test_sex_prior_is_national_and_drops_unknown_only_when_conditioned():
 @pytest.mark.real_data
 def test_committed_newborn_support_and_probabilities_follow_source_rows_independently():
     """Rebuild expectations from after2010 + Arpen, not generated newborn data."""
-    source_rows = pq.read_table(
-        DATA / 'parquet/ibge2022/historical/period=after2010/part.parquet', columns=['name', 'weight']
-    ).to_pylist()
+    source_rows = pq.read_table(DATA / 'parquet/ibge2022/historical/period=after2010/part.parquet', columns=['name', 'weight']).to_pylist()
     assert len(source_rows) == 61_469
     tail = {row['name']: row['weight'] for row in source_rows}
     tail_total = math.fsum(tail.values())
     assert tail_total == pytest.approx(1.0)
     births = {row['uf']: row['count'] for row in pq.read_table(DATA / 'parquet/arpen2025/births/part.parquet').to_pylist()}
     for uf in UF_CODES:
-        observed_rows = pq.read_table(
-            DATA / f'parquet/arpen2025/simple/uf={uf}/part.parquet', columns=['name', 'count']
-        ).to_pylist()
+        observed_rows = pq.read_table(DATA / f'parquet/arpen2025/simple/uf={uf}/part.parquet', columns=['name', 'count']).to_pylist()
         observed = {row['name'].casefold(): row['count'] / births[uf] for row in observed_rows}
         residual = 1 - math.fsum(observed.values())
         denominator = math.fsum(weight for name, weight in tail.items() if name not in observed)
@@ -124,16 +131,11 @@ def test_committed_cohorts_match_exact_mixture_and_national_marginals():
         assert len(newborn) > 50, f'{uf}: residual tail collapsed into top50'
         assert set(current) == set(census) | set(newborn)
         for name in current:
-            assert current[name] == pytest.approx(
-                (1 - alpha) * census.get(name, 0.0) + alpha * newborn.get(name, 0.0), abs=2e-15
-            )
+            assert current[name] == pytest.approx((1 - alpha) * census.get(name, 0.0) + alpha * newborn.get(name, 0.0), abs=2e-15)
 
     for cohort in COHORTS:
         national = weights(root / f'cohort={cohort}' / 'scope=national' / 'part.parquet')
-        ufs = {
-            uf: weights(root / f'cohort={cohort}' / f'uf={uf}' / 'part.parquet')
-            for uf in UF_CODES
-        }
+        ufs = {uf: weights(root / f'cohort={cohort}' / f'uf={uf}' / 'part.parquet') for uf in UF_CODES}
         assert set(national) == set().union(*(set(values) for values in ufs.values()))
         for name, value in national.items():
             expected = sum(populations[uf] * ufs[uf].get(name, 0.0) for uf in UF_CODES) / national_population
