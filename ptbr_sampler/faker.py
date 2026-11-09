@@ -272,6 +272,16 @@ class _AliasPTBRProvider(PTBRProvider):
         return self.ptbr_phone()
 
 
+def _leaf_generators(fake: Any):
+    """Yield actual generators owned by this instance, through nested proxies."""
+    factories = getattr(fake, '_factories', None)
+    if not factories:
+        yield fake
+        return
+    for factory in factories:
+        yield from _leaf_generators(factory)
+
+
 def install_ptbr(fake: Any, aliases: bool = False, **options: Any) -> Any:
     """Install a newly configured provider on one Faker instance and return it.
 
@@ -298,20 +308,22 @@ def install_ptbr(fake: Any, aliases: bool = False, **options: Any) -> Any:
 
     base = _AliasPTBRProvider if aliases else PTBRProvider
     provider_type = type('ConfiguredPTBRProvider', (base,), {'_options': normalized})
-    factories = getattr(fake, '_factories', None) or [fake]
-    for factory in factories:
-        previous = [provider for provider in factory.providers if isinstance(provider, PTBRProvider)]
+    for generator in _leaf_generators(fake):
+        previous = [provider for provider in generator.providers if isinstance(provider, PTBRProvider)]
         for provider in previous:
             for name, formatter in getattr(provider, '_original_formatters', {}).items():
+                current = getattr(generator, name, None)
+                if getattr(current, '__self__', None) is not provider:
+                    continue
                 if formatter is _MISSING_FORMATTER:
-                    factory.__dict__.pop(name, None)
+                    generator.__dict__.pop(name, None)
                 else:
-                    factory.set_formatter(name, formatter)
-            factory.providers.remove(provider)
+                    generator.set_formatter(name, formatter)
+            generator.providers.remove(provider)
 
-        provider = provider_type(factory)
-        provider._original_formatters = {name: getattr(factory, name, _MISSING_FORMATTER) for name in _ALIAS_NAMES} if aliases else {}
-        factory.add_provider(provider)
+        provider = provider_type(generator)
+        provider._original_formatters = {name: getattr(generator, name, _MISSING_FORMATTER) for name in _ALIAS_NAMES} if aliases else {}
+        generator.add_provider(provider)
     return fake
 
 

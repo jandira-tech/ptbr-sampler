@@ -11,6 +11,7 @@ import pytest
 faker = pytest.importorskip('faker')
 
 from faker import Faker
+from faker.providers import BaseProvider
 
 from ptbr_sampler.faker import PTBRProvider, install_ptbr
 from ptbr_sampler.utils.cei import validate_cei
@@ -259,6 +260,50 @@ def test_repeated_install_replaces_participating_providers_and_aliases(locales):
         assert participating[0]._options['uf'] == 'RJ'
         assert factory.ptbr_state_abbr() == 'RJ'
         assert not isinstance(factory.state_abbr.__self__, PTBRProvider)
+
+
+def leaf_generators(fake):
+    """Expose each actual Faker Generator behind possibly nested proxies."""
+    for factory in fake._factories:
+        nested = getattr(factory, '_factories', None)
+        if nested:
+            yield from leaf_generators(factory)
+        else:
+            yield factory
+
+
+@pytest.mark.parametrize('locales', ['pt_BR', ['pt_BR', 'en_US']])
+def test_proxy_reinstall_removes_aliases_from_every_underlying_generator(locales):
+    fake = Faker(locales)
+    install_ptbr(fake, aliases=True)
+    install_ptbr(fake, aliases=False)
+
+    for generator in leaf_generators(fake):
+        assert len([provider for provider in generator.providers if isinstance(provider, PTBRProvider)]) == 1
+        for alias in ('cpf', 'cnpj', 'pis', 'state_abbr'):
+            formatter = getattr(generator, alias, None)
+            assert formatter is None or not isinstance(formatter.__self__, PTBRProvider), (alias, formatter)
+
+
+@pytest.mark.parametrize('locales', ['pt_BR', ['pt_BR', 'en_US']])
+def test_reinstall_preserves_later_third_party_formatter_overrides(locales):
+    class OtherProvider(BaseProvider):
+        def name(self):
+            return 'other-provider'
+
+    fake = Faker(locales)
+    install_ptbr(fake, aliases=True, uf='SP')
+    generators = list(leaf_generators(fake))
+    for generator in generators:
+        generator.add_provider(OtherProvider)
+        assert generator.name() == 'other-provider'
+
+    install_ptbr(fake, aliases=False, uf='RJ')
+
+    for generator in generators:
+        assert generator.name() == 'other-provider'
+        assert isinstance(generator.name.__self__, OtherProvider)
+        assert generator.ptbr_state_abbr() == 'RJ'
 
 
 def test_canonical_options_take_precedence_over_legacy_aliases():
