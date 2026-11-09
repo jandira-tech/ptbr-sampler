@@ -1,6 +1,19 @@
-# Statistical Assumptions in arthrod/ptbr-sampler
+# Archived Statistical Assumptions Audit (pre-0.3.0 snapshot)
 
-## Executive summary
+> **Archived historical report.** The analysis below inspected an old
+> `arthrod/ptbr-sampler` tree with `src/` paths, an implicit `UNTIL_2010`
+> default, national-only surnames, and the unfiltered second-name vocabulary.
+> Those statements describe the audited snapshot, not version 0.3.0. Current
+> code uses `ptbr_sampler/`, defaults to the blended `current` cohort, conditions
+> first names and surnames by UF, supports periods through `ate2020` and
+> `after2010`, uses national empirical IBGE sex counts, filters second-name
+> tokens, and uses POP2026 and Arpen 2025. The 30.99% second-name incidence is
+> still a legacy, unvalidated data gap. See [current data origins](docs/data-origins.md),
+> [architecture](docs/architecture.md), and [remaining tasks](todo.md).
+> Connector-specific citation markers and speculative ratings are retained only
+> to preserve the original audit trail; they are not current evidence.
+
+## Executive summary (historical)
 
 The repository contains a real, inspectable framework for sampling Brazilian-looking records, but its statistical realism is uneven. The strongest part is the **geographic weighting design**: the repo clearly expects external JSON files for locations and appears built to weight municipalities and states by population, which is broadly consistent with official IBGE population-estimate methodology for 2024. The weakest parts are the **name and surname assumptions**, especially where the repo either pools nationally what official Brazilian sources now provide by state and period, or where the provenance is undocumented. fileciteturn54file0L1-L1 citeturn15view0turn16view0turn17view0
 

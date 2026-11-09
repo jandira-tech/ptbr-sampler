@@ -1,4 +1,10 @@
-# IBGE — Estimativas da População, 1 July 2024
+# Archived IBGE population estimates — 1 July 2024
+
+> **Historical source page; superseded in 0.3.0 by POP2026.** Current UF and
+> municipal weights use `POP2026_20261029.xlsx`, with national population
+> 214,211,951 and 5,571 source municipalities. The CEP runtime base covers 5,570
+> and 214,205,968 people. Values and normalization claims below describe the old
+> JSON generation, not current artifacts. See [current geography provenance](../data-origins.md#geography-and-the-cep-coverage-gap).
 
 **Publisher:** Instituto Brasileiro de Geografia e Estatística (IBGE).
 **Reference date:** 1 July 2024.

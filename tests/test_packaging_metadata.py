@@ -19,7 +19,8 @@ def test_release_metadata_is_pypi_ready():
     assert project['requires-python'] == '>=3.12'
     assert project['readme'] == 'README.md'
     assert project['license'] == 'MIT'
-    assert project['license-files'] == ['LICENSE']
+    assert project['license-files'] == ['LICENSE', 'THIRD_PARTY_NOTICES.md']
+    assert all((ROOT / path).is_file() for path in project['license-files'])
     assert project['urls'] == {
         'Homepage': 'https://github.com/jandira-tech/ptbr-sampler',
         'Repository': 'https://github.com/jandira-tech/ptbr-sampler',

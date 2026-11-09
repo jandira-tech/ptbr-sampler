@@ -1,3 +1,13 @@
+# Modernization design — 2026-11-07
+
+> **Dated design record, not a validation report.** Implementation actuals and
+> measured limitations are in [data origins](../../data-origins.md),
+> [architecture](../../architecture.md), and [todo](../../../todo.md). In
+> particular, future publication URLs, PyPI publication, notebook hosting, and
+> WASM compatibility must not be inferred as completed merely because this plan
+> requested them. Version 0.3.0 documentation advertises only normal molab URLs;
+> `/wasm` remains unverified.
+
 ## Scope and deliverables
 
 Implement the approved modernization in three destinations without making the main source repository public:

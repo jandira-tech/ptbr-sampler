@@ -1,4 +1,13 @@
-# Handoff — fetch raw datasets on a network-enabled machine
+# Archived handoff — legacy raw-dataset investigation (2026-05-09)
+
+> **Historical snapshot; do not follow as the 0.3.0 rebuild procedure.** This
+> document records an abandoned top-20 IBGE v2 experiment. Its claims that UF
+> conditioning, later periods, and UF surnames were unavailable are superseded.
+> The supported workflow is [`ptbr-data status/fetch/validate/build`](data-origins.md#rebuild-the-artifacts).
+> Current data include IBGE 2022 national/UF names and surnames, national
+> empirical sex priors, historical periods through 2020, POP2026, and Arpen 2025.
+> Commands below that create scripts, commit, push, or ingest old top-20 files are
+> retained only as a dated investigation record.
 
 This doc lists every action the user needs to take on a machine with
 public internet egress. The Claude Code sandbox blocks `ibge.gov.br`,

@@ -1,4 +1,14 @@
-# brasil.io / `genero-nomes` (sex prior)
+# Archived Brasil.IO / `genero-nomes` sex-prior investigation (2026-05-09)
+
+> **Legacy provenance, not the current sex source.** The old period-by-sex
+> generation described below was superseded in 0.3.0 by empirical national IBGE
+> 2022 counts: 123,733 names, with 4,725 null-sex names excluded only from M/F
+> conditionals. Legacy files remain packaged for compatibility/audit; the
+> current Arpen/IBGE cohort build does not fall back to Brasil.IO or Gemini.
+> Coverage percentages and commands below are historical and are not required
+> for normal sampling or the supported `ptbr-data` rebuild. See [current sex
+> provenance](../data-origins.md#suppression-and-sex) and
+> [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md).
 
 ## What it is
 

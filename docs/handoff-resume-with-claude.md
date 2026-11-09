@@ -1,4 +1,13 @@
-# Handoff — what to send back to Claude after running the fetches
+# Archived handoff — legacy fetch results (2026-05-09)
+
+> **Historical snapshot; not current implementation guidance.** The proposed
+> follow-ups below were superseded: version 0.3.0 already has UF-conditioned
+> cohorts and surnames, explicit `sex_conditioning='M'|'F'|'mixed'`, historical
+> selectors through 2020, Arpen 2025, and `ptbr-data validate`. The experimental
+> flag now only provides `mixed` compatibility. Use
+> [current data origins](data-origins.md), [architecture](architecture.md), and
+> [the current task checklist](../todo.md); do not add a sex output field or
+> execute the old fetch instructions on the assumption that they remain needed.
 
 After completing the steps in `docs/handoff-fetch-and-ingest.md` on a
 network-enabled machine, share the items below in a fresh Claude Code

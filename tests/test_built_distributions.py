@@ -97,6 +97,8 @@ def test_built_distributions_are_complete_and_self_contained(tmp_path):
     assert dataset_names(wheel_files) == REQUIRED_DATA
     assert not dataset_names(wheel_files) & STALE_DATA
     assert VENDORED_LICENSES | VENDORED_RUNTIME <= wheel_files
+    for notice in ('LICENSE', 'THIRD_PARTY_NOTICES.md'):
+        assert any(name.endswith(f'.dist-info/licenses/{notice}') for name in wheel_files)
 
     with tarfile.open(sdist) as archive:
         sdist_files = {member.name for member in archive.getmembers() if member.isfile()}
@@ -104,6 +106,7 @@ def test_built_distributions_are_complete_and_self_contained(tmp_path):
     assert dataset_names(sdist_files, strip_root=True) == REQUIRED_DATA
     assert not dataset_names(sdist_files, strip_root=True) & STALE_DATA
     assert VENDORED_LICENSES | VENDORED_RUNTIME <= normalized_sdist_files
+    assert {'LICENSE', 'THIRD_PARTY_NOTICES.md'} <= normalized_sdist_files
 
     venv = tmp_path / 'venv'
     subprocess.run(['uv', 'venv', '--python', sys.executable, str(venv)], check=True, capture_output=True)

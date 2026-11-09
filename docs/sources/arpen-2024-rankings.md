@@ -1,4 +1,11 @@
-# Arpen-Brasil — 2024 national name ranking
+# Archived Arpen-Brasil 2024 national name ranking
+
+> **Historical source page.** Version 0.3.0 does not use this 2024 press release
+> for `newborn2025`, and there is no `pos_2010` current-cohort selector. The
+> current model uses the primary Arpen 2025 API, 2,537,697 births, and national/
+> UF SIMPLE top-50 rows with a modeled national `after2010` tail. See
+> [current data origins](../data-origins.md#arpen-newborn-model-and-current-blend).
+> The figures below retain their original 2024 context only.
 
 **Publisher:** Associação Nacional dos Registradores de Pessoas Naturais
 (Arpen-Brasil).

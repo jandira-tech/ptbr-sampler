@@ -84,12 +84,9 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
         dimensions=('name', 'count_male', 'count_female', 'p_male', 'p_female'),
         primary_url='https://www.ibge.gov.br/apps/nomes/',
         notes=(
-            'See docs/sources/genero-nomes.md and '
-            'docs/sources/gemini-gender-classifications.md. '
-            'Fetch with "python -m scripts.download_datasets --fetch-genero-nomes" + '
-            '"GEMINI_API_KEY=... python -m scripts.classify_unmatched_names_gemini". '
-            'Each ingested partition ships a data_origin.json sidecar with '
-            'a source breakdown (rows_from_genero_nomes vs rows_from_gemini).'
+            'Current cohorts and historical M/F partitions use only national empirical IBGE 2022 counts. '
+            'docs/sources/genero-nomes.md and docs/sources/gemini-gender-classifications.md are archived '
+            'legacy provenance; their downloads and model calls are not part of the supported ptbr-data rebuild.'
         ),
     ),
     DataOrigin(
@@ -182,7 +179,12 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
         files=(_PACKAGE_DATA / 'cities_with_ceps.json',),
         dimensions=('city_name', 'city_uf', 'population_percentage_state', 'cep_range_begins', 'cep_range_ends', 'ddd'),
         primary_url='https://buscacepinter.correios.com.br/',
-        notes='ViaCEP runtime enrichment: https://viacep.com.br/',
+        notes=(
+            '5,570 CEP-covered cities and 214,205,968 represented residents; Boa Esperança do Norte '
+            '(5101837, 5,983 residents) is source-only because legacy CEP metadata is absent. '
+            'UF alpha still uses the official 214,211,951 national total. '
+            'ViaCEP runtime enrichment: https://viacep.com.br/'
+        ),
     ),
     DataOrigin(
         kind='Surname prefixes',

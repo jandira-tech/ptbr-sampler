@@ -1,158 +1,91 @@
 # Bibliography — ptbr-sampler data sources
 
-The statistical assumptions in this repository are grounded in the following
-primary sources. Each entry gives the publisher, coverage, and a stable URL.
-For the complete audit that flagged each assumption and rated how well the
-current data match external evidence, see
-`deep-research-report(4).md` at the repository root.
+This page distinguishes current 0.3.0 sources from historical provenance. Exact
+checksums, counts, formulas, and package paths are in
+[docs/data-origins.md](../data-origins.md); attribution and dataset-term limits
+are in [THIRD_PARTY_NOTICES.md](../../THIRD_PARTY_NOTICES.md).
 
-## IBGE — Brazilian Institute of Geography and Statistics
+## Current build inputs
 
-### 1. Nomes no Brasil — 2022 Census release (IBGE, 2025)
+### IBGE — 2022 Census names, released November 2025
 
-Second edition of the *Nomes no Brasil* project, the first to include both
-given names **and surnames** and to expose rankings by sex, period of birth,
-initial letter, and locality (Brazil / Federation Unit / Municipality) drawn
-from the 2022 Census full-population name register.
+The current distributions use national and all-UF first-name and surname counts,
+historical national stock rows, and national empirical male/female counts.
+Sampling reads a checksum-verified mirror snapshot; optional official IBGE v3
+probing is a separate reproducibility path, not a claimed successful refresh.
 
-- Announcement (PT):
-  <https://www.ibge.gov.br/novo-portal-destaques/44658-no-dia-4-11-2025-o-ibge-lanca-o-censo-demografico-2022-nomes-no-brasil-2.html>
-- Announcement (EN):
-  <https://www.ibge.gov.br/en/highlights/44662-on-november-4-2025-ibge-will-release-2022-population-census-names-in-brazil.html>
-- News release (PT):
-  <https://agenciadenoticias.ibge.gov.br/agencia-noticias/2012-agencia-de-noticias/noticias/44929-um-pais-de-marias-joses-silvas-e-santos-ibge-lanca-nova-edicao-do-nomes-no-brasil>
-- News release (EN):
-  <https://agenciadenoticias.ibge.gov.br/en/agencia-news/2184-news-agency/news/44956-um-pais-de-marias-joses-silvas-e-santos-ibge-lanca-nova-edicao-do-nomes-no-brasil-2>
-- Interactive site: <https://www.ibge.gov.br/apps/nomes/>
-- Census landing page: <https://censo2022.ibge.gov.br/>
+- Interactive application: <https://www.ibge.gov.br/apps/nomes/>
+- Census application: <https://censo2022.ibge.gov.br/nomes/>
+- Release (PT): <https://agenciadenoticias.ibge.gov.br/agencia-noticias/2012-agencia-de-noticias/noticias/44929-um-pais-de-marias-joses-silvas-e-santos-ibge-lanca-nova-edicao-do-nomes-no-brasil>
+- Release (EN): <https://agenciadenoticias.ibge.gov.br/en/agencia-news/2184-news-agency/news/44956-um-pais-de-marias-joses-silvas-e-santos-ibge-lanca-nova-edicao-do-nomes-no-brasil-2>
+- Official v3 API base: `https://servicodados.ibge.gov.br/api/v3/nomes/2022`
+- Pinned input mirror: <https://github.com/alexsantee/nomes_do_brasil_2022>
+- Mirror commit: `db1f66f397d00d4a6653204f8669c9e8c3adb256`
 
-Headline statistics quoted in this repository:
+Published anchors include Maria 12,284,478, Silva 34,030,104, and Santos
+21,367,475 nationally. The checked UF evidence is recorded in the generated
+manifest. The package itself contains 128,458 national first-name rows and
+201,601 national surname rows. Source suppression remains visible in sidecars;
+counts are not presented as unsuppressed complete-person records.
 
-| Statistic | Value | Scope |
-|---|---:|---|
-| `Silva` presence in full population | 16.76% | Brazil |
-| `Santos` presence | 43.38% | Sergipe |
-| `Silva` presence | 35.75% | Alagoas |
-| `Silva` presence | 34.23% | Pernambuco |
-| Distinct surnames surveyed | > 200,000 | Brazil |
+See [IBGE Nomes no Brasil 2022](ibge-nomes-no-brasil-2022.md).
 
-See `docs/sources/ibge-nomes-no-brasil-2022.md` for the full extraction.
+### IBGE — Population estimates 2026
 
-### 2. IBGE Nomes API (v2, based on 2010 Census)
+The TCU-corrected `POP2026_20261029.xlsx` workbook is the population source.
+The official total is 214,211,951 across 5,571 source municipalities. The
+runtime CEP base covers 5,570 and 214,205,968 people; see the documented Boa
+Esperança do Norte exception in [data origins](../data-origins.md#geography-and-the-cep-coverage-gap).
 
-Decade-of-birth frequencies for given names with `sexo=M|F` and
-`localidade=BR|<codigo_IBGE>` filters. Still the authoritative machine-readable
-endpoint until the 2022-based tables replace it.
+- POP2026 workbook: <https://ftp.ibge.gov.br/Estimativas_de_Populacao/Estimativas_2026/POP2026_20261029.xlsx>
+- DOU comparison workbook: <https://ftp.ibge.gov.br/Estimativas_de_Populacao/Estimativas_2026/estimativa_dou_2026.xlsx>
+- Estimates landing page: <https://www.ibge.gov.br/estatisticas/sociais/populacao/9103-estimativas-de-populacao.html>
 
-- API reference: <https://servicodados.ibge.gov.br/api/docs/nomes?versao=2>
-- Ranking endpoint:
-  `https://servicodados.ibge.gov.br/api/v2/censos/nomes/ranking?sexo=F&localidade=35`
-- Name endpoint:
-  `https://servicodados.ibge.gov.br/api/v2/censos/nomes/{nome}?sexo=M&localidade=33`
+### Arpen-Brasil — 2025 aggregate civil registrations
 
-### 3. Nomes no Brasil — 2010 Census release (IBGE, 2016)
+The Associação Nacional dos Registradores de Pessoas Naturais supplies the 2025
+national and UF SIMPLE/COMPOUND/ALL top-50 rankings plus 2,537,697 registered
+births. Only atomic SIMPLE rows enter `newborn2025`; the remaining probability
+mass is modeled from the national IBGE 2011–2020 tail.
 
-Legacy name-frequency publication used as the primary benchmark prior to the
-2022 release. Organises frequencies "up to 1929" and by decade from 1930
-onward. Basis for the nine `ateXXXX` buckets still used in
-`ptbr_sampler/data/names_data.json`.
+- Transparency portal: <https://transparencia.registrocivil.org.br/>
+- Record API: <https://transparencia.registrocivil.org.br/api/record>
 
-- IBGE news release (PT):
-  <https://agenciadenoticias.ibge.gov.br/agencia-sala-de-imprensa/2013-agencia-de-noticias/releases/9747-ibge-revela-a-origem-dos-nomes-mais-comuns-dos-brasileiros>
+These are civil-registration flows and incomplete rankings, not Census stocks,
+full name distributions, or evidence for second-name incidence.
 
-### 4. Estimativas da População — 1 July 2024 (IBGE)
+### Location metadata and online lookup
 
-Official resident-population estimates for Brazil, Federation Units, and
-municipalities as of 1 July 2024. Used to derive the population-weighted
-location draws in `ptbr_sampler/data/locations_data.json`.
+- Correios CEP search: <https://buscacepinter.correios.com.br/>
+- ViaCEP optional runtime enrichment: <https://viacep.com.br/>
+- Anatel area-code reference: <https://www.anatel.gov.br/consumidor/tudo-sobre-telefonia-fixa/codigos-de-area>
 
-- News release (PT):
-  <https://agenciadenoticias.ibge.gov.br/agencia-noticias/2012-agencia-de-noticias/noticias/41111-populacao-estimada-do-pais-chega-a-212-6-milhoes-de-habitantes-em-2024>
-- DOU PDF (canonical per-municipality table):
-  <https://ftp.ibge.gov.br/Estimativas_de_Populacao/Estimativas_2024/estimativa_dou_2024.pdf>
-- Landing page:
-  <https://www.ibge.gov.br/estatisticas/sociais/populacao/9103-estimativas-de-populacao.html>
+CEP/DDD metadata describes the legacy runtime base; it does not upgrade its
+5,570-city coverage to the complete 5,571-row POP2026 municipality inventory.
 
-Key reference values used in the location sampler:
+## Legacy source pages
 
-| State | Population 2024 | Share |
-|---|---:|---:|
-| São Paulo | 45,973,194 | 21.6% |
-| Minas Gerais | 21,322,691 | 10.0% |
-| Rio de Janeiro | 17,219,679 | 8.1% |
-| Roraima | 716,793 | 0.3% |
-| Amapá | 802,837 | 0.4% |
-| Acre | 880,631 | 0.4% |
+The following dated pages preserve older research. They do not describe active
+0.3.0 inputs unless explicitly cross-linked by data origins:
 
-See `docs/sources/ibge-estimativas-populacao-2024.md` for the full extraction.
+- [IBGE 2024 population estimates](ibge-estimativas-populacao-2024.md) —
+  superseded by POP2026 for runtime geography.
+- [Arpen 2024 rankings](arpen-2024-rankings.md) — superseded by Arpen 2025 for
+  the newborn model; useful only as historical context.
+- [Brasil.IO `genero-nomes`](genero-nomes.md) — legacy national sex-prior
+  provenance, not the current cohort source.
+- [Gemini classifications](gemini-gender-classifications.md) — historical
+  model-generated gap-fill, not empirical evidence and not a current fallback.
+- [Archived pre-0.3.0 research report](<../../deep-research-report(4).md>) — the
+  audit that motivated modernization, not a description of current code.
 
-## Arpen-Brasil — Civil Registry
+## Methodology tools
 
-### 5. Arpen-Brasil — 2024 Annual Ranking
+IPEA `censobr` and `geobr` are investigation tools, not inputs to the committed
+distributions:
 
-Nationwide civil-registry ranking of the most-registered newborn names in
-Brazil during 2024, published by the *Associação Nacional dos Registradores de
-Pessoas Naturais*. Complements IBGE's whole-population view with a
-newborn-cohort benchmark.
+- `censobr`: <https://ipeagit.github.io/censobr/>
+- `geobr`: <https://ipeagit.github.io/geobr/>
 
-- Press release:
-  <https://arpenbrasil.org.br/press_releases/ranking-nacional-apos-sete-anos-nome-feminino-lidera-preferencia-no-brasil/>
-
-See `docs/sources/arpen-2024-rankings.md` for the full extraction.
-
-## Ecosystem tools
-
-### 6. `censobr` (IPEA)
-
-R/Python package distributing microdata from the 2022 Brazilian Census via
-Parquet/Arrow. Useful as a ground-truth cross-check when rebuilding
-`state × decade × sex` name tables.
-
-- <https://ipeagit.github.io/censobr/>
-
-### 7. `geobr` (IPEA)
-
-Official spatial datasets for Brazil, used for plotting sampled addresses
-against IBGE boundaries during validation.
-
-- <https://ipeagit.github.io/geobr/>
-
-### 8. `genero-nomes` (Brasil.IO / Álvaro Justen / @turicas)
-
-Per-name male/female frequency table built from the public IBGE Nomes API
-(per-name endpoint walked across the full long tail). Provides the sex
-prior that powers our `period × sex` first-name partitions
-(`parquet/first_names/period=<P>/sex=<S>/`). Same provenance lineage as our
-period data — Brasil.IO scraped the same IBGE Nomes API we pull
-period-level data from, just on the per-name endpoint instead of the
-ranking one.
-
-- Dataset files: <https://brasil.io/dataset/genero-nomes/files/>
-- Direct download: <https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz>
-- Methodology + scraper: <https://github.com/turicas/genero-nomes>
-- Brasil.IO methodology blog post:
-  <https://blog.brasil.io/2019/05/31/classificando-nomes-por-genero-usando-dados-publicos/index.html>
-- Local source page: `docs/sources/genero-nomes.md`
-
-### 9. Gemini gender classifications (`gemini-3.1-flash-lite-preview`)
-
-Gap-fill source for the ~8 % of names in `names_data.json` absent from
-`genero-nomes` (mostly civil-registry typos and spelling variants). LLM-
-derived, **not** empirical IBGE data. Runs locally via
-`scripts/classify_unmatched_names_gemini.py` with 100 concurrent workers
-and quota-aware retry; outputs to
-`ptbr_sampler/data/raw/gemini_gender/classifications.jsonl`. Every parquet
-row this source contributes is tagged with `source =
-'gemini-3.1-flash-lite-preview'` so reviewers can audit and, if they
-need, filter back to the empirical-only subset.
-
-- Model docs: <https://ai.google.dev/gemini-api/docs/models>
-- API key: <https://aistudio.google.com/apikey>
-- Local methodology + audit-trail spec: `docs/sources/gemini-gender-classifications.md`
-
-## Repository's own deep-research audit
-
-`deep-research-report(4).md` (committed at the repo root) is the statistical
-audit that produced this bibliography. It lists every assumption in the
-sampler, rates it against the sources above, and prescribes the architectural
-changes now implemented under `ptbr_sampler/sampling/`.
+Do not imply that these packages were used in the build merely because they are
+listed as useful external validation tools.

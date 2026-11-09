@@ -1,4 +1,13 @@
-# Gemini gender classifications (gap-fill source)
+# Archived Gemini gender classifications (2026-05-09)
+
+> **Historical model-generated gap-fill; not current empirical evidence.** The
+> claims below describe an abandoned legacy pipeline, including a network
+> diagnosis and model-output characteristics that were not revalidated for
+> 0.3.0. Current cohorts and historical M/F tables use only national empirical
+> IBGE 2022 sex counts. Gemini and Brasil.IO raw artifacts remain solely for
+> historical provenance and are not current fallbacks. No Gemini key or network
+> call is needed to sample or to run the supported `ptbr-data` workflow. See
+> [current data origins](../data-origins.md#suppression-and-sex).
 
 ## What it is
 

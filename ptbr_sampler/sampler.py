@@ -429,15 +429,14 @@ def sample(
         experimental_uf_sex_conditioning (bool): Compatibility flag. If True
             and no sex was selected, use mixed 50/50 sex. UF conditioning is
             always active and no longer depends on this flag.
-        sex_conditioning (str | None): Drive first-name sampling from the
-            ``parquet/first_names/period=<P>/sex=<S>/`` partitions
-            (national, full long tail — built from IBGE Nomes percentages
-            multiplied by the brasil.io/genero-nomes sex prior; see
-            ``docs/data-origins.md``). Accepts:
-              * ``'M'`` — every row drawn from the male partition
-              * ``'F'`` — every row drawn from the female partition
-              * ``'mixed'`` — 50/50 per row
-              * ``None`` (default) — no sex conditioning, period-only table
+        sex_conditioning (str | None): Drive first-name sampling from selected
+            cohort or historical M/F partitions. Modern data applies the
+            national empirical IBGE 2022 sex prior and renormalizes; it does not
+            claim observed UF-sex tables. Accepts:
+              * ``'M'`` — every row uses the male-conditioned distribution
+              * ``'F'`` — every row uses the female-conditioned distribution
+              * ``'mixed'`` — choose M/F independently, 50/50 per row
+              * ``None`` (default) — retain the unconditioned distribution
             Compatible with ``experimental_uf_sex_conditioning``: when both
             are on, UF still comes from the sampled location and sex from
             this argument. Missing bundled modern partitions raise clearly;
