@@ -109,7 +109,7 @@ def test_built_distributions_are_complete_and_self_contained(tmp_path):
     subprocess.run(['uv', 'venv', '--python', sys.executable, str(venv)], check=True, capture_output=True)
     python = venv / 'bin' / 'python'
     subprocess.run(
-        ['uv', 'pip', 'install', '--python', str(python), str(wheel)],
+        ['uv', 'pip', 'install', '--python', str(python), f'{wheel}[faker]'],
         check=True,
         capture_output=True,
         text=True,
@@ -122,8 +122,20 @@ from pathlib import Path
 from ptbr_sampler.br_location_class import BrazilianLocationSampler
 from ptbr_sampler.br_name_class import BrazilianNameSampler
 from ptbr_sampler.utils.cep_wrapper import get_cep_data
+from ptbr_sampler.faker import PTBRProvider, install_ptbr
+from faker import Faker
 import ptbr_sampler
 
+
+def seeded_faker_profile():
+    fake = Faker('pt_BR')
+    install_ptbr(fake, uf='SP')
+    assert isinstance(fake.providers[0], PTBRProvider)
+    fake.seed_instance(827)
+    return fake.ptbr_profile()
+
+
+assert seeded_faker_profile() == seeded_faker_profile()
 package = Path(ptbr_sampler.__file__).parent
 data = package / 'data'
 names = json.loads((data / 'names_data.json').read_text())
