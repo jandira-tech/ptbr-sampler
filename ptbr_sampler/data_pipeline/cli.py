@@ -55,8 +55,8 @@ def fetch(
     client = HttpClient()
     selected = source or ['ibge2022', 'pop2026', 'estimativa_dou_2026', 'arpen2025']
     for key in tqdm(selected, desc='sources'):
-        if key not in SOURCES or SOURCES[key].kind == 'derived':
-            raise typer.BadParameter(f'unknown downloadable source: {key}')
+        if key not in SOURCES or SOURCES[key].kind != 'raw':
+            raise typer.BadParameter(f'unknown downloadable raw source: {key}')
         item = SOURCES[key]
         try:
             if key == 'arpen2025':

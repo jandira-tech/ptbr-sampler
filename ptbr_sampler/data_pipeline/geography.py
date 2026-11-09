@@ -8,7 +8,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 
-from ptbr_sampler.data_pipeline.io import file_metadata, write_json
+from ptbr_sampler.data_pipeline.io import file_metadata, sha256_file, write_json
 from ptbr_sampler.data_pipeline.registry import SOURCES, STATE_NAMES, UF_CODES
 
 # Only this documented source-only municipality may differ between the source
@@ -16,7 +16,12 @@ from ptbr_sampler.data_pipeline.registry import SOURCES, STATE_NAMES, UF_CODES
 DOCUMENTED_UNMATCHED = {'MT': {'ibge_code': 5_101_837, 'name': 'Boa Esperança do Norte', 'population': 5_983}}
 
 
-def read_population_workbook(path: Path) -> tuple[dict[int, int], dict[str, int], int, dict[str, Any]]:
+def read_population_workbook(path: Path, *, source_key: str = 'pop2026') -> tuple[dict[int, int], dict[str, int], int, dict[str, Any]]:
+    source = SOURCES[source_key]
+    if sha256_file(path) != source.sha256:
+        raise ValueError(f'{source_key}: cached workbook hash mismatch')
+    if source.expected_bytes is not None and path.stat().st_size != source.expected_bytes:
+        raise ValueError(f'{source_key}: cached workbook byte count mismatch')
     workbook = load_workbook(path, read_only=True, data_only=True)
     try:
         city_sheet = next((sheet for sheet in workbook if sheet.title.casefold() == 'municípios'), None)
@@ -118,7 +123,7 @@ def rebuild_geography(
         item.setdefault('cep_starts', item.get('cep_range_begins', ''))
         item.setdefault('cep_ends', item.get('cep_range_ends', ''))
         item.setdefault('cep_range_begins', item.get('cep_starts', ''))
-        item.setdefault('cep_range_ends', item.get('cep_starts', ''))
+        item.setdefault('cep_range_ends', item.get('cep_ends', ''))
         cities[key] = item
         joined_totals[item['city_uf']] += count
     if len(cities) != len(original):
@@ -180,6 +185,21 @@ def rebuild_geography_files(
     comparison_workbook_path: Path | None = None,
 ) -> dict[str, Any]:
     population, official_states, national, source_totals = read_pop2026(workbook_path)
+    if comparison_workbook_path is None:
+        raise ValueError('DOU comparison workbook is required for geography provenance')
+    dou_population, dou_states, dou_national, _ = read_population_workbook(comparison_workbook_path, source_key='estimativa_dou_2026')
+    comparison = compare_population_tables(population, dou_population)
+    comparison.update(
+        {
+            'source_url': SOURCES['estimativa_dou_2026'].url,
+            'canonical_url': SOURCES['pop2026'].url,
+            'sha256': file_metadata(comparison_workbook_path, url=SOURCES['estimativa_dou_2026'].url)['sha256'],
+            'national_population_delta': national - dou_national,
+            'state_population_deltas': {
+                uf: official_states[uf] - dou_states[uf] for uf in UF_CODES if official_states[uf] != dou_states[uf]
+            },
+        }
+    )
     base = json.loads(base_path.read_text(encoding='utf-8'))
     base_codes = {int(f'{int(item["uf_code"]):02d}{int(item["city_code"]):05d}') for item in base['cities'].values()}
     unmatched = set(population) - base_codes
@@ -202,21 +222,6 @@ def rebuild_geography_files(
         'runtime_reconciled_population': matched_national,
         'reconciliation': result['reconciliation'],
     }
-    if comparison_workbook_path is None:
-        raise ValueError('DOU comparison workbook is required for geography provenance')
-    dou_population, dou_states, dou_national, _ = read_population_workbook(comparison_workbook_path)
-    comparison = compare_population_tables(population, dou_population)
-    comparison.update(
-        {
-            'source_url': SOURCES['estimativa_dou_2026'].url,
-            'canonical_url': SOURCES['pop2026'].url,
-            'sha256': file_metadata(comparison_workbook_path, url=SOURCES['estimativa_dou_2026'].url)['sha256'],
-            'national_population_delta': national - dou_national,
-            'state_population_deltas': {
-                uf: official_states[uf] - dou_states[uf] for uf in UF_CODES if official_states[uf] != dou_states[uf]
-            },
-        }
-    )
     comparison_path = locations_output.parent / 'sanitized' / 'geography' / 'pop2026_vs_dou2026.json'
     write_json(comparison_path, comparison)
     provenance_totals['comparison'] = comparison

@@ -14,7 +14,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from ptbr_sampler.data_pipeline.arpen import arpen_url, fetch_arpen2025
-from ptbr_sampler.data_pipeline.geography import rebuild_geography_files
+from ptbr_sampler.data_pipeline.geography import read_pop2026, read_population_workbook, rebuild_geography_files
 from ptbr_sampler.data_pipeline.http import HttpClient
 from ptbr_sampler.data_pipeline.ibge import (
     OFFICIAL_UF_ANCHOR_EVIDENCE,
@@ -25,12 +25,17 @@ from ptbr_sampler.data_pipeline.ibge import (
 )
 from ptbr_sampler.data_pipeline.io import atomic_write, sha256_file, utc_now, write_json
 from ptbr_sampler.data_pipeline.registry import SOURCES, UF_CODES
+from ptbr_sampler.data_pipeline.validate import validate_runtime_data
 
 NAME_SCHEMA = pa.schema([('name', pa.large_string()), ('count', pa.uint64()), ('weight', pa.float64())])
 
 
 def normalise_counts(rows: Iterable[tuple[str, int]]) -> list[dict[str, Any]]:
-    clean = [(str(name), int(count)) for name, count in rows if int(count) >= 0]
+    clean = [(str(name).strip(), int(count)) for name, count in rows]
+    if any(not name for name, _ in clean):
+        raise ValueError('a derived distribution cannot contain an empty name')
+    if any(count < 0 for _, count in clean):
+        raise ValueError('a derived distribution cannot contain negative counts')
     total = sum(count for _, count in clean)
     if not clean or total <= 0:
         raise ValueError('a derived distribution needs finite positive total counts')
@@ -46,6 +51,7 @@ def write_name_partition(
     coverage: str,
     limitations: list[str],
     source_url: str | None = None,
+    acquired_at_utc: str | None = None,
 ) -> int:
     values = normalise_counts(rows)
     directory.mkdir(parents=True, exist_ok=True)
@@ -56,7 +62,7 @@ def write_name_partition(
             'source': source,
             'source_url': source_url or SOURCES[source].url,
             'upstream_revision': SOURCES[source].upstream_revision,
-            'acquired_at_utc': utc_now(),
+            'acquired_at_utc': acquired_at_utc or utc_now(),
             'rows': len(values),
             'observed_count_sum': sum(row['count'] for row in values),
             'coverage': coverage,
@@ -86,7 +92,7 @@ def _publish(staged: Path, destination: Path) -> None:
         shutil.rmtree(backup)
 
 
-def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path) -> dict[str, Any]:
+def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path, *, acquired_at_utc: str | None = None) -> dict[str, Any]:
     # The caller checks both archive and SQLite hashes before this function opens it.
     connection = read_ibge_mirror(sqlite_path)
     try:
@@ -103,6 +109,7 @@ def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path) -> dict[st
                     base / 'scope=national',
                     rows,
                     source='ibge2022',
+                    acquired_at_utc=acquired_at_utc,
                     transformation='Direct 2022 observed national frequency; weight=count/sum(count)',
                     coverage='Brazil, all nationally reported names',
                     limitations=['IBGE source terms apply; mirror repository MIT license covers code, not the dataset.'],
@@ -136,6 +143,7 @@ def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path) -> dict[st
                     staged / 'historical' / f'period={period}',
                     rows,
                     source='ibge2022',
+                    acquired_at_utc=acquired_at_utc,
                     transformation='stock1930; stockY-stock(Y-10) for decade bins; after2010=stock2020-stock2010; until2020=stock2020',
                     coverage='National only; all names present in the historical stock table',
                     limitations=[
@@ -181,7 +189,7 @@ def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path) -> dict[st
                     'source': 'ibge2022',
                     'source_url': SOURCES['ibge2022'].url,
                     'upstream_revision': SOURCES['ibge2022'].upstream_revision,
-                    'acquired_at_utc': utc_now(),
+                    'acquired_at_utc': acquired_at_utc or utc_now(),
                     'rows': len(empirical),
                     'coverage': '123,733 national names with empirical sex counts',
                     'transformation': 'Direct national homens/mulheres; null-sex rows omitted only from sex conditionals',
@@ -220,6 +228,7 @@ def build_arpen(client: HttpClient, cache: Path, output: Path, sanitized_root: P
                 item['rows'],
                 source='arpen2025',
                 source_url=item['url'],
+                acquired_at_utc=item['acquired_at_utc'],
                 transformation='Direct Arpen top-50 rows; weights normalized within this ranking only',
                 coverage=f'2025 {kind} names, {uf}, up to 50 rows',
                 limitations=[
@@ -241,7 +250,7 @@ def build_arpen(client: HttpClient, cache: Path, output: Path, sanitized_root: P
                 'source': 'arpen2025',
                 'source_url': arpen_url('birth'),
                 'upstream_revision': '2025',
-                'acquired_at_utc': utc_now(),
+                'acquired_at_utc': data['births_acquired_at_utc'],
                 'rows': len(births),
                 'coverage': 'National and 27 UF registered births',
                 'transformation': 'Direct totals; UF sum reconciled to national',
@@ -257,13 +266,20 @@ def build_arpen(client: HttpClient, cache: Path, output: Path, sanitized_root: P
     return {'arpen_births': births['BR'], 'arpen_ufs': 27, 'arpen_rankings': len(data['rankings'])}
 
 
-def build_all(data_dir: Path, cache: Path, *, client: HttpClient | None = None, refresh_arpen: bool = False) -> dict[str, Any]:
+def _build_managed_generation(
+    data_dir: Path,
+    cache: Path,
+    acquisition_times: dict[str, str],
+    *,
+    client: HttpClient | None = None,
+    refresh_arpen: bool = False,
+) -> dict[str, Any]:
     parquet = data_dir / 'parquet'
     parquet.mkdir(parents=True, exist_ok=True)
     sqlite_path = cache / 'ibge2022' / 'nomes.sqlite'
     if sha256_file(sqlite_path) != SOURCES['ibge2022_sqlite'].sha256:
         raise ValueError('refusing to open IBGE SQLite: checksum mismatch')
-    coverage = build_ibge(sqlite_path, parquet, data_dir / 'sanitized' / 'ibge2022')
+    coverage = build_ibge(sqlite_path, parquet, data_dir / 'sanitized' / 'ibge2022', acquired_at_utc=acquisition_times['ibge2022'])
     coverage.update(build_arpen(client or HttpClient(), cache, parquet, data_dir / 'sanitized' / 'arpen2025', refresh=refresh_arpen))
     geography_totals = rebuild_geography_files(
         data_dir / 'cities_with_ceps.json',
@@ -284,7 +300,7 @@ def build_all(data_dir: Path, cache: Path, *, client: HttpClient | None = None, 
         'source': 'geography_runtime',
         'source_url': SOURCES['pop2026'].url,
         'upstream_revision': SOURCES['pop2026'].upstream_revision,
-        'acquired_at_utc': utc_now(),
+        'acquired_at_utc': acquisition_times['pop2026'],
         'rows': geography_totals['cities'],
         'coverage': '5,570 municipalities and 27 UFs',
         'transformation': 'Exact seven-digit IBGE-code join over CEP base; percentages raw_count*100/reconciled_total',
@@ -331,6 +347,7 @@ def build_all(data_dir: Path, cache: Path, *, client: HttpClient | None = None, 
             'upstream_revision': source.upstream_revision,
             'sha256': source.sha256,
             'bytes': source.expected_bytes,
+            'acquired_at_utc': acquisition_times.get(key),
         }
         for key, source in SOURCES.items()
     }
@@ -365,3 +382,61 @@ def build_all(data_dir: Path, cache: Path, *, client: HttpClient | None = None, 
     }
     write_json(data_dir / 'manifest.json', manifest)
     return manifest
+
+
+def _source_acquisition_time(cache: Path, key: str) -> str:
+    path = cache / SOURCES[key].filename
+    metadata_path = path.with_suffix(path.suffix + '.meta.json')
+    metadata = json.loads(metadata_path.read_text(encoding='utf-8'))
+    acquired_at = metadata.get('acquired_at_utc')
+    if not isinstance(acquired_at, str) or not acquired_at:
+        raise ValueError(f'missing acquisition timestamp for {key}: {metadata_path}')
+    return acquired_at
+
+
+def build_all(data_dir: Path, cache: Path, *, client: HttpClient | None = None, refresh_arpen: bool = False) -> dict[str, Any]:
+    # No target path is opened or written until every managed artifact and its
+    # manifest have passed deep validation in a sibling staged generation.
+    sqlite_path = cache / 'ibge2022' / 'nomes.sqlite'
+    if sha256_file(sqlite_path) != SOURCES['ibge2022_sqlite'].sha256:
+        raise ValueError('refusing to open IBGE SQLite: checksum mismatch')
+    acquisition_times = {
+        key: _source_acquisition_time(cache, key) for key in ('ibge2022', 'ibge2022_sqlite', 'pop2026', 'estimativa_dou_2026')
+    }
+    with gzip.open(cache / 'arpen2025' / 'responses.jsonl.gz', 'rt', encoding='utf-8') as stream:
+        acquisition_times['arpen2025'] = max(json.loads(line)['acquired_at_utc'] for line in stream)
+    read_pop2026(cache / SOURCES['pop2026'].filename)
+    read_population_workbook(cache / SOURCES['estimativa_dou_2026'].filename, source_key='estimativa_dou_2026')
+    data_dir.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f'.{data_dir.name}.staging-', dir=data_dir.parent))
+    staged = temporary / data_dir.name
+    rollback_root = data_dir.parent / f'.{data_dir.name}.rollback-{temporary.name.rsplit("-", 1)[-1]}'
+    previous = rollback_root / data_dir.name
+    published = False
+    try:
+        if data_dir.exists():
+            shutil.copytree(data_dir, staged)
+        else:
+            staged.mkdir()
+        manifest = _build_managed_generation(staged, cache, acquisition_times, client=client, refresh_arpen=refresh_arpen)
+        validate_runtime_data(staged)
+        rollback_root.mkdir()
+        if data_dir.exists():
+            data_dir.replace(previous)
+        try:
+            staged.replace(data_dir)
+            published = True
+        except Exception:
+            if previous.exists() and not data_dir.exists():
+                previous.replace(data_dir)
+            raise
+        if previous.exists():
+            shutil.rmtree(previous)
+        rollback_root.rmdir()
+        return manifest
+    finally:
+        if not published and previous.exists() and not data_dir.exists():
+            previous.replace(data_dir)
+        shutil.rmtree(temporary, ignore_errors=True)
+        if rollback_root.exists() and not previous.exists():
+            rollback_root.rmdir()

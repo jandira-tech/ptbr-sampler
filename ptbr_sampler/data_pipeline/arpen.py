@@ -26,7 +26,10 @@ def normalise_arpen(payload: dict[str, Any]) -> tuple[list[tuple[str, int]], int
             raise ValueError('malformed Arpen ranking total') from error
         if count < 0:
             raise ValueError('negative Arpen count')
-        rows.append((item['name'].upper(), count))
+        name = item['name'].strip().upper()
+        if not name:
+            raise ValueError('empty name in Arpen ranking')
+        rows.append((name, count))
     if not rows:
         raise ValueError('empty Arpen ranking')
     return rows, sum(count for _, count in rows)
@@ -36,12 +39,20 @@ def validate_births(payload: dict[str, Any], *, expected_ufs: set[str] | None = 
     if not isinstance(payload, dict) or not isinstance(payload.get('data'), list):
         raise ValueError('malformed Arpen birth response')  # noqa: TRY004
     births: dict[str, int] = {}
+    seen: set[str] = set()
     national = 0
     for item in payload['data']:
         if not isinstance(item, dict) or not isinstance(item.get('name'), str):
             raise ValueError('malformed Arpen birth row')  # noqa: TRY004
-        name = item['name'].upper()
+        name = item['name'].strip().upper()
+        if not name:
+            raise ValueError('empty name in Arpen births')
         count = int(item['total'])
+        if count < 0:
+            raise ValueError('negative Arpen count')
+        if name in seen:
+            raise ValueError(f'duplicate UF in Arpen births: {name}')
+        seen.add(name)
         if name in {'BR', 'BRASIL', 'TOTAL'}:
             national = count
         else:
@@ -100,25 +111,38 @@ def fetch_arpen2025(client: HttpClient, cache_dir: Path, *, refresh: bool = Fals
             )
         packed = ('\n'.join(json.dumps(record, ensure_ascii=False, separators=(',', ':')) for record in records) + '\n').encode()
         atomic_write(raw_path, gzip.compress(packed, mtime=0))
-    for record in records:
-        response_bytes = json.dumps(record['payload'], ensure_ascii=False, separators=(',', ':')).encode()
-        record.setdefault('response_sha256', hashlib.sha256(response_bytes).hexdigest())
-        record.setdefault('response_bytes', len(response_bytes))
-    packed = ('\n'.join(json.dumps(record, ensure_ascii=False, separators=(',', ':')) for record in records) + '\n').encode()
-    atomic_write(raw_path, gzip.compress(packed, mtime=0))
+    expected_keys = {('birth', 'BR')} | {(f'{kind}-name', uf) for kind in ('simple', 'compound', 'all') for uf in ['BR', *STATE_NAMES]}
+    seen_keys: set[tuple[str, str]] = set()
     output: dict[str, Any] = {'rankings': {}, 'births': {}, 'responses': len(records)}
     for record in records:
-        if record['endpoint'] == 'birth':
+        key = (record.get('endpoint'), record.get('uf'))
+        if key not in expected_keys:
+            raise ValueError(f'unexpected Arpen endpoint or UF: {key}')
+        if key in seen_keys:
+            raise ValueError(f'duplicate Arpen endpoint/UF: {key}')
+        seen_keys.add(key)
+        endpoint, uf = key
+        if record.get('url') != arpen_url(endpoint, None if uf == 'BR' else uf):
+            raise ValueError(f'Arpen record URL does not match endpoint/UF: {key}')
+        response_bytes = json.dumps(record.get('payload'), ensure_ascii=False, separators=(',', ':')).encode()
+        if record.get('response_sha256') != hashlib.sha256(response_bytes).hexdigest():
+            raise ValueError(f'Arpen cached response hash mismatch: {key}')
+        if record.get('response_bytes') != len(response_bytes):
+            raise ValueError(f'Arpen cached response byte count mismatch: {key}')
+        if endpoint == 'birth':
             output['births'] = validate_births(record['payload'])
+            output['births_acquired_at_utc'] = record['acquired_at_utc']
         else:
             rows, total = normalise_arpen(record['payload'])
-            kind = record['endpoint'].removesuffix('-name')
-            output['rankings'][f'{kind}:{record["uf"]}'] = {
+            kind = endpoint.removesuffix('-name')
+            output['rankings'][f'{kind}:{uf}'] = {
                 'rows': rows,
                 'top50_total': total,
                 'url': record['url'],
                 'acquired_at_utc': record['acquired_at_utc'],
             }
+    if seen_keys != expected_keys:
+        raise ValueError(f'Arpen response coverage missing: {sorted(expected_keys - seen_keys)}')
     if len(output['rankings']) != 84:
         raise ValueError(f'Arpen ranking coverage mismatch: {len(output["rankings"])} != 84')
     # Detect the previous silent failure mode where a UF query parameter was ignored.

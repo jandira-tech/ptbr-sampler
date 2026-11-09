@@ -17,6 +17,17 @@ from ptbr_sampler.data_pipeline.io import file_metadata, sha256_file, utc_now, w
 from ptbr_sampler.data_pipeline.registry import Source
 
 USER_AGENT = 'ptbr-sampler-data/0.3 (+https://github.com/jandira-tech/ptbr-sampler)'
+DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+
+
+class HTTPSRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        if not newurl.startswith('https://'):
+            raise ValueError('only HTTPS redirects are allowed')
+        return super().redirect_request(request, fp, code, msg, headers, newurl)
+
+
+HTTPS_OPENER = urllib.request.build_opener(HTTPSRedirectHandler)
 
 
 class HttpError(RuntimeError):
@@ -42,13 +53,28 @@ Transport = Callable[[urllib.request.Request, float], dict[str, Any]]
 
 
 def urllib_stream_transport(request: urllib.request.Request, timeout: float) -> dict[str, Any]:
-    response = urllib.request.urlopen(request, timeout=timeout)  # noqa: S310 - HTTPS checked by caller
-    return {'status': response.status, 'headers': dict(response.headers), 'stream': response}
+    response = HTTPS_OPENER.open(request, timeout=timeout)
+    return {'status': response.status, 'headers': dict(response.headers), 'stream': response, 'final_url': response.geturl()}
 
 
 def urllib_transport(request: urllib.request.Request, timeout: float) -> dict[str, Any]:
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - scheme checked by get()
-        return {'status': response.status, 'body': response.read(), 'headers': dict(response.headers)}
+    with HTTPS_OPENER.open(request, timeout=timeout) as response:
+        declared_bytes = int(response.headers.get('Content-Length', 0))
+        if declared_bytes > DEFAULT_MAX_RESPONSE_BYTES:
+            raise ValueError(f'response body exceeds {DEFAULT_MAX_RESPONSE_BYTES} bytes')
+        body = response.read(DEFAULT_MAX_RESPONSE_BYTES + 1)
+        if len(body) > DEFAULT_MAX_RESPONSE_BYTES:
+            raise ValueError(f'response body exceeds {DEFAULT_MAX_RESPONSE_BYTES} bytes')
+        return {'status': response.status, 'body': body, 'headers': dict(response.headers), 'final_url': response.geturl()}
+
+
+def validate_redirects(response: dict[str, Any], original_url: str) -> str:
+    redirects = response.get('redirect_urls', [])
+    final_url = str(response.get('final_url', response.get('url', original_url)))
+    for url in [*redirects, final_url]:
+        if not str(url).startswith('https://'):
+            raise ValueError(f'only HTTPS redirects are allowed: {url}')
+    return final_url
 
 
 class HttpClient:
@@ -60,12 +86,14 @@ class HttpClient:
         retries: int = 3,
         backoff: float = 0.5,
         sleeper: Callable[[float], None] = time.sleep,
+        max_response_bytes: int = DEFAULT_MAX_RESPONSE_BYTES,
     ):
         self.transport = transport or urllib_transport
         self.stream_transport = stream_transport or urllib_stream_transport
         self.retries = retries
         self.backoff = backoff
         self.sleeper = sleeper
+        self.max_response_bytes = max_response_bytes
 
     def get(self, url: str, *, timeout: float = 30) -> HttpResponse:
         if not url.startswith('https://'):
@@ -78,7 +106,11 @@ class HttpClient:
                 status = int(response.get('status', 200))
                 if status != 200:
                     raise HttpError(f'HTTP {status} from {url}')
-                return HttpResponse(url, status, bytes(response['body']), dict(response.get('headers', {})), utc_now())
+                final_url = validate_redirects(response, url)
+                body = bytes(response['body'])
+                if len(body) > self.max_response_bytes:
+                    raise ValueError(f'response body exceeds {self.max_response_bytes} bytes')
+                return HttpResponse(final_url, status, body, dict(response.get('headers', {})), utc_now())
             except (TimeoutError, OSError, urllib.error.URLError, HttpError) as error:
                 last_error = error
                 if attempt < self.retries:
@@ -113,6 +145,7 @@ class HttpClient:
             stream = None
             try:
                 response = self.stream_transport(request, timeout)
+                validate_redirects(response, source.url)
                 status = int(response.get('status', 200))
                 response_headers = dict(response.get('headers', {}))
                 if status not in {200, 206}:
@@ -127,6 +160,8 @@ class HttpClient:
                 stream = response.get('stream', io.BytesIO(bytes(response.get('body', b''))))
                 with part.open(mode) as output:
                     while chunk := stream.read(1024 * 1024):
+                        if source.expected_bytes is not None and output.tell() + len(chunk) > source.expected_bytes:
+                            raise ValueError(f'{source.key}: stream exceeds expected bytes')
                         output.write(chunk)
                     output.flush()
                     os.fsync(output.fileno())
