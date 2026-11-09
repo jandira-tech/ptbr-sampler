@@ -51,6 +51,22 @@ DATA_ORIGINS: tuple[DataOrigin, ...] = (
         ),
     ),
     DataOrigin(
+        kind='Derived first-name cohorts',
+        summary=(
+            'current, census2022, and newborn2025 national/UF distributions plus M/F conditionals. '
+            'current blends Census 2022 stock with the modeled 2025 newborn flow using '
+            'alpha_uf=Arpen2025_registrations_uf/IBGE_POP2026_population_uf.'
+        ),
+        files=(_PACKAGE_DATA / 'parquet' / 'cohorts',),
+        dimensions=('cohort', 'scope=national', 'uf', 'sex'),
+        primary_url='https://www.ibge.gov.br/apps/nomes/',
+        notes=(
+            'Newborn observed rows use Arpen SIMPLE only. Residual mass uses the national IBGE '
+            'after2010 tail excluding each UF top50; it is not UF-observed history. National '
+            'marginals are official POP2026-population-weighted, never registration-weighted.'
+        ),
+    ),
+    DataOrigin(
         kind='Sex prior (national, long tail)',
         summary=(
             'IBGE 2022 supplies 123,733 national names with empirical '

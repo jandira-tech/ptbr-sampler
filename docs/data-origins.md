@@ -9,6 +9,56 @@ provenance of each one.
 The same information is exposed at runtime through the `ptbr sources`
 command (see `ptbr_sampler/cli.py`).
 
+## Current cohort model and API (supersedes historical notes below)
+
+`ptbr_sampler/data/parquet/cohorts/cohort=<current|census2022|newborn2025>/`
+contains national and all 27 UF distributions, with precomputed `sex=M` and
+`sex=F` partitions. `sampler.sample`, `sample.sample`, and `ptbr generate` /
+`ptbr sample` accept `cohort`, `uf`, and the new `TimePeriod.UNTIL_2020`
+(`ate2020`) / `TimePeriod.AFTER_2010` (`after2010`) selectors.
+
+The default is `cohort='current', time_period=None`. An explicit period selects
+the national IBGE historical table without cohort blending; only the compatible
+`current + time_period` combination allows an explicit period. `census2022` or
+`newborn2025` plus a period raises `ValueError`. Existing callers that passed an
+explicit period keep historical behavior; callers relying on the old implicit
+`ate2010` default must now pass `time_period=TimePeriod.UNTIL_2010`.
+
+For every UF, census2022 is directly normalized IBGE 2022 frequency. For
+newborn2025, only Arpen `SIMPLE` atomic first names are used:
+
+```
+p_observed[i,UF] = Arpen_SIMPLE_count[i,UF] / registrations_uf
+residual_uf = 1 - sum_top50(p_observed)
+p_newborn_tail[i,UF] = residual_uf * IBGE_national_after2010[i]
+                       / sum(IBGE_national_after2010 excluding UF top50)
+p_current[i,UF] = (1-alpha_uf) * p_census2022[i,UF]
+                  + alpha_uf * p_newborn[i,UF]
+alpha_uf = Arpen2025_registrations_uf / IBGE_official_POP2026_population_uf
+```
+
+Top50 labels absent from the tail retain their observed mass. The tail is
+**national 2011–2020 evidence, not UF-observed post-2010 history**; residual
+mass is therefore modeled rather than observed. Compound/all captures remain
+available under `parquet/arpen2025` but do not enter first-name distributions
+or middle-name incidence. National distributions are UF marginals weighted by
+official POP2026 populations (including POP2026's explicit source-only MT
+municipality), not by Arpen registrations or artifact row count.
+
+High-level profiles and name/surname return paths use the sampled location UF
+(or fixed `uf='SP'`) by default. Direct `BrazilianNameSampler` calls without a
+UF use the precomputed population-weighted national marginal. Surnames always
+use pure IBGE 2022 national/UF data independent of first-name cohort. `top_40`
+is recomputed from final UF probabilities with stable ties; `random=True`
+draws uniformly over the final selected support. Sex conditioning applies the
+national empirical IBGE prior to the selected cohort table, drops null-sex
+rows only in M/F partitions, and renormalizes; it is not UF-sex evidence.
+
+Each cohort partition has a `data_origin.json` sidecar recording the exact
+formula, SIMPLE-only decision, residual, alpha, denominator, and tail coverage.
+`data/manifest.json` is the exact hashed inventory for all 504 new Parquet and
+sidecar files.
+
 ---
 
 ## 1. First names

@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
-from ptbr_sampler.br_name_class import NameComponents, TimePeriod
+from ptbr_sampler.br_name_class import Cohort, NameComponents, TimePeriod
 from ptbr_sampler.data_origins import DATA_ORIGINS
 from ptbr_sampler.sampler import sample as sampler_sample
 
@@ -60,8 +60,8 @@ RANDOM_MODE = typer.Option(
     False,
     '--random',
     help=(
-        'Explicit random mode (opt-out of realism): uniform location and name draws, '
-        'flat 50% middle-name flag. Default is realism-by-default (population-weighted).'
+        'Uniform location and final name/surname support. The empirical 30.99% '
+        'middle-name rate remains unchanged. Default is population/frequency weighted.'
     ),
     rich_help_panel='Basic Options',
 )
@@ -69,13 +69,8 @@ EXPERIMENTAL_UF_SEX = typer.Option(
     False,
     '--experimental-uf-sex',
     help=(
-        'EXPERIMENTAL: condition first-name draws on the sampled UF and a '
-        '50/50-drawn sex when the parquet/first_names/uf=<UF>/period=<P>/sex=<S>/ '
-        'partitions exist (produced by "python -m scripts.download_datasets '
-        '--fetch-ibge-nomes" + "python -m scripts.ingest_to_parquet"). The IBGE '
-        'Nomes v2 ranking endpoint exposes only the top-20 names per condition, '
-        'so the conditioned pool is much narrower than the unconditioned '
-        'period table; default is OFF.'
+        'Compatibility: enable mixed 50/50 sex only when --sex-conditioning is '
+        'not supplied. UF conditioning is always active and no longer gated here.'
     ),
     rich_help_panel='Basic Options',
 )
@@ -83,13 +78,9 @@ SEX_CONDITIONING = typer.Option(
     None,
     '--sex-conditioning',
     help=(
-        'Condition first-name draws on sex using the period x sex national '
-        'partitions (parquet/first_names/period=<P>/sex=<S>/). Built from '
-        'IBGE Nomes period percentages multiplied by the brasil.io/genero-nomes '
-        'sex prior — see docs/data-origins.md. Full long tail preserved. '
-        "Accepts 'M' (male only), 'F' (female only), or 'mixed' (50/50 per row). "
-        'Default off (period-only table). Combine with --experimental-uf-sex '
-        'to add UF on top.'
+        'Condition first names on the selected cohort/UF using precomputed M/F '
+        'tables based on the national empirical IBGE prior, or historical period x sex '
+        'tables. Accepts M, F, or mixed (50/50 per row). Default off.'
     ),
     rich_help_panel='Basic Options',
 )
@@ -112,7 +103,17 @@ MAKE_API_CALL = typer.Option(
 
 # Name options
 TIME_PERIOD = typer.Option(
-    TimePeriod.UNTIL_2010, '--time-period', '-t', help='Time period for name sampling', rich_help_panel='Name Options'
+    None,
+    '--time-period',
+    '-t',
+    help='Historical name period (ate1930..ate2020 or after2010); default selects cohort',
+    rich_help_panel='Name Options',
+)
+COHORT = typer.Option(
+    Cohort.CURRENT, '--cohort', help='First-name cohort: current, census2022, or newborn2025', rich_help_panel='Name Options'
+)
+UF = typer.Option(
+    None, '--uf', help='Fix location, first names, and surnames to one UF (for example SP)', rich_help_panel='Location Options'
 )
 RETURN_ONLY_NAME = typer.Option(
     False, '--return-only-name', '-rn', help='Return only the name without location', rich_help_panel='Name Options'
@@ -350,7 +351,9 @@ def sample(
     only_cep: bool = ONLY_CEP,
     cep_without_dash: bool = CEP_WITHOUT_DASH,
     make_api_call: bool = MAKE_API_CALL,
-    time_period: TimePeriod = TIME_PERIOD,
+    time_period: TimePeriod | None = TIME_PERIOD,
+    cohort: Cohort = COHORT,
+    uf: str | None = UF,
     return_only_name: bool = RETURN_ONLY_NAME,
     name_raw: bool = NAME_RAW,
     json_path: Path = JSON_PATH,
@@ -582,6 +585,8 @@ def sample(
                             cep_without_dash=cep_without_dash,
                             make_api_call=make_api_call,
                             time_period=time_period,
+                            cohort=cohort,
+                            uf=uf,
                             return_only_name=return_only_name,
                             name_raw=name_raw,
                             json_path=json_path,
@@ -703,6 +708,8 @@ def sample(
                         cep_without_dash=cep_without_dash,
                         make_api_call=make_api_call,
                         time_period=time_period,
+                        cohort=cohort,
+                        uf=uf,
                         return_only_name=return_only_name,
                         name_raw=name_raw,
                         json_path=json_path,

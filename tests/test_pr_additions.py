@@ -936,6 +936,8 @@ class TestTimePeriodEnum:
             'ate1990',
             'ate2000',
             'ate2010',
+            'ate2020',
+            'after2010',
         }
         actual = {p.value for p in TimePeriod}
         assert actual == expected_values
@@ -946,7 +948,7 @@ class TestTimePeriodEnum:
         assert TimePeriod.UNTIL_2010 == 'ate2010'
 
     def test_time_period_count(self):
-        assert len(TimePeriod) == 9
+        assert len(TimePeriod) == 11
 
 
 # ---------------------------------------------------------------------------

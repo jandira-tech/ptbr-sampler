@@ -6,6 +6,23 @@ As referências completas estão em [`docs/sources/bibliography.md`](docs/source
 
 *Read it in English: [English](README.en.md)*
 
+## Coortes e amostragem por UF (API atual)
+
+```python
+from sample import Cohort, TimePeriod, sample
+
+sample(q=10)  # coorte atual e UF da localização sorteada
+sample(q=10, cohort=Cohort.NEWBORN2025, uf='SP', sex_conditioning='F')
+sample(q=10, time_period=TimePeriod.AFTER_2010)  # histórico, sem mistura
+```
+
+O padrão mudou de `ate2010` implícito para `cohort='current',
+time_period=None`; para preservar o seletor antigo, informe
+`TimePeriod.UNTIL_2010`. Primeiros nomes e sobrenomes usam a UF sorteada ou fixa
+por padrão. `random=True` é uniforme no suporte final selecionado, sem alterar
+a incidência de 30,99% de nomes do meio. Consulte as
+[fórmulas e origens exatas das coortes](docs/data-origins.md).
+
 [![Python Version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 

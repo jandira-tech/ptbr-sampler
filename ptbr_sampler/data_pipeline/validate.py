@@ -25,7 +25,7 @@ _GEOGRAPHY_FILES = {
 def _managed_inventory(data_dir: Path) -> set[str]:
     files = {
         path.relative_to(data_dir).as_posix()
-        for root in ('parquet/ibge2022', 'parquet/arpen2025', 'sanitized')
+        for root in ('parquet/ibge2022', 'parquet/arpen2025', 'parquet/cohorts', 'sanitized')
         for path in (data_dir / root).rglob('*')
         if path.is_file()
     }
@@ -142,6 +142,16 @@ def validate_runtime_data(data_dir: Path) -> dict[str, int]:
             if path.parent.name == 'births':
                 continue
             _check_name_parquet(path)
+    cohorts = data_dir / 'parquet' / 'cohorts'
+    for cohort in ('current', 'census2022', 'newborn2025'):
+        for scope in ['scope=national', *(f'uf={uf}' for uf in UF_CODES)]:
+            directory = cohorts / f'cohort={cohort}' / scope
+            _check_name_parquet(directory / 'part.parquet')
+            metadata = json.loads((directory / 'data_origin.json').read_text(encoding='utf-8'))
+            if metadata.get('simple_only') is not True or not metadata.get('formula') or 'tail_coverage' not in metadata:
+                raise ValueError(f'incomplete cohort model sidecar: {directory}')
+            for conditioned_sex in ('M', 'F'):
+                _check_name_parquet(directory / f'sex={conditioned_sex}' / 'part.parquet')
     sex = pq.read_table(data_dir / 'parquet' / 'ibge2022' / 'sex_prior' / 'scope=national' / 'part.parquet')
     if sex.num_rows != 123_733:
         raise ValueError('empirical sex-prior row count mismatch')

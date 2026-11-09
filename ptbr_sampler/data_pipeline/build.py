@@ -14,6 +14,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from ptbr_sampler.data_pipeline.arpen import arpen_url, fetch_arpen2025
+from ptbr_sampler.data_pipeline.derived import build_cohorts
 from ptbr_sampler.data_pipeline.geography import read_pop2026, read_population_workbook, rebuild_geography_files
 from ptbr_sampler.data_pipeline.http import HttpClient
 from ptbr_sampler.data_pipeline.ibge import (
@@ -298,6 +299,13 @@ def _build_managed_generation(
             'geography_population_sum': geography_totals['municipal_population_sum'],
         }
     )
+    coverage.update(
+        build_cohorts(
+            parquet,
+            data_dir / 'locations_data.json',
+            acquired_at_utc=max(acquisition_times.values()),
+        )
+    )
     geography_sidecar = {
         'source': 'geography_runtime',
         'source_url': SOURCES['pop2026'].url,
@@ -334,7 +342,7 @@ def _build_managed_generation(
         for path in data_dir.rglob('*')
         if path.is_file()
         and (
-            any(part in {'ibge2022', 'arpen2025'} for part in path.parts)
+            any(part in {'ibge2022', 'arpen2025', 'cohorts'} for part in path.parts)
             or path.parent.name == 'sanitized'
             or 'sanitized' in path.parts
             or path.name.endswith('.data_origin.json')

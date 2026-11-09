@@ -14,12 +14,13 @@ The CLI is installed as the ``ptbr`` console script; see ``pyproject.toml``.
 """
 
 from ptbr_sampler.br_location_class import BrazilianLocationSampler
-from ptbr_sampler.br_name_class import BrazilianNameSampler, NameComponents, TimePeriod
+from ptbr_sampler.br_name_class import BrazilianNameSampler, Cohort, NameComponents, TimePeriod
 from ptbr_sampler.cli import app, main
 
 __all__ = [
     'BrazilianLocationSampler',
     'BrazilianNameSampler',
+    'Cohort',
     'NameComponents',
     'TimePeriod',
     'app',

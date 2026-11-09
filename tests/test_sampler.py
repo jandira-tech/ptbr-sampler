@@ -216,11 +216,11 @@ class TestUfSexConditioningNameOnly:
             assert call['uf'] == row['state_abbr']
             assert call['sex'] in ('M', 'F')
 
-    def test_name_only_draw_is_unconditioned_by_default(self, monkeypatch):
+    def test_name_only_draw_is_uf_conditioned_without_automatic_sex(self, monkeypatch):
         calls = self._spy(monkeypatch)
-        _sample(qty=2, return_only_name=True)
+        results = _sample(qty=2, return_only_name=True)
 
-        assert [(c['uf'], c['sex']) for c in calls] == [(None, None), (None, None)]
+        assert [(c['uf'], c['sex']) for c in calls] == [(row['state_abbr'], None) for row in results]
 
     @pytest.mark.parametrize('fork', ['only_surname', 'only_middle'])
     def test_surname_and_middle_forks_draw_no_sex(self, monkeypatch, fork):

@@ -32,8 +32,10 @@ def test_time_period_enum():
     """Verify TimePeriod enum has expected members."""
     from ptbr_sampler.br_name_class import TimePeriod
 
-    assert len(TimePeriod) == 9
+    assert len(TimePeriod) == 11
     assert TimePeriod.UNTIL_2010.value == 'ate2010'
+    assert TimePeriod.UNTIL_2020.value == 'ate2020'
+    assert TimePeriod.AFTER_2010.value == 'after2010'
     assert TimePeriod.UNTIL_1930.value == 'ate1930'
 
 

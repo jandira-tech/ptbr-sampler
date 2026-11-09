@@ -6,6 +6,24 @@ Full citations live in [`docs/sources/bibliography.md`](docs/sources/bibliograph
 
 *Leia aqui em Português: [Português](README.md)*
 
+## Cohort and UF sampling (current API)
+
+```python
+from sample import Cohort, TimePeriod, sample
+
+sample(q=10)  # current cohort, sampled location UF, no sex conditioning
+sample(q=10, cohort=Cohort.NEWBORN2025, uf='SP', sex_conditioning='F')
+sample(q=10, time_period=TimePeriod.AFTER_2010)  # historical: no cohort blend
+```
+
+The default changed from implicit `ate2010` to `cohort='current',
+time_period=None`; pass an explicit `TimePeriod.UNTIL_2010` to retain the old
+historical selector. `census2022`/`newborn2025` cannot be combined with a period.
+Names and surnames now use the sampled or fixed UF by default; the experimental
+flag only supplies mixed sex when sex was not explicitly chosen. `random=True`
+is uniform over the final support, while middle-name incidence remains 30.99%.
+See [data origins and exact cohort formulas](docs/data-origins.md).
+
 [![Python Version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 

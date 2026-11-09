@@ -8,7 +8,7 @@ unwrapped dict return when ``q == 1``).
 
 from pathlib import Path
 
-from ptbr_sampler.br_name_class import TimePeriod
+from ptbr_sampler.br_name_class import Cohort, TimePeriod
 from ptbr_sampler.sampler import sample as sampler_function
 
 # Default data paths — bundled inside the installed package.
@@ -22,7 +22,9 @@ _DEFAULTS = {
     'only_cep': False,
     'cep_without_dash': False,
     'make_api_call': False,
-    'time_period': TimePeriod.UNTIL_2010,
+    'time_period': None,
+    'cohort': Cohort.CURRENT,
+    'uf': None,
     'return_only_name': False,
     'name_raw': False,
     'json_path': _DATA_DIR / 'cities_with_ceps.json',
@@ -62,6 +64,8 @@ def sample(
     all_data: bool = False,
     random: bool = False,
     experimental_uf_sex_conditioning: bool = False,
+    cohort: Cohort | str = Cohort.CURRENT,
+    uf: str | None = None,
     **kwargs,
 ) -> dict | list[dict]:
     """
@@ -73,18 +77,13 @@ def sample(
             default of 1).
         save_to_jsonl: Path to save generated samples as JSONL
         all_data: Include all possible data in the generated samples
-        random: Explicit random mode (opt-out of realism). When ``True``, the
-            sampler ignores population weights for locations and frequency
-            weights for names, and uses a flat 50% middle-name flag in place
-            of the empirical 30.99% rate. Default ``False`` keeps the
-            realism-by-default path described in the README.
-        experimental_uf_sex_conditioning: EXPERIMENTAL. When ``True`` and the
-            ``parquet/first_names/uf=<UF>/period=<P>/sex=<S>/`` partitions
-            exist, first-name draws are conditioned on the row's UF and a
-            50/50-drawn sex. The IBGE Nomes v2 ranking endpoint that powers
-            those partitions returns only the top-20 names per condition,
-            so the conditioned pool is much narrower than the
-            unconditioned period table. Default ``False``.
+        random: Uniform draws over the final selected name/surname support and
+            locations. The corpus-derived 30.99% middle-name rate is unchanged.
+        cohort: ``current`` (default), ``census2022``, or ``newborn2025``.
+        uf: Optional fixed UF for location, first-name, and surname sampling.
+        experimental_uf_sex_conditioning: Compatibility option that supplies a
+            mixed per-row sex only when no explicit sex_conditioning was set.
+            UF conditioning is always active; this option no longer gates it.
         **kwargs: Additional parameters passed directly to cli.sample
 
     Common keyword arguments:
@@ -139,9 +138,11 @@ def sample(
     merged['all_data'] = all_data
     merged['random'] = random
     merged['experimental_uf_sex_conditioning'] = experimental_uf_sex_conditioning
+    merged['cohort'] = cohort
+    merged['uf'] = uf
 
     return sampler_function(**merged)
 
 
 # Export the TimePeriod enum for convenience
-__all__ = ['TimePeriod', 'sample']
+__all__ = ['Cohort', 'TimePeriod', 'sample']

@@ -109,12 +109,14 @@ def test_official_v3_rejects_malformed_and_never_accepts_empty_first_page():
         OfficialIBGEClient(transport=lambda *_: []).ranking(33, 'nome')
 
 
-def test_time_period_enum_exposes_2022_extensions_without_breaking_legacy_iteration():
+def test_time_period_enum_exposes_2022_extensions():
     from ptbr_sampler.br_name_class import TimePeriod, TimePeriod2022
 
     assert TimePeriod2022.UNTIL_2020.value == 'until2020'
     assert TimePeriod2022.AFTER_2010.value == 'after2010'
-    assert len(TimePeriod) == 9
+    assert TimePeriod.UNTIL_2020.value == 'ate2020'
+    assert TimePeriod.AFTER_2010.value == 'after2010'
+    assert len(TimePeriod) == 11
 
 
 def test_historical_stock_differences_and_extended_periods():

@@ -31,8 +31,16 @@ def _alias_draw(table: AliasTable, n: int, rng: np.random.Generator, *, random_m
     return table.sample_uniform(n, rng) if random_mode else table.sample(n, rng)
 
 
+class Cohort(StrEnum):
+    """Derived first-name population/newborn distributions."""
+
+    CURRENT = 'current'
+    CENSUS2022 = 'census2022'
+    NEWBORN2025 = 'newborn2025'
+
+
 class TimePeriod(StrEnum):
-    """Time periods available in the dataset."""
+    """Explicit historical first-name periods; ``None`` selects a cohort."""
 
     UNTIL_1930 = 'ate1930'
     UNTIL_1940 = 'ate1940'
@@ -43,6 +51,8 @@ class TimePeriod(StrEnum):
     UNTIL_1990 = 'ate1990'
     UNTIL_2000 = 'ate2000'
     UNTIL_2010 = 'ate2010'
+    UNTIL_2020 = 'ate2020'
+    AFTER_2010 = 'after2010'
 
 
 class TimePeriod2022(StrEnum):
@@ -184,8 +194,11 @@ class BrazilianNameSampler:
         # Alias-table caches. Built lazily on first use so construction
         # cost (~a few ms per period) is paid only if the period is drawn.
         self._first_name_alias: dict[str, AliasTable | None] = {}
-        # UF x period x sex caches: distinct from the period-only cache because
-        # the on-disk partition path differs and keys are (uf, period, sex).
+        self._cohort_first_name_alias: dict[tuple[str, str, str | None], AliasTable | None] = {}
+        self._historical_first_name_alias: dict[tuple[str, str | None], AliasTable | None] = {}
+        self._surname_uf_alias: dict[str | None, AliasTable] = {}
+        self._top_40_uf_alias: dict[str | None, AliasTable] = {}
+        # UF x period x sex caches retained for JSON-era/custom-root compatibility.
         self._first_name_uf_sex_alias: dict[tuple[str, str, str], AliasTable | None] = {}
         # Period x sex caches (national, full long tail). Populated when the
         # parquet/first_names/period=<P>/sex=<S>/ partitions exist (built from
@@ -202,8 +215,12 @@ class BrazilianNameSampler:
         # ``parquet_root`` explicitly (or use :meth:`from_bundled_parquet`).
         self.parquet_root: Path | None = None
         self._partition_store: PartitionStore | None = None
+        self._require_modern_data = False
         if parquet_root is not None:
             candidate_root = Path(parquet_root)
+            self._require_modern_data = candidate_root.resolve() == _DEFAULT_PARQUET_ROOT.resolve()
+            if self._require_modern_data and not candidate_root.exists():
+                raise FileNotFoundError(f'bundled parquet root missing: {candidate_root}')
             if candidate_root.exists():
                 self.parquet_root = candidate_root
                 self._partition_store = PartitionStore(max_entries=lru_size)
@@ -221,6 +238,8 @@ class BrazilianNameSampler:
 
     def _validate_data(self) -> None:
         for period in TimePeriod:
+            if period in (TimePeriod.UNTIL_2020, TimePeriod.AFTER_2010):
+                continue
             if period.value not in self.name_data:
                 raise ValueError(f'Missing data for time period: {period.value}')
 
@@ -262,113 +281,153 @@ class BrazilianNameSampler:
         try:
             return self._partition_store.get(spec)
         except (FileNotFoundError, ValueError):
-            # Partition missing from disk — fall back to the JSON path.
+            if self._require_modern_data:
+                # Bundled modern data is contractual: never silently substitute
+                # the stale JSON distribution for a missing/corrupt artifact.
+                raise
             return None
         except RuntimeError as err:
-            if 'pyarrow is required to load partitions' not in str(err):
+            if self._require_modern_data or 'pyarrow is required to load partitions' not in str(err):
                 raise
             return None
 
     def _first_names_table(
         self,
-        time_period: TimePeriod,
+        time_period: TimePeriod | str | None = None,
         uf: str | None = None,
         sex: str | None = None,
+        cohort: Cohort | str = Cohort.CURRENT,
     ) -> AliasTable:
-        """Return the first-name alias table for a given conditioning tuple.
+        """Resolve a cohort or an explicit historical period exactly once.
 
-        Resolution order (most-specific wins, falls back on partition miss):
-
-        1. ``parquet_root/first_names/uf=<UF>/period=<P>/sex=<S>/`` — used
-           when both ``uf`` and ``sex`` are provided AND the partition
-           file exists. Built from the IBGE Nomes v2 ranking endpoint
-           (top-20 only); narrow but UF-realistic.
-        2. ``parquet_root/first_names/period=<P>/sex=<S>/`` — period-x-sex
-           national, full long tail. Built from
-           ``names_data.json`` percentages * brasil.io/genero-nomes
-           sex prior. Used when ``sex`` is provided alone, or as the
-           back-fill when (1) is missing.
-        3. ``parquet_root/first_names/period=<P>/`` — the existing
-           period-only Parquet partition, populated from
-           ``names_data.json`` by ``scripts.ingest_to_parquet``.
-        4. The legacy in-memory ``names_data.json`` mapping — exercised
-           only by unit tests that override the distribution.
+        Cohort tables are precomputed national/UF marginals, optionally with
+        the national IBGE sex prior already applied. JSON-only/custom roots
+        retain the legacy fallback; the bundled modern root never substitutes
+        stale JSON when a selected artifact is missing or corrupt.
         """
-        period_key = time_period.value
+        selected_cohort = Cohort(cohort)
+        selected_period = TimePeriod(time_period) if time_period is not None else None
+        if selected_period is not None and selected_cohort is not Cohort.CURRENT:
+            raise ValueError('cohort census2022/newborn2025 cannot be combined with an explicit time_period')
+        normalized_sex = sex.upper() if sex is not None else None
+        if normalized_sex not in (None, 'M', 'F'):
+            raise ValueError("sex must be 'M', 'F', or None")
+        normalized_uf = uf.upper() if uf is not None else None
 
-        if uf is not None and sex is not None and self.parquet_root is not None:
-            cache_key = (uf, period_key, sex)
+        if selected_period is None:
+            period_key = TimePeriod.UNTIL_2010.value
+            if self._require_modern_data:
+                key = (selected_cohort.value, normalized_uf or 'BR', normalized_sex)
+                if key in self._cohort_first_name_alias:
+                    table = self._cohort_first_name_alias[key]
+                    if table is not None:
+                        return table
+                filters: dict[str, str] = {'cohort': selected_cohort.value}
+                filters['scope'] = 'national'
+                if normalized_uf:
+                    filters = {'cohort': selected_cohort.value, 'uf': normalized_uf}
+                    if normalized_sex:
+                        filters['sex'] = normalized_sex
+                    spec = PartitionSpec.of(self.parquet_root / 'cohorts', **filters)
+                else:
+                    if normalized_sex:
+                        filters['sex'] = normalized_sex
+                    spec = PartitionSpec.of(self.parquet_root / 'cohorts', **filters)
+                table = self._load_from_parquet(spec)
+                self._cohort_first_name_alias[key] = table
+                if table is not None:
+                    return table
+                raise FileNotFoundError(f'missing modern cohort table: cohort={selected_cohort.value}')
+        else:
+            period_key = selected_period.value
+            if self._require_modern_data:
+                historical_key = (period_key, normalized_sex)
+                if historical_key in self._historical_first_name_alias:
+                    cached = self._historical_first_name_alias[historical_key]
+                    if cached is not None:
+                        return cached
+                if normalized_sex and selected_period in (TimePeriod.UNTIL_2020, TimePeriod.AFTER_2010):
+                    raise ValueError(f'no sex-conditioned historical table is bundled for {period_key}')
+                if normalized_sex:
+                    spec = PartitionSpec.of(self.parquet_root / 'first_names', period=period_key, sex=normalized_sex)
+                else:
+                    historical_period = 'until2020' if selected_period is TimePeriod.UNTIL_2020 else period_key.removeprefix('ate')
+                    spec = PartitionSpec.of(self.parquet_root / 'ibge2022' / 'historical', period=historical_period)
+                table = self._load_from_parquet(spec)
+                self._historical_first_name_alias[historical_key] = table
+                if table is not None:
+                    return table
+                raise FileNotFoundError(f'missing modern historical table: period={period_key}')
+
+        # Legacy periods and custom JSON/Parquet fixtures retain their original
+        # condition-specific lookup order. This path never serves bundled data.
+        if normalized_uf is not None and normalized_sex is not None and self.parquet_root is not None:
+            cache_key = (normalized_uf, period_key, normalized_sex)
             cached_uf = self._first_name_uf_sex_alias.get(cache_key)
             if cached_uf is not None:
                 return cached_uf
-            spec = PartitionSpec.of(
-                self.parquet_root / 'first_names',
-                uf=uf,
-                period=period_key,
-                sex=sex,
-            )
+            spec = PartitionSpec.of(self.parquet_root / 'first_names', uf=normalized_uf, period=period_key, sex=normalized_sex)
             table = self._load_from_parquet(spec)
             if table is not None:
                 self._first_name_uf_sex_alias[cache_key] = table
                 return table
-            # Cache the negative result — there's no point re-stat'ing the
-            # same missing partition for every draw of this period.
             self._first_name_uf_sex_alias[cache_key] = None
-
-        if sex is not None and self.parquet_root is not None:
-            ps_key = (period_key, sex)
+        if normalized_sex is not None and self.parquet_root is not None:
+            ps_key = (period_key, normalized_sex)
             cached_ps = self._first_name_period_sex_alias.get(ps_key)
             if cached_ps is not None:
                 return cached_ps
-            spec = PartitionSpec.of(
-                self.parquet_root / 'first_names',
-                period=period_key,
-                sex=sex,
-            )
-            table = self._load_from_parquet(spec)
+            table = self._load_from_parquet(PartitionSpec.of(self.parquet_root / 'first_names', period=period_key, sex=normalized_sex))
             if table is not None:
                 self._first_name_period_sex_alias[ps_key] = table
                 return table
             self._first_name_period_sex_alias[ps_key] = None
-
         cached = self._first_name_alias.get(period_key)
         if cached is not None:
             return cached
-
         if self.parquet_root is not None:
-            spec = PartitionSpec.of(self.parquet_root / 'first_names', period=period_key)
-            table = self._load_from_parquet(spec)
+            table = self._load_from_parquet(PartitionSpec.of(self.parquet_root / 'first_names', period=period_key))
             if table is not None:
                 self._first_name_alias[period_key] = table
                 return table
-
-        # JSON fallback — the legacy path, still exercised by tests that pass
-        # bespoke ``mock_name_data`` dictionaries without a Parquet tree.
-        period_data = self.name_data[period_key]
-        table = alias_from_mapping(period_data['names'])
+        table = alias_from_mapping(self.name_data[period_key]['names'])
         self._first_name_alias[period_key] = table
         return table
 
-    def _surnames_table(self) -> AliasTable:
-        if self._surname_alias is not None:
-            return self._surname_alias
-
+    def _surnames_table(self, uf: str | None = None) -> AliasTable:
+        normalized_uf = uf.upper() if uf is not None else None
+        if normalized_uf in self._surname_uf_alias:
+            return self._surname_uf_alias[normalized_uf]
         if self.parquet_root is not None:
-            spec = PartitionSpec.of(self.parquet_root / 'surnames', scope='national')
-            table = self._load_from_parquet(spec)
+            root = self.parquet_root / 'ibge2022' / 'surnames' if self._require_modern_data else self.parquet_root / 'surnames'
+            filters = {'uf': normalized_uf} if normalized_uf else {'scope': 'national'}
+            table = self._load_from_parquet(PartitionSpec.of(root, **filters))
+            if table is None and normalized_uf:
+                table = self._load_from_parquet(PartitionSpec.of(root, scope='national'))
             if table is not None:
-                self._surname_alias = table
+                self._surname_uf_alias[normalized_uf] = table
+                if normalized_uf is None:
+                    self._surname_alias = table
                 return table
-
         source = {k: v for k, v in self.surname_data.items() if k != 'top_40'}
-        self._surname_alias = alias_from_mapping(source)
-        return self._surname_alias
+        table = alias_from_mapping(source)
+        self._surname_uf_alias[normalized_uf] = table
+        self._surname_alias = table
+        return table
 
-    def _top_40_table(self) -> AliasTable:
+    def _top_40_table(self, uf: str | None = None) -> AliasTable:
+        normalized_uf = uf.upper() if uf is not None else None
+        if normalized_uf in self._top_40_uf_alias:
+            return self._top_40_uf_alias[normalized_uf]
+        if self._require_modern_data or (normalized_uf is not None and self.parquet_root is not None):
+            full = self._surnames_table(normalized_uf)
+            # Stable descending sort preserves source order for tied weights.
+            indices = sorted(range(len(full)), key=lambda index: -float(full.weights[index]))[:40]
+            table = AliasTable.from_weights([str(full.labels[index]) for index in indices], full.weights[indices])
+            self._top_40_uf_alias[normalized_uf] = table
+            return table
         if self._top_40_alias is not None:
             return self._top_40_alias
-        # No Parquet partition for ``top_40`` — it's a convenience subset that
-        # lives alongside the JSON data.
         if not self.top_40_surnames:
             return self._surnames_table()
         self._top_40_alias = alias_from_mapping(self.top_40_surnames)
@@ -428,7 +487,8 @@ class BrazilianNameSampler:
 
     def get_random_name(
         self,
-        time_period: TimePeriod = TimePeriod.UNTIL_2010,
+        time_period: TimePeriod | str | None = None,
+        cohort: Cohort | str = Cohort.CURRENT,
         raw: bool = False,
         include_surname: bool = True,
         top_40: bool = False,
@@ -468,6 +528,7 @@ class BrazilianNameSampler:
         components = self._draw(
             1,
             time_period=time_period,
+            cohort=cohort,
             raw=raw,
             include_surname=include_surname,
             top_40=top_40,
@@ -491,7 +552,8 @@ class BrazilianNameSampler:
     def batch_sample_names(
         self,
         n: int,
-        time_period: TimePeriod = TimePeriod.UNTIL_2010,
+        time_period: TimePeriod | str | None = None,
+        cohort: Cohort | str = Cohort.CURRENT,
         raw: bool = False,
         include_surname: bool = True,
         top_40: bool = False,
@@ -525,6 +587,7 @@ class BrazilianNameSampler:
         return self._draw(
             n,
             time_period=time_period,
+            cohort=cohort,
             raw=raw,
             include_surname=include_surname,
             top_40=top_40,
@@ -541,6 +604,7 @@ class BrazilianNameSampler:
         raw: bool = False,
         with_only_one_surname: bool = False,
         random_mode: bool = False,
+        uf: str | None = None,
     ) -> str:
         """Get random surname(s), optionally from top 40 only.
 
@@ -549,7 +613,7 @@ class BrazilianNameSampler:
                 table instead of using empirical frequencies.
         """
         rng = _rng_from_python_random()
-        table = self._top_40_table() if top_40 else self._surnames_table()
+        table = self._top_40_table(uf) if top_40 else self._surnames_table(uf)
         draws = _alias_draw(table, 2, rng, random_mode=random_mode)
         surname1 = str(draws[0])
         surname2 = str(draws[1])
@@ -568,7 +632,8 @@ class BrazilianNameSampler:
         self,
         n: int,
         *,
-        time_period: TimePeriod,
+        time_period: TimePeriod | str | None,
+        cohort: Cohort | str,
         raw: bool,
         include_surname: bool,
         top_40: bool,
@@ -587,6 +652,7 @@ class BrazilianNameSampler:
         first_names = self._draw_first_names_conditioned(
             n,
             time_period=time_period,
+            cohort=cohort,
             raw=raw,
             random_mode=random_mode,
             rng=rng,
@@ -607,20 +673,32 @@ class BrazilianNameSampler:
         if not include_surname:
             return [NameComponents(first_names[i], middle_names[i], '') for i in range(n)]
 
-        surname_table = self._top_40_table() if top_40 else self._surnames_table()
-        surname_draws_a = _alias_draw(surname_table, n, rng, random_mode=random_mode)
-        if with_only_one_surname:
-            surname_draws_b: np.ndarray | None = None
-        else:
-            surname_draws_b = _alias_draw(surname_table, n, rng, random_mode=random_mode)
+        row_ufs = list(ufs) if ufs is not None else [uf] * n
+        if len(row_ufs) != n:
+            raise ValueError('ufs must have length n')
+        from collections import defaultdict  # noqa: PLC0415 - only conditional UF batching needs it
+
+        buckets: dict[str | None, list[int]] = defaultdict(list)
+        for index, row_uf in enumerate(row_ufs):
+            buckets[row_uf.upper() if row_uf is not None else None].append(index)
+        surnames_out: list[tuple[str, str | None]] = [('', None)] * n
+        for bucket_uf, indices in buckets.items():
+            table = self._top_40_table(bucket_uf) if top_40 else self._surnames_table(bucket_uf)
+            count = len(indices)
+            draws_a = _alias_draw(table, count, rng, random_mode=random_mode)
+            draws_b = None if with_only_one_surname else _alias_draw(table, count, rng, random_mode=random_mode)
+            for draw_index, row_index in enumerate(indices):
+                surnames_out[row_index] = (
+                    str(draws_a[draw_index]),
+                    str(draws_b[draw_index]) if draws_b is not None else None,
+                )
 
         results: list[NameComponents] = []
         for i in range(n):
-            s1 = str(surname_draws_a[i])
-            s2 = str(surname_draws_b[i]) if surname_draws_b is not None else ''
+            surname1, surname2 = surnames_out[i]
             surname = self._assemble_surname(
-                s1,
-                s2,
+                surname1,
+                surname2 or '',
                 raw=raw,
                 with_only_one_surname=with_only_one_surname,
             )
@@ -631,7 +709,8 @@ class BrazilianNameSampler:
         self,
         n: int,
         *,
-        time_period: TimePeriod,
+        time_period: TimePeriod | str | None,
+        cohort: Cohort | str,
         raw: bool,
         random_mode: bool,
         rng: np.random.Generator,
@@ -660,7 +739,7 @@ class BrazilianNameSampler:
 
         # Fast path — single unconditioned table for every row.
         if per_row_ufs is None or per_row_sexes is None:
-            table = self._first_names_table(time_period)
+            table = self._first_names_table(time_period, cohort=cohort)
             draws = _alias_draw(table, n, rng, random_mode=random_mode)
             return [(str(name).upper() if raw else str(name)) for name in draws]
 
@@ -676,7 +755,7 @@ class BrazilianNameSampler:
 
         names_out: list[str] = [''] * n
         for (bucket_uf, bucket_sex), indices in buckets.items():
-            table = self._first_names_table(time_period, uf=bucket_uf, sex=bucket_sex)
+            table = self._first_names_table(time_period, uf=bucket_uf, sex=bucket_sex, cohort=cohort)
             count = len(indices)
             draws = _alias_draw(table, count, rng, random_mode=random_mode)
             for j, row_idx in enumerate(indices):
@@ -710,11 +789,9 @@ class BrazilianNameSampler:
                 middle_names[i] = s.upper() if raw else s
             return middle_names
 
-        # In random mode, the empirical 30.99% inclusion rate is replaced by
-        # a flat coin flip — that's the whole point of the escape hatch:
-        # ``random=True`` drops realism-oriented assumptions, including the
-        # ``percentage_with_second`` documented in the README.
-        threshold = 0.5 if random_mode else float(self.middle_names_data['percentage_with_second']) / 100.0
+        # random=True flattens the selected name support, but does not invent a
+        # different incidence model: the corpus-derived 30.99% rate is stable.
+        threshold = float(self.middle_names_data['percentage_with_second']) / 100.0
         middle_name_flags = rng.random(n) < threshold
         need = int(np.count_nonzero(middle_name_flags))
         if need == 0:

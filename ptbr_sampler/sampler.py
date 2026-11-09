@@ -17,7 +17,8 @@ from ptbr_sampler.utils.address_for_offline import AddressProvider_for_offline
 from ptbr_sampler.utils.phone import generate_phone_number
 
 from .br_location_class import BrazilianLocationSampler
-from .br_name_class import BrazilianNameSampler, NameComponents, TimePeriod
+from .br_name_class import BrazilianNameSampler, Cohort, NameComponents, TimePeriod
+from .data_pipeline.registry import UF_CODES
 from .document_sampler import DocumentSampler
 
 # Module-level JSON cache to avoid re-parsing on repeated sample() calls.
@@ -263,7 +264,7 @@ def sample(
     only_cep: bool,
     cep_without_dash: bool,
     make_api_call: bool,
-    time_period: TimePeriod,
+    time_period: TimePeriod | str | None,
     return_only_name: bool,
     name_raw: bool,
     json_path: str | Path,
@@ -297,6 +298,8 @@ def sample(
     random: bool = False,
     experimental_uf_sex_conditioning: bool = False,
     sex_conditioning: str | None = None,
+    cohort: Cohort | str = Cohort.CURRENT,
+    uf: str | None = None,
 ) -> dict | list[dict]:
     """
     Generate randomized Brazilian profiles composed of name, location, and document fields according to the supplied flags.
@@ -335,24 +338,18 @@ def sample(
         progress_callback (Callable[[int, str], None] | None): Optional callback receiving (completed_count, message) to report progress.
         append_to_jsonl (bool): If True, append to `save_to_jsonl` file instead of overwriting.
         random (bool): If True, switch to the explicit-random escape hatch:
-            uniform location sampling (no population weighting), uniform name
-            draws (no frequency weighting), and a flat 50% middle-name flag in
-            place of the empirical 30.99% rate. The default (False) keeps
+            uniform location and final name/surname support sampling. The
+            corpus-derived 30.99% middle-name incidence remains unchanged.
+            The default (False) keeps
             realism-by-default sampling — geography first via population
             weights, then names from the IBGE-derived alias tables. See the
             "Realism vs. random mode" section in the README for details.
-        experimental_uf_sex_conditioning (bool): If True AND the
-            ``parquet/first_names/uf=<UF>/period=<P>/sex=<S>/`` partitions
-            exist on disk (produced by ``python -m scripts.download_datasets
-            --fetch-ibge-nomes`` followed by ``python -m
-            scripts.ingest_to_parquet``), each first-name draw is conditioned
-            on the row's sampled UF and a 50/50-drawn sex. **Experimental
-            because the IBGE Nomes v2 ranking endpoint only exposes the top
-            20 names per (UF, sex, decade) condition, so the conditioned
-            pool is much narrower than the unconditioned period-only table
-            (~thousands of names per period).** Default ``False`` keeps
-            the period-only path. Rows whose partition is missing fall back
-            to the period-only table individually.
+        cohort (Cohort | str): current (default), census2022, or newborn2025.
+            An explicit period disables blending; only current + period is allowed.
+        uf (str | None): Optional fixed UF for location, names, and surnames.
+        experimental_uf_sex_conditioning (bool): Compatibility flag. If True
+            and no sex was selected, use mixed 50/50 sex. UF conditioning is
+            always active and no longer depends on this flag.
         sex_conditioning (str | None): Drive first-name sampling from the
             ``parquet/first_names/period=<P>/sex=<S>/`` partitions
             (national, full long tail — built from IBGE Nomes percentages
@@ -372,6 +369,16 @@ def sample(
         dict: A single generated sample when a single result was requested.
         list[dict]: A list of generated samples when multiple results were requested.
     """
+    # Selector errors are part of the public contract and must not be hidden by
+    # the broad RuntimeError compatibility wrapper below.
+    selected_cohort = Cohort(cohort)
+    selected_period = TimePeriod(time_period) if time_period is not None else None
+    if selected_period is not None and selected_cohort is not Cohort.CURRENT:
+        raise ValueError('cohort census2022/newborn2025 cannot be combined with an explicit time_period')
+    fixed_uf = uf.strip().upper() if isinstance(uf, str) else uf
+    if fixed_uf is not None and fixed_uf not in UF_CODES:
+        raise ValueError(f'uf must be one of {", ".join(UF_CODES)}; got {uf!r}')
+
     # Handle q parameter alias (takes precedence over qty)
     actual_qty = q if q is not None else qty
 
@@ -419,6 +426,18 @@ def sample(
             except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError) as e:
                 # Log but continue with default data
                 print(f'Warning: Could not use locations_path data: {e}')
+
+        # A fixed UF constrains geography as well as name/surname conditioning.
+        # Filter both datasets before weights are calculated, retaining the same
+        # population-weighted city distribution within the selected UF.
+        if fixed_uf is not None:
+            states = {name: state for name, state in location_sampler.data['states'].items() if state.get('state_abbr') == fixed_uf}
+            cities = {key: city for key, city in location_sampler.data['cities'].items() if city.get('city_uf') == fixed_uf}
+            if not states or not cities:
+                raise ValueError(f'uf {fixed_uf} has no bundled location data')
+            location_sampler.data['cities'] = cities
+            location_sampler.data['states'] = states
+            location_sampler._calculate_weights()
 
         # Load surnames data for name sampler (cached)
         surnames_data = copy.deepcopy(_load_json_cached(surnames_path))
@@ -553,6 +572,7 @@ def sample(
                             raw=name_raw,
                             with_only_one_surname=with_only_one_surname,
                             random_mode=random,
+                            uf=state_abbr,
                         ),
                     )
                 elif only_middle:
@@ -564,7 +584,8 @@ def sample(
                     )
                 else:
                     name_components = name_sampler.get_random_name(
-                        time_period=time_period,
+                        time_period=selected_period,
+                        cohort=selected_cohort,
                         raw=name_raw,
                         include_surname=True,
                         top_40=top_40,
@@ -572,7 +593,7 @@ def sample(
                         always_middle=always_middle,
                         return_components=True,
                         random_mode=random,
-                        uf=state_abbr if experimental_uf_sex_conditioning else None,
+                        uf=state_abbr,
                         sex=name_only_sexes[i] if name_only_sexes is not None else None,
                     )
 
@@ -613,18 +634,16 @@ def sample(
             # downstream the name sampler falls back to the period-only table
             # if a (uf, period, sex) partition is absent, so this is safe to
             # pass even when only some partitions have been ingested.
-            batch_ufs: list[str] | None = None
+            batch_ufs: list[str] | None = [loc['state_abbr'] for loc in batch_locations]
             batch_sexes: list[str] | None = per_row_sexes
-            if experimental_uf_sex_conditioning:
-                batch_ufs = [loc['state_abbr'] for loc in batch_locations]
-                if batch_sexes is None:
-                    # Legacy experimental-flag behaviour: 50/50 sex draw when
-                    # no explicit sex_conditioning was requested but UF x sex
-                    # partitions are being targeted.
-                    batch_sexes = _coin_flip_sexes(actual_qty)
+            if experimental_uf_sex_conditioning and batch_sexes is None:
+                # Compatibility flag now only enables mixed sex when the caller
+                # made no explicit choice; UF conditioning is always active.
+                batch_sexes = _coin_flip_sexes(actual_qty)
             batch_names = name_sampler.batch_sample_names(
                 actual_qty,
-                time_period=time_period,
+                time_period=selected_period,
+                cohort=selected_cohort,
                 raw=name_raw,
                 include_surname=True,
                 top_40=top_40,
