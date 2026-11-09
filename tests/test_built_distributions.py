@@ -40,6 +40,34 @@ STALE_DATA = {
     'ptbr_sampler/data/locations_data_old.bak.json',
     'ptbr_sampler/data/locations_data_normalized.json',
 }
+NODE_ROOT = 'ptbr_sampler/utils/node_modules'
+VENDORED_LICENSES = {
+    f'{NODE_ROOT}/cep-promise/LICENSE',
+    f'{NODE_ROOT}/node-fetch/LICENSE.md',
+    f'{NODE_ROOT}/tr46/LICENSE.md',
+    f'{NODE_ROOT}/unfetch/LICENSE.md',
+    f'{NODE_ROOT}/webidl-conversions/LICENSE.md',
+    f'{NODE_ROOT}/whatwg-url/LICENSE.txt',
+}
+VENDORED_RUNTIME = {
+    f'{NODE_ROOT}/cep-promise/package.json',
+    f'{NODE_ROOT}/cep-promise/dist/cep-promise.min.js',
+    f'{NODE_ROOT}/node-fetch/package.json',
+    f'{NODE_ROOT}/node-fetch/lib/index.js',
+    f'{NODE_ROOT}/tr46/package.json',
+    f'{NODE_ROOT}/tr46/index.js',
+    f'{NODE_ROOT}/tr46/lib/mappingTable.json',
+    f'{NODE_ROOT}/unfetch/package.json',
+    f'{NODE_ROOT}/unfetch/dist/unfetch.js',
+    f'{NODE_ROOT}/webidl-conversions/package.json',
+    f'{NODE_ROOT}/webidl-conversions/lib/index.js',
+    f'{NODE_ROOT}/whatwg-url/package.json',
+    f'{NODE_ROOT}/whatwg-url/lib/URL.js',
+    f'{NODE_ROOT}/whatwg-url/lib/URL-impl.js',
+    f'{NODE_ROOT}/whatwg-url/lib/public-api.js',
+    f'{NODE_ROOT}/whatwg-url/lib/url-state-machine.js',
+    f'{NODE_ROOT}/whatwg-url/lib/utils.js',
+}
 
 
 def dataset_names(names: set[str], *, strip_root: bool = False) -> set[str]:
@@ -64,14 +92,14 @@ def test_built_distributions_are_complete_and_self_contained(tmp_path):
         wheel_files = set(archive.namelist())
     assert dataset_names(wheel_files) == REQUIRED_DATA
     assert not dataset_names(wheel_files) & STALE_DATA
-    assert 'ptbr_sampler/utils/node_modules/cep-promise/package.json' in wheel_files
-    assert 'ptbr_sampler/utils/node_modules/cep-promise/dist/cep-promise.min.js' in wheel_files
+    assert VENDORED_LICENSES | VENDORED_RUNTIME <= wheel_files
 
     with tarfile.open(sdist) as archive:
         sdist_files = {member.name for member in archive.getmembers() if member.isfile()}
+    normalized_sdist_files = {name.split('/', 1)[1] for name in sdist_files}
     assert dataset_names(sdist_files, strip_root=True) == REQUIRED_DATA
     assert not dataset_names(sdist_files, strip_root=True) & STALE_DATA
-    assert any(name.endswith('/ptbr_sampler/utils/node_modules/cep-promise/dist/cep-promise.min.js') for name in sdist_files)
+    assert VENDORED_LICENSES | VENDORED_RUNTIME <= normalized_sdist_files
 
     venv = tmp_path / 'venv'
     subprocess.run(['uv', 'venv', '--python', sys.executable, str(venv)], check=True, capture_output=True)
