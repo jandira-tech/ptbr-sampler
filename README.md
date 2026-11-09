@@ -228,7 +228,7 @@ ptbr-data validate
 de rede são explícitas. O build validado usa um espelho IBGE fixado por commit e
 SHA-256, POP2026 e Arpen. O cache fica fora do pacote; o SQLite de
 97.566.720 bytes serve à construção e não é distribuído. Veja o
-[passo a passo e os limites de rede](docs/data-origins.md#reconstruir-os-artefatos).
+[passo a passo e os limites de rede](docs/data-origins.md#rebuild-the-artifacts).
 
 ## Desenvolvimento e licença
 
