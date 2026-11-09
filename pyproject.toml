@@ -71,6 +71,12 @@ build-backend = 'uv_build'
 module-name = 'ptbr_sampler'
 module-root = ''
 source-include = ['ptbr_sampler/data/**']
+source-exclude = [
+    'ptbr_sampler/data/locations_data.bak2.json',
+    'ptbr_sampler/data/locations_data.json.bak',
+    'ptbr_sampler/data/locations_data_old.bak.json',
+    'ptbr_sampler/data/locations_data_normalized.json',
+]
 
 [tool.ruff]
 include = [
@@ -137,6 +143,7 @@ addopts = "--cov=ptbr_sampler"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
+    "packaging: build and fresh-install distributions (deselect with -m 'not packaging')",
     "slow: marks tests that run statistical validation (deselect with -m 'not slow')",
 ]
 

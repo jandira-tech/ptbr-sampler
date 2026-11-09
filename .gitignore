@@ -4,8 +4,8 @@ __pycache__/
 .coverage
 .pytest_cache/
 *.egg-info/
-dist/
-build/
+/dist/
+/build/
 .venv/
-node_modules/
+/node_modules/
 .worktrees/

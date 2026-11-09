@@ -1,8 +1,7 @@
 """Regression tests for publishable package metadata and bundled data."""
 
-from pathlib import Path
 import tomllib
-
+from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 
@@ -49,12 +48,14 @@ def test_build_configuration_explicitly_includes_all_bundled_datasets():
     assert not any(requirement.startswith('richer') for requirement in requirements)
 
 
-def test_bundled_dataset_inventory_matches_tracked_files():
-    tracked_files = {
-        path
-        for path in (ROOT / 'ptbr_sampler' / 'data').rglob('*')
-        if path.is_file() and '__pycache__' not in path.parts and path.suffix not in {'.pyc', '.pyo'}
+def test_stale_dataset_backups_are_excluded_without_deleting_sources():
+    excluded = set(load_pyproject()['tool']['uv']['build-backend']['source-exclude'])
+    expected = {
+        'ptbr_sampler/data/locations_data.bak2.json',
+        'ptbr_sampler/data/locations_data.json.bak',
+        'ptbr_sampler/data/locations_data_old.bak.json',
+        'ptbr_sampler/data/locations_data_normalized.json',
     }
 
-    assert tracked_files
-    assert 'ptbr_sampler/data/**' in load_pyproject()['tool']['uv']['build-backend']['source-include']
+    assert excluded == expected
+    assert all((ROOT / path).is_file() for path in expected)
