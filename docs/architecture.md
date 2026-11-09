@@ -63,7 +63,8 @@ Distribution partitions contain `name`, `count`, and `weight`. Direct observed
 partitions normalize source counts. Derived blends store exact `float64`
 weights and zero counts so integer rounding cannot change probabilities.
 Every generated group has `data_origin.json` sidecars. `data/manifest.json`
-records paths and SHA-256 hashes for 827 managed artifacts.
+records paths and SHA-256 hashes for 867 managed artifacts, including M/F
+partitions for all 12 derived historical stock/bin periods.
 
 `pyarrow.dataset` reads only the selected partition. JSON fixtures and bespoke
 `BrazilianNameSampler` data remain available for tests and custom callers.

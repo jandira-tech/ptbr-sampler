@@ -156,11 +156,11 @@ class BrazilianNameSampler:
         * the legacy in-memory dicts (used by unit tests that pass bespoke
           mock data and by callers that haven't migrated).
 
-        When ``parquet_root`` is given, cohort and new-period tables are read
-        from its Parquet layout regardless of whether it is the bundled root.
-        Legacy periods retain their original JSON-compatible lookup order.
-        JSON-only fixtures may use their legacy data only for default current
-        draws; an explicitly requested modern cohort must be present.
+        When ``parquet_root`` is given, cohort and explicit-period tables are
+        read from its Parquet layout regardless of whether it is the bundled
+        root. Bespoke JSON fixtures may use their legacy data only for default
+        current draws; an explicitly requested cohort or period must be present
+        in Parquet.
 
         Args:
             json_file_path: Path to JSON file or pre-loaded data dictionary
@@ -354,10 +354,12 @@ class BrazilianNameSampler:
                 if found and cached is not None:
                     return cached
                 historical_period = 'until2020' if selected_period is TimePeriod.UNTIL_2020 else period_key.removeprefix('ate')
-                if normalized_sex and selected_period in (TimePeriod.UNTIL_2020, TimePeriod.AFTER_2010):
+                if normalized_sex:
+                    # Every bundled historical M/F table is derived from the
+                    # national IBGE stock bin and the national empirical IBGE
+                    # 2022 sex prior. The older first_names/period/sex tables
+                    # use Brasil.IO/Gemini and are retained only as legacy data.
                     spec = PartitionSpec.of(self.parquet_root / 'ibge2022' / 'historical', period=historical_period, sex=normalized_sex)
-                elif normalized_sex:
-                    spec = PartitionSpec.of(self.parquet_root / 'first_names', period=period_key, sex=normalized_sex)
                 else:
                     spec = PartitionSpec.of(self.parquet_root / 'ibge2022' / 'historical', period=historical_period)
                 table = self._load_from_parquet(spec)

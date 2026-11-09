@@ -36,6 +36,7 @@ OFFICIAL_UF_ANCHOR_EVIDENCE = {
     ('AC', 'nome', 'maria'): 'https://g1.globo.com/ac/acre/noticia/2025/11/04/nomes-mais-populares-acre-censo-2022.ghtml',
 }
 STOCK_YEARS = tuple(range(1930, 2021, 10))
+HISTORICAL_BIN_PERIODS: tuple[int | str, ...] = (*STOCK_YEARS, 'after2010', 'until2020')
 
 
 def read_ibge_mirror(path: Path) -> sqlite3.Connection:

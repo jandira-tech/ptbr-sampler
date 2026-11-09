@@ -7,6 +7,7 @@ from pathlib import Path
 import pyarrow.parquet as pq
 import pytest
 
+from ptbr_sampler import TimePeriod
 from ptbr_sampler.data_pipeline.derived import (
     apply_national_sex_prior,
     blend_distributions,
@@ -162,8 +163,9 @@ def test_cohort_sidecars_declare_model_and_complete_partitions():
 
 
 @pytest.mark.real_data
-@pytest.mark.parametrize('period', ['until2020', 'after2010'])
-def test_new_historical_sex_partitions_match_bins_and_national_empirical_prior(period):
+@pytest.mark.parametrize('selector', list(TimePeriod))
+def test_all_public_historical_sex_partitions_match_bins_and_national_empirical_prior(selector):
+    period = 'until2020' if selector is TimePeriod.UNTIL_2020 else selector.value.removeprefix('ate')
     base = weights(DATA / f'parquet/ibge2022/historical/period={period}/part.parquet')
     assert len(base) == 61_469
     prior_rows = pq.read_table(DATA / 'parquet/ibge2022/sex_prior/scope=national/part.parquet').to_pylist()
@@ -184,4 +186,8 @@ def test_new_historical_sex_partitions_match_bins_and_national_empirical_prior(p
         assert sidecar['derived'] is True
         assert sidecar['sex_prior_scope'] == 'national'
         assert sidecar['source_rows'] == 61_469
-        assert 'not UF-sex' in ' '.join(sidecar['limitations'])
+        assert sidecar['period_definition']
+        limitations = ' '.join(sidecar['limitations']).lower()
+        assert 'not observed historical period-by-sex' in limitations
+        assert 'uf-sex joint frequencies' in limitations
+        assert 'no uf derivation' in limitations

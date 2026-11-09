@@ -67,8 +67,11 @@ until2020 = stock2020
 
 `after2010` therefore covers 2011–2020, not 2021–2022 or later. The historical
 stock tables have 61,469 labels. They are national derived stock bins, not
-independent decade-by-sex or UF-period observations. M/F historical tables use
-the same national empirical sex prior described above.
+independent decade-by-sex or UF-period observations. M/F tables for every
+explicit historical selector use the same national empirical sex prior
+described above, with unknown/null-sex labels dropped only from conditioned
+distributions. The archived Brasil.IO/Gemini period-by-sex tables are retained
+for provenance, never selected by default.
 
 `TimePeriod.UNTIL_2020` uses selector `ate2020`; `TimePeriod.AFTER_2010` uses
 `after2010`. The older `ate1930` through `ate2010` selectors remain. An explicit

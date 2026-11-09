@@ -123,6 +123,21 @@ def test_sex_conditioned_tables_drop_null_sex_and_renormalize():
     assert np.all(np.isfinite(female.weights)) and np.all(female.weights >= 0)
 
 
+@pytest.mark.parametrize('period', list(TimePeriod))
+@pytest.mark.parametrize('sex', ['M', 'F'])
+def test_every_historical_sex_selector_uses_ibge_history_not_legacy_period_sex(period, sex, mocker):
+    sampler = bundled()
+    get = mocker.patch.object(sampler._partition_store, 'get', wraps=sampler._partition_store.get)
+
+    table = sampler._first_names_table(time_period=period, sex=sex)
+
+    spec = get.call_args.args[0]
+    directory = 'until2020' if period is TimePeriod.UNTIL_2020 else period.value.removeprefix('ate')
+    assert spec.path() == DATA / f'parquet/ibge2022/historical/period={directory}/sex={sex}/part.parquet'
+    assert len(table) > 1_220
+    assert np.isclose(table.weights.sum(), 1.0)
+
+
 def test_top40_is_derived_from_selected_uf_final_probabilities():
     sampler = bundled()
     full = sampler._surnames_table(uf='SE')
@@ -196,9 +211,9 @@ def test_cli_generate_exposes_cohort_uf_and_new_periods():
     assert '--uf' in result.stdout
 
 
-@pytest.mark.parametrize('period', [TimePeriod.UNTIL_2020, TimePeriod.AFTER_2010])
+@pytest.mark.parametrize('period', list(TimePeriod))
 @pytest.mark.parametrize('sex', ['M', 'F', 'mixed'])
-def test_new_historical_period_sex_works_through_sampler_and_public_api(period, sex):
+def test_every_historical_period_and_sex_works_through_sampler_and_public_api(period, sex):
     sampler = bundled()
     if sex != 'mixed':
         table = sampler._first_names_table(time_period=period, sex=sex)

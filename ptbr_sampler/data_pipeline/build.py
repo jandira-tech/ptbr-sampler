@@ -24,6 +24,7 @@ from ptbr_sampler.data_pipeline.derived import (
 from ptbr_sampler.data_pipeline.geography import read_pop2026, read_population_workbook, rebuild_geography_files
 from ptbr_sampler.data_pipeline.http import HttpClient
 from ptbr_sampler.data_pipeline.ibge import (
+    HISTORICAL_BIN_PERIODS,
     OFFICIAL_UF_ANCHOR_EVIDENCE,
     OFFICIAL_UF_ANCHORS,
     derive_historical_bins,
@@ -145,7 +146,7 @@ def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path, *, acquire
             for name, year, count in stock_rows:
                 stocks.setdefault(name, {})[year] = count
             bins = derive_historical_bins(stocks)
-            for period in [*range(1930, 2021, 10), 'after2010', 'until2020']:
+            for period in HISTORICAL_BIN_PERIODS:
                 rows = [(name, values[period]) for name, values in bins.items()]
                 write_name_partition(
                     staged / 'historical' / f'period={period}',
@@ -211,7 +212,15 @@ def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path, *, acquire
                 },
             )
             sex_priors = combine_sex_priors(empirical)
-            for period in ('until2020', 'after2010'):
+            for period in HISTORICAL_BIN_PERIODS:
+                if period == 1930:
+                    period_definition = 'stock1930 (births through 1930)'
+                elif period == 'after2010':
+                    period_definition = 'stock2020-stock2010 (births 2011-2020)'
+                elif period == 'until2020':
+                    period_definition = 'stock2020 (cumulative births through 2020)'
+                else:
+                    period_definition = f'stock{period}-stock{period - 10} (births {period - 9}-{period})'
                 historical = {name: float(values[period]) for name, values in bins.items()}
                 for sex in ('M', 'F'):
                     conditioned = apply_national_sex_prior(historical, sex_priors, sex)
@@ -224,6 +233,7 @@ def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path, *, acquire
                             'upstream_revision': SOURCES['ibge2022'].upstream_revision,
                             'acquired_at_utc': acquired_at_utc or utc_now(),
                             'period': period,
+                            'period_definition': period_definition,
                             'sex': sex,
                             'derived': True,
                             'source_rows': len(historical),
@@ -239,8 +249,8 @@ def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path, *, acquire
                                 'known zero-probability labels remain support.'
                             ),
                             'limitations': [
-                                'National empirical sex prior only; not UF-sex observed data.',
-                                'after2010 covers 2011-2020 and until2020 is cumulative through 2020.',
+                                'National historical bin multiplied by a national empirical sex prior; no UF derivation.',
+                                'Not observed historical period-by-sex or UF-sex joint frequencies.',
                             ],
                         },
                     )
@@ -252,6 +262,8 @@ def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path, *, acquire
                 'ibge_uf_surname_rows': coverage.pop('uf_sobrenome_rows'),
                 'ibge_sex_names': coverage.pop('sex_names'),
                 'ibge_sex_null': coverage.pop('sex_null'),
+                'ibge_historical_periods': len(HISTORICAL_BIN_PERIODS),
+                'ibge_historical_sex_partitions': len(HISTORICAL_BIN_PERIODS) * 2,
             }
         )
         return coverage
