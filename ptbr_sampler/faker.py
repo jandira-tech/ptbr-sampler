@@ -74,6 +74,8 @@ _SAMPLE_DEFAULTS: dict[str, Any] = {
     'random': False,
     'experimental_uf_sex_conditioning': False,
     'sex_conditioning': None,
+    'include_address': True,
+    'location_only': False,
 }
 
 _DOCUMENT_KEYS = ('cpf', 'pis', 'cnpj', 'cei', 'rg')
@@ -124,37 +126,37 @@ class PTBRProvider(BaseProvider):
 
     def ptbr_name(self) -> str:
         """Return a full name, joining non-empty name components with spaces."""
-        row = self._sample(return_only_name=True)
+        row = self._sample(return_only_name=True, include_address=False)
         return ' '.join(part for part in (row['name'], row['middle_name'], row['surnames']) if part)
 
     def ptbr_first_name(self) -> str:
         """Return one non-empty first name as a string."""
-        return self._sample(return_only_name=True)['name']
+        return self._sample(return_only_name=True, include_address=False)['name']
 
     def ptbr_middle_name(self) -> str:
         """Return one non-empty middle name using the dedicated sampler branch."""
-        return self._sample(only_middle=True)['middle_name']
+        return self._sample(only_middle=True, include_address=False)['middle_name']
 
     def ptbr_surname(self) -> str:
         """Return one non-empty surname (possibly a compound surname)."""
-        return self._sample(only_surname=True)['surnames']
+        return self._sample(only_surname=True, include_address=False)['surnames']
 
     def ptbr_city(self) -> str:
         """Return a city name as a string."""
-        return self._sample(city_only=True)['city']
+        return self._sample(city_only=True, location_only=True, include_address=False)['city']
 
     def ptbr_state(self) -> str:
         """Return a full federative-unit name as a string."""
-        return self._sample(state_full_only=True)['state']
+        return self._sample(state_full_only=True, location_only=True, include_address=False)['state']
 
     def ptbr_state_abbr(self) -> str:
         """Return a two-letter federative-unit abbreviation."""
-        return self._sample(state_abbr_only=True)['state_abbr']
+        return self._sample(state_abbr_only=True, location_only=True, include_address=False)['state_abbr']
 
     def ptbr_cep(self, *, cep_without_dash: bool | None = None) -> str:
         """Return a CEP string, overriding installation formatting if requested."""
         options = {} if cep_without_dash is None else {'cep_without_dash': cep_without_dash}
-        value = self._sample(only_cep=True, **options)['cep']
+        value = self._sample(only_cep=True, location_only=True, include_address=False, **options)['cep']
         without_dash = self._options.get('cep_without_dash', False) if cep_without_dash is None else cep_without_dash
         return self._digits(value) if without_dash else value
 
@@ -181,7 +183,7 @@ class PTBRProvider(BaseProvider):
         return self._sample()['building_number']
 
     def _document(self, key: str, flag: str, formatted: bool | None) -> str:
-        value = self._sample(only_document=True, **{flag: True})[key]
+        value = self._sample(only_document=True, include_address=False, **{flag: True})[key]
         return value if self._formatted(formatted) else self._digits(value)
 
     def ptbr_cpf(self, formatted: bool | None = None) -> str:
@@ -206,11 +208,28 @@ class PTBRProvider(BaseProvider):
 
     def ptbr_phone(self) -> str:
         """Return a phone string whose DDD belongs to its sampled city."""
-        return self._sample(only_document=True, only_fone=True)['phone']
+        return self._sample(only_document=True, only_fone=True, include_address=False)['phone']
 
     def ptbr_phone_number(self) -> str:
         """Return a phone string; synonym for :meth:`ptbr_phone`."""
         return self.ptbr_phone()
+
+
+_ALIAS_NAMES = (
+    'name',
+    'first_name',
+    'last_name',
+    'city',
+    'state',
+    'state_abbr',
+    'postcode',
+    'address',
+    'cpf',
+    'cnpj',
+    'pis',
+    'phone_number',
+)
+_MISSING_FORMATTER = object()
 
 
 class _AliasPTBRProvider(PTBRProvider):
@@ -258,7 +277,8 @@ def install_ptbr(fake: Any, aliases: bool = False, **options: Any) -> Any:
 
     Options are forwarded to the public sampler: ``cohort``, ``time_period``,
     ``uf``, ``sex_conditioning``, ``random`` (or ``uniform``), ``top40`` (or
-    ``top_40``), ``name_raw``, ``always_middle``, ``with_only_one_surname``,
+    ``top_40``); canonical ``random``/``top_40`` values win if both forms are
+    supplied. Also accepts ``name_raw``, ``always_middle``, ``with_only_one_surname``,
     ``cep_without_dash``, and ``include_issuer``. The adapter-only
     ``formatted=False`` selects unformatted documents by default; individual
     document calls can override it with ``formatted=True``.
@@ -269,19 +289,29 @@ def install_ptbr(fake: Any, aliases: bool = False, **options: Any) -> Any:
     ``add_provider`` API; every generator retains its own random stream.
     """
     normalized = dict(options)
-    if 'top40' in normalized:
-        normalized['top_40'] = normalized.pop('top40')
-    if 'uniform' in normalized:
-        normalized['random'] = normalized.pop('uniform')
+    top40 = normalized.pop('top40', None)
+    if 'top40' in options and 'top_40' not in normalized:
+        normalized['top_40'] = top40
+    uniform = normalized.pop('uniform', None)
+    if 'uniform' in options and 'random' not in normalized:
+        normalized['random'] = uniform
 
     base = _AliasPTBRProvider if aliases else PTBRProvider
     provider_type = type('ConfiguredPTBRProvider', (base,), {'_options': normalized})
-    factories = getattr(fake, '_factories', None)
-    if factories is None:
-        fake.add_provider(provider_type)
-    else:
-        for factory in factories:
-            factory.add_provider(provider_type)
+    factories = getattr(fake, '_factories', None) or [fake]
+    for factory in factories:
+        previous = [provider for provider in factory.providers if isinstance(provider, PTBRProvider)]
+        for provider in previous:
+            for name, formatter in getattr(provider, '_original_formatters', {}).items():
+                if formatter is _MISSING_FORMATTER:
+                    factory.__dict__.pop(name, None)
+                else:
+                    factory.set_formatter(name, formatter)
+            factory.providers.remove(provider)
+
+        provider = provider_type(factory)
+        provider._original_formatters = {name: getattr(factory, name, _MISSING_FORMATTER) for name in _ALIAS_NAMES} if aliases else {}
+        factory.add_provider(provider)
     return fake
 
 

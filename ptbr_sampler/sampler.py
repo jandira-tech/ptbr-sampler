@@ -232,103 +232,77 @@ async def save_to_jsonl_file(data: list[dict], filename: str, append: bool = Tru
             await f.write(json.dumps(item, ensure_ascii=False) + '\n')
 
 
+def _get_offline_address_data_batch(
+    ceps: list[str],
+    progress_callback: Callable[[int, str], None] | None = None,
+    rng: _stdlib_random.Random | None = None,
+) -> list[dict]:
+    """Generate offline addresses synchronously, including inside async callers."""
+    address_data_list = []
+    for i, cep in enumerate(ceps):
+        formatted_cep = cep
+        if '-' not in formatted_cep and len(formatted_cep) == 8:
+            formatted_cep = f'{formatted_cep[:5]}-{formatted_cep[5:]}'
+
+        address_provider = AddressProvider_for_offline()
+        address_data_list.append(
+            {
+                'street': address_provider.street_prefix(rng=rng) + ' ' + address_provider.last_name(rng=rng),
+                'neighborhood': address_provider.bairro(rng=rng),
+                'building_number': address_provider.building_number(rng=rng),
+                'cep': formatted_cep,
+            }
+        )
+        if progress_callback and i % max(1, len(ceps) // 10) == 0:
+            progress_callback(0, f'Generating address data: {i + 1}/{len(ceps)}')
+    return address_data_list
+
+
 async def get_address_data_batch(
     ceps: list[str],
     make_api_call: bool = False,
     progress_callback: Callable[[int, str], None] | None = None,
     rng: _stdlib_random.Random | None = None,
 ) -> list[dict]:
-    """
-    Get address data for multiple CEPs, either from API or generated.
+    """Get multiple addresses asynchronously when API enrichment is requested."""
+    if not make_api_call:
+        return _get_offline_address_data_batch(ceps, progress_callback, rng)
 
-    Args:
-        ceps: List of CEPs to get address data for
-        make_api_call: Whether to make API calls or generate data
-        progress_callback: Optional callback function to report progress
+    # Use cep_wrapper to get real data for multiple CEPs
+    from .utils.cep_wrapper import workers_for_multiple_cep  # noqa: PLC0415 - optional Node-backed CEP integration stays lazy.
 
-    Returns:
-        List of dictionaries with address data (street, neighborhood, building_number)
-    """
+    formatted_ceps = [cep.replace('-', '') for cep in ceps]
+    if progress_callback:
+        progress_callback(0, 'API calls: Connecting to service')
+    cep_data_list = await workers_for_multiple_cep(formatted_ceps)
+    if progress_callback:
+        progress_callback(0, 'API calls: Processing responses')
+
     address_data_list = []
+    for i, cep_data in enumerate(cep_data_list):
+        address_data = {
+            'street': '',
+            'neighborhood': '',
+            'building_number': '',
+            'cep': cep_data.get('cep', ''),
+            'state': cep_data.get('state', ''),
+            'city': cep_data.get('city', ''),
+        }
+        if 'error' not in cep_data:
+            address_data['street'] = cep_data.get('street', '')
+            address_data['neighborhood'] = cep_data.get('neighborhood', '')
+        address_provider = AddressProvider_for_offline()
+        if not address_data['neighborhood']:
+            address_data['neighborhood'] = address_provider.bairro(rng=rng)
+        if not address_data['street']:
+            address_data['street'] = address_provider.street_prefix(rng=rng) + ' ' + address_provider.last_name(rng=rng)
+        address_data['building_number'] = address_provider.building_number(rng=rng)
+        address_data_list.append(address_data)
+        if progress_callback and i % max(1, len(cep_data_list) // 10) == 0:
+            progress_callback(0, f'API calls: Processed {i + 1}/{len(cep_data_list)} addresses')
 
-    if make_api_call:
-        # Use cep_wrapper to get real data for multiple CEPs
-        from .utils.cep_wrapper import workers_for_multiple_cep  # noqa: PLC0415 - optional Node-backed CEP integration stays lazy.
-
-        # Format CEPs to remove dashes before API call
-        formatted_ceps = [cep.replace('-', '') for cep in ceps]
-
-        # Update progress if callback is provided
-        if progress_callback:
-            progress_callback(0, 'API calls: Connecting to service')
-
-        # Get data from API
-        cep_data_list = await workers_for_multiple_cep(formatted_ceps)
-
-        # Update progress if callback is provided
-        if progress_callback:
-            progress_callback(0, 'API calls: Processing responses')
-
-        # Process each CEP result
-        for i, cep_data in enumerate(cep_data_list):
-            address_data = {
-                'street': '',
-                'neighborhood': '',
-                'building_number': '',
-                'cep': cep_data.get('cep', ''),  # This will have the dash format from the API
-                'state': cep_data.get('state', ''),
-                'city': cep_data.get('city', ''),
-            }
-
-            # Extract data from API response if no error
-            if 'error' not in cep_data:
-                address_data['street'] = cep_data.get('street', '')
-                address_data['neighborhood'] = cep_data.get('neighborhood', '')
-
-            # If neighborhood is empty, use address_for_offline
-            if not address_data['neighborhood']:
-                address_provider = AddressProvider_for_offline()
-                address_data['neighborhood'] = address_provider.bairro(rng=rng)
-
-            # If street is empty, use address_for_offline
-            if not address_data['street']:
-                address_provider = AddressProvider_for_offline()
-                address_data['street'] = address_provider.street_prefix(rng=rng) + ' ' + address_provider.last_name(rng=rng)
-
-            # Always get building number from address_for_offline
-            address_provider = AddressProvider_for_offline()
-            address_data['building_number'] = address_provider.building_number(rng=rng)
-
-            address_data_list.append(address_data)
-
-            # Update progress occasionally if callback is provided
-            if progress_callback and i % max(1, len(cep_data_list) // 10) == 0:
-                progress_callback(0, f'API calls: Processed {i + 1}/{len(cep_data_list)} addresses')
-    else:
-        # Use address_for_offline to generate all data for each CEP
-        for i, cep in enumerate(ceps):
-            # Ensure CEP has dash format
-            formatted_cep = cep
-            if '-' not in formatted_cep and len(formatted_cep) == 8:
-                formatted_cep = f'{formatted_cep[:5]}-{formatted_cep[5:]}'
-
-            address_provider = AddressProvider_for_offline()
-            address_data = {
-                'street': address_provider.street_prefix(rng=rng) + ' ' + address_provider.last_name(rng=rng),
-                'neighborhood': address_provider.bairro(rng=rng),
-                'building_number': address_provider.building_number(rng=rng),
-                'cep': formatted_cep,
-            }
-            address_data_list.append(address_data)
-
-            # Update progress occasionally if callback is provided
-            if progress_callback and i % max(1, len(ceps) // 10) == 0:
-                progress_callback(0, f'Generating address data: {i + 1}/{len(ceps)}')
-
-    # Final update for API calls completion
-    if progress_callback and make_api_call:
+    if progress_callback:
         progress_callback(0, 'API calls processing completed')
-
     return address_data_list
 
 
@@ -394,6 +368,8 @@ def sample(
     uf: str | None = None,
     lru_size: int = 32,
     rng: _stdlib_random.Random | None = None,
+    include_address: bool = True,
+    location_only: bool = False,
 ) -> dict | list[dict]:
     """
     Generate randomized Brazilian profiles composed of name, location, and document fields according to the supplied flags.
@@ -444,6 +420,10 @@ def sample(
         rng (random.Random | None): Optional injected stream. Every random
             selection, including the private NumPy alias seed, comes from this
             object. ``None`` uses Python's module-global stream as before.
+        include_address (bool): Generate street/neighborhood/building fields.
+            Scalar adapters disable this to avoid unrelated address work.
+        location_only (bool): Skip first-name and surname generation while
+            retaining location selection. Intended for scalar location APIs.
         lru_size (int): Per-sampler Parquet alias cache capacity and part of the
             high-level resource-cache key.
         experimental_uf_sex_conditioning (bool): Compatibility flag. If True
@@ -535,7 +515,11 @@ def sample(
             sex_conditioning_norm = sc
         per_row_sexes: list[str] | None = None
         samples_first_names = not (
-            only_document or any([only_cpf, only_pis, only_cnpj, only_cei, only_rg, only_fone]) or only_surname or only_middle
+            location_only
+            or only_document
+            or any([only_cpf, only_pis, only_cnpj, only_cei, only_rg, only_fone])
+            or only_surname
+            or only_middle
         )
         if samples_first_names and sex_conditioning_norm == 'MIXED':
             per_row_sexes = _coin_flip_sexes(actual_qty, rng=rng)
@@ -698,23 +682,27 @@ def sample(
             # bundled modern artifact is missing rather than substituting data.
             batch_ufs: list[str] | None = [loc['state_abbr'] for loc in batch_locations]
             batch_sexes: list[str] | None = per_row_sexes
-            if experimental_uf_sex_conditioning and batch_sexes is None:
+            if not location_only and experimental_uf_sex_conditioning and batch_sexes is None:
                 # Compatibility flag now only enables mixed sex when the caller
                 # made no explicit choice; UF conditioning is always active.
                 batch_sexes = _coin_flip_sexes(actual_qty, rng=rng)
-            batch_names = name_sampler.batch_sample_names(
-                actual_qty,
-                time_period=selected_period,
-                cohort=selected_cohort,
-                raw=name_raw,
-                include_surname=True,
-                top_40=top_40,
-                with_only_one_surname=with_only_one_surname,
-                always_middle=always_middle,
-                random_mode=random,
-                ufs=batch_ufs,
-                sexes=batch_sexes,
-                rng=rng,
+            batch_names = (
+                [NameComponents('', None, '') for _ in range(actual_qty)]
+                if location_only
+                else name_sampler.batch_sample_names(
+                    actual_qty,
+                    time_period=selected_period,
+                    cohort=selected_cohort,
+                    raw=name_raw,
+                    include_surname=True,
+                    top_40=top_40,
+                    with_only_one_surname=with_only_one_surname,
+                    always_middle=always_middle,
+                    random_mode=random,
+                    ufs=batch_ufs,
+                    sexes=batch_sexes,
+                    rng=rng,
+                )
             )
 
             for i in range(actual_qty):
@@ -786,8 +774,21 @@ def sample(
         if progress_callback and make_api_call:
             progress_callback(actual_qty * 3 // 4, 'API calls starting')  # Show approximately 75% progress
 
-        # Get address data for all CEPs at once
-        address_data_list = asyncio.run(get_address_data_batch(all_ceps, make_api_call, progress_callback, rng=rng))
+        # Offline addresses never need an event loop. API enrichment remains
+        # asynchronous; reject sync use in an active loop before constructing
+        # a coroutine so callers never receive an unawaited-coroutine leak.
+        if not include_address:
+            address_data_list = [{} for _ in all_ceps]
+        elif make_api_call:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            else:
+                raise RuntimeError('make_api_call=True cannot be used from synchronous sample() inside a running event loop')
+            address_data_list = asyncio.run(get_address_data_batch(all_ceps, True, progress_callback, rng=rng))
+        else:
+            address_data_list = _get_offline_address_data_batch(all_ceps, progress_callback, rng)
 
         # Update progress to indicate API calls are complete
         if progress_callback and make_api_call:

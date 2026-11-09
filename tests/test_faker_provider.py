@@ -25,6 +25,28 @@ def make_fake(**options):
     return fake
 
 
+@pytest.mark.asyncio
+@pytest.mark.filterwarnings('error::RuntimeWarning')
+async def test_offline_provider_methods_work_inside_a_running_event_loop():
+    fake = make_fake(uf='SP')
+
+    profile = fake.ptbr_profile()
+    assert profile['state_abbr'] == 'SP'
+    assert fake.ptbr_first_name()
+    assert fake.ptbr_city()  # scalar fields also avoid asyncio.run in offline mode
+    assert validate_cpf(fake.ptbr_cpf())
+    assert fake.ptbr_address()
+
+
+@pytest.mark.asyncio
+@pytest.mark.filterwarnings('error::RuntimeWarning')
+async def test_online_cep_inside_event_loop_fails_clearly_without_leaking_coroutine():
+    fake = make_fake(make_api_call=True)
+
+    with pytest.raises(RuntimeError, match='running event loop'):
+        fake.ptbr_address()
+
+
 def profile_batch(fake):
     return [fake.ptbr_profile(), fake.ptbr_name(), fake.ptbr_cpf(), fake.ptbr_city()]
 
@@ -223,6 +245,69 @@ def test_default_install_never_changes_standard_pt_br_results_or_methods():
     assert actual == expected
     assert set(dir(native)) == expected_methods
     assert other.cpf.__self__.__class__.__module__.startswith('faker.providers')
+
+
+@pytest.mark.parametrize('locales', ['pt_BR', ['pt_BR', 'en_US']])
+def test_repeated_install_replaces_participating_providers_and_aliases(locales):
+    fake = Faker(locales)
+    for index in range(100):
+        install_ptbr(fake, aliases=index % 2 == 0, uf='SP' if index % 2 == 0 else 'RJ')
+
+    for factory in fake._factories:
+        participating = [provider for provider in factory.providers if isinstance(provider, PTBRProvider)]
+        assert len(participating) == 1
+        assert participating[0]._options['uf'] == 'RJ'
+        assert factory.ptbr_state_abbr() == 'RJ'
+        assert not isinstance(factory.state_abbr.__self__, PTBRProvider)
+
+
+def test_canonical_options_take_precedence_over_legacy_aliases():
+    fake = make_fake(random=True, uniform=False, top_40=True, top40=False)
+    options = fake.providers[0]._options
+
+    assert options['random'] is True
+    assert options['top_40'] is True
+    assert 'uniform' not in options
+    assert 'top40' not in options
+
+
+def test_first_name_skips_full_profile_address_and_document_operations(mocker):
+    address_async = mocker.patch('ptbr_sampler.sampler.get_address_data_batch', new_callable=mocker.AsyncMock)
+    address_sync = mocker.patch('ptbr_sampler.sampler._get_offline_address_data_batch', create=True)
+    batch_names = mocker.patch('ptbr_sampler.br_name_class.BrazilianNameSampler.batch_sample_names')
+    cpf = mocker.patch('ptbr_sampler.document_sampler.DocumentSampler.generate_cpf')
+    fake = make_fake()
+
+    assert fake.ptbr_first_name()
+    address_async.assert_not_called()
+    address_sync.assert_not_called()
+    batch_names.assert_not_called()
+    cpf.assert_not_called()
+
+
+def test_city_skips_name_address_and_document_operations(mocker):
+    address_async = mocker.patch('ptbr_sampler.sampler.get_address_data_batch', new_callable=mocker.AsyncMock)
+    address_sync = mocker.patch('ptbr_sampler.sampler._get_offline_address_data_batch', create=True)
+    get_name = mocker.patch('ptbr_sampler.br_name_class.BrazilianNameSampler.get_random_name')
+    batch_names = mocker.patch('ptbr_sampler.br_name_class.BrazilianNameSampler.batch_sample_names')
+    cpf = mocker.patch('ptbr_sampler.document_sampler.DocumentSampler.generate_cpf')
+    fake = make_fake(uf='SP')
+
+    assert fake.ptbr_city()
+    address_async.assert_not_called()
+    address_sync.assert_not_called()
+    get_name.assert_not_called()
+    batch_names.assert_not_called()
+    cpf.assert_not_called()
+
+
+def test_repeated_scalar_calls_are_deterministic_for_fixed_seed_and_configuration():
+    def generate():
+        fake = make_fake(uf='SP', cohort='census2022', formatted=False)
+        fake.seed_instance(144)
+        return [fake.ptbr_first_name(), fake.ptbr_city(), fake.ptbr_cpf(), fake.ptbr_street()]
+
+    assert generate() == generate()
 
 
 def test_multi_locale_proxy_uses_public_generator_provider_api_without_cross_contamination():
