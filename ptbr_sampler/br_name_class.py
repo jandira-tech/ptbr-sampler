@@ -45,6 +45,13 @@ class TimePeriod(StrEnum):
     UNTIL_2010 = 'ate2010'
 
 
+class TimePeriod2022(StrEnum):
+    """Additional national IBGE historical periods (runtime consumers opt in)."""
+
+    UNTIL_2020 = 'until2020'
+    AFTER_2010 = 'after2010'
+
+
 @dataclass(slots=True)
 class NameComponents:
     """Structure to hold the components of a Brazilian name."""

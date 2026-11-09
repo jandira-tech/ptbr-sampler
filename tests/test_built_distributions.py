@@ -17,6 +17,7 @@ PERIODS = ('ate1930', 'ate1940', 'ate1950', 'ate1960', 'ate1970', 'ate1980', 'at
 REQUIRED_DATA = {
     'ptbr_sampler/data/cities_with_ceps.json',
     'ptbr_sampler/data/locations_data.json',
+    'ptbr_sampler/data/manifest.json',
     'ptbr_sampler/data/middle_names.json',
     'ptbr_sampler/data/names_data.json',
     'ptbr_sampler/data/surnames_data.json',
@@ -34,6 +35,9 @@ REQUIRED_DATA.update(
     for period in PERIODS
     for leaf in ('part.parquet', 'sex=F/part.parquet', 'sex=F/data_origin.json', 'sex=M/part.parquet', 'sex=M/data_origin.json')
 )
+# The manifest is an exact, generated inventory of the new live-source
+# artifacts, not a glob-based assertion that would silently accept omissions.
+REQUIRED_DATA.update(json.loads((ROOT / 'ptbr_sampler/data/manifest.json').read_text())['artifacts'])
 STALE_DATA = {
     'ptbr_sampler/data/locations_data.bak2.json',
     'ptbr_sampler/data/locations_data.json.bak',

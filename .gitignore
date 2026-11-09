@@ -9,3 +9,6 @@ __pycache__/
 .venv/
 /node_modules/
 .worktrees/
+.cache/
+*.sqlite
+*.sqlite.zip

@@ -46,6 +46,8 @@ def test_build_configuration_explicitly_includes_all_bundled_datasets():
     assert 'ptbr_sampler/data/**' in config['tool']['uv']['build-backend']['source-include']
     requirements = config['project']['dependencies']
     assert not any(requirement.startswith('richer') for requirement in requirements)
+    assert any(requirement.startswith('openpyxl>=') for requirement in requirements)
+    assert config['project']['scripts']['ptbr-data'] == 'ptbr_sampler.data_pipeline.cli:main'
 
 
 def test_stale_dataset_backups_are_excluded_without_deleting_sources():

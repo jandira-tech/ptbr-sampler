@@ -27,6 +27,7 @@ dependencies = [
     'numpy>=2.5.4',
     # Partitioned Parquet store under ptbr_sampler/data/parquet.
     'pyarrow>=26.0.1',
+    "openpyxl>=3.1.5",
 ]
 
 [project.urls]
@@ -36,6 +37,7 @@ Issues = 'https://github.com/jandira-tech/ptbr-sampler/issues'
 
 [project.scripts]
 ptbr = 'ptbr_sampler.cli:main'
+ptbr-data = 'ptbr_sampler.data_pipeline.cli:main'
 
 [project.optional-dependencies]
 
@@ -145,6 +147,7 @@ testpaths = ["tests"]
 markers = [
     "packaging: build and fresh-install distributions (deselect with -m 'not packaging')",
     "slow: marks tests that run statistical validation (deselect with -m 'not slow')",
+    "real_data: validates committed live-source datasets",
 ]
 
 [tool.coverage.run]
