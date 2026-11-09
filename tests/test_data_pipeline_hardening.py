@@ -182,9 +182,36 @@ def test_derived_metadata_uses_real_acquisition_times():
     manifest = json.loads((DATA / 'manifest.json').read_text())
     expected = json.loads((CACHE / 'ibge2022' / 'nomes.sqlite.zip.meta.json').read_text())['acquired_at_utc']
     assert manifest['sources']['ibge2022']['acquired_at_utc'] == expected
-    sidecar = json.loads((DATA / 'parquet' / 'ibge2022' / 'first_names' / 'scope=national' / 'data_origin.json').read_text())
-    assert sidecar['acquired_at_utc'] == expected
+    for kind in ('first_names', 'surnames'):
+        for scope in ('scope=national', 'uf=AC', 'uf=SP'):
+            sidecar = json.loads((DATA / 'parquet' / 'ibge2022' / kind / scope / 'data_origin.json').read_text())
+            assert sidecar['acquired_at_utc'] == expected
     assert manifest['sources']['pop2026']['acquired_at_utc'] != manifest['built_at_utc']
+
+
+def test_arpen_refresh_uses_new_record_timestamps_in_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    data = tmp_path / 'data'
+    cache = tmp_path / 'cache'
+    shutil.copytree(DATA, data)
+    shutil.copytree(CACHE, cache)
+    original = json.loads((DATA / 'manifest.json').read_text())
+    fresh_stamp = '2030-01-02T03:04:05+00:00'
+
+    def refresh_arpen(client, cache, output, sanitized, *, refresh=False):
+        assert refresh is True
+        path = cache / 'arpen2025' / 'responses.jsonl.gz'
+        records = read_records(path)
+        for record in records:
+            record['acquired_at_utc'] = fresh_stamp
+        rewrite_records(path, records)
+        return {}
+
+    monkeypatch.setattr(build_module, 'build_ibge', lambda *args, **kwargs: {})
+    monkeypatch.setattr(build_module, 'build_arpen', refresh_arpen)
+    monkeypatch.setattr(build_module, 'rebuild_geography_files', lambda *args, **kwargs: original['geography_table_totals'])
+    monkeypatch.setattr(build_module, 'validate_runtime_data', lambda data: None)
+    manifest = build_module.build_all(data, cache, refresh_arpen=True)
+    assert manifest['sources']['arpen2025']['acquired_at_utc'] == fresh_stamp
 
 
 def test_sanitized_sqlite_cannot_be_downloaded_as_raw():

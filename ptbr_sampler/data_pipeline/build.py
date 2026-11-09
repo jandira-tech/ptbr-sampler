@@ -126,6 +126,7 @@ def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path, *, acquire
                         base / f'uf={uf}',
                         rows,
                         source='ibge2022',
+                        acquired_at_utc=acquired_at_utc,
                         transformation='Direct 2022 observed UF frequency; weight=count/sum(count)',
                         coverage=f'{uf}, all reported {kind} frequencies',
                         limitations=['No UF-period or UF-sex observations are inferred.'],
@@ -281,6 +282,7 @@ def _build_managed_generation(
         raise ValueError('refusing to open IBGE SQLite: checksum mismatch')
     coverage = build_ibge(sqlite_path, parquet, data_dir / 'sanitized' / 'ibge2022', acquired_at_utc=acquisition_times['ibge2022'])
     coverage.update(build_arpen(client or HttpClient(), cache, parquet, data_dir / 'sanitized' / 'arpen2025', refresh=refresh_arpen))
+    acquisition_times['arpen2025'] = _arpen_acquisition_time(cache)
     geography_totals = rebuild_geography_files(
         data_dir / 'cities_with_ceps.json',
         cache / 'geography' / 'POP2026_20261029.xlsx',
@@ -394,6 +396,11 @@ def _source_acquisition_time(cache: Path, key: str) -> str:
     return acquired_at
 
 
+def _arpen_acquisition_time(cache: Path) -> str:
+    with gzip.open(cache / 'arpen2025' / 'responses.jsonl.gz', 'rt', encoding='utf-8') as stream:
+        return max(json.loads(line)['acquired_at_utc'] for line in stream)
+
+
 def build_all(data_dir: Path, cache: Path, *, client: HttpClient | None = None, refresh_arpen: bool = False) -> dict[str, Any]:
     # No target path is opened or written until every managed artifact and its
     # manifest have passed deep validation in a sibling staged generation.
@@ -403,8 +410,7 @@ def build_all(data_dir: Path, cache: Path, *, client: HttpClient | None = None, 
     acquisition_times = {
         key: _source_acquisition_time(cache, key) for key in ('ibge2022', 'ibge2022_sqlite', 'pop2026', 'estimativa_dou_2026')
     }
-    with gzip.open(cache / 'arpen2025' / 'responses.jsonl.gz', 'rt', encoding='utf-8') as stream:
-        acquisition_times['arpen2025'] = max(json.loads(line)['acquired_at_utc'] for line in stream)
+    acquisition_times['arpen2025'] = _arpen_acquisition_time(cache)
     read_pop2026(cache / SOURCES['pop2026'].filename)
     read_population_workbook(cache / SOURCES['estimativa_dou_2026'].filename, source_key='estimativa_dou_2026')
     data_dir.parent.mkdir(parents=True, exist_ok=True)
