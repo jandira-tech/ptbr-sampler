@@ -36,6 +36,16 @@ def test_newborn_hand_calculated_observed_residual_and_tail_exclusion():
     assert math.isclose(sum(result.values()), 1.0)
 
 
+def test_newborn_preserves_zero_mass_tail_labels_without_inventing_probability():
+    result = derive_newborn_distribution(
+        {'ANA': 5}, births=10, national_post2010={'ana': 0.2, 'liz': 0.8, 'zero-stock-bin': 0.0}
+    )
+    assert set(result) == {'ana', 'liz', 'zero-stock-bin'}
+    assert result['ana'] == pytest.approx(0.5)
+    assert result['liz'] == pytest.approx(0.5)
+    assert result['zero-stock-bin'] == 0.0
+
+
 def test_newborn_rejects_compound_rows_and_excess_observed_mass():
     with pytest.raises(ValueError, match='atomic|compound'):
         derive_newborn_distribution({'MARIA CLARA': 1}, births=10, national_post2010={'ana': 1.0})
@@ -61,6 +71,40 @@ def test_sex_prior_is_national_and_drops_unknown_only_when_conditioned():
         'F',
     )
     assert result == {'maria': 1.0}
+
+
+@pytest.mark.real_data
+def test_committed_newborn_support_and_probabilities_follow_source_rows_independently():
+    """Rebuild expectations from after2010 + Arpen, not generated newborn data."""
+    source_rows = pq.read_table(
+        DATA / 'parquet/ibge2022/historical/period=after2010/part.parquet', columns=['name', 'weight']
+    ).to_pylist()
+    assert len(source_rows) == 61_469
+    tail = {row['name']: row['weight'] for row in source_rows}
+    tail_total = math.fsum(tail.values())
+    assert tail_total == pytest.approx(1.0)
+    births = {row['uf']: row['count'] for row in pq.read_table(DATA / 'parquet/arpen2025/births/part.parquet').to_pylist()}
+    for uf in UF_CODES:
+        observed_rows = pq.read_table(
+            DATA / f'parquet/arpen2025/simple/uf={uf}/part.parquet', columns=['name', 'count']
+        ).to_pylist()
+        observed = {row['name'].casefold(): row['count'] / births[uf] for row in observed_rows}
+        residual = 1 - math.fsum(observed.values())
+        denominator = math.fsum(weight for name, weight in tail.items() if name not in observed)
+        expected = dict(observed)
+        for name, weight in tail.items():
+            if name not in observed:
+                expected[name] = residual * weight / denominator
+        actual = weights(DATA / f'parquet/cohorts/cohort=newborn2025/uf={uf}/part.parquet')
+        assert set(actual) == set(expected)
+        assert len(actual) == 61_469 + len(set(observed) - set(tail))
+        for name, expected_weight in expected.items():
+            assert actual[name] == pytest.approx(expected_weight, abs=2e-15)
+            assert math.isfinite(actual[name]) and actual[name] >= 0
+        assert math.fsum(actual.values()) == pytest.approx(1.0)
+        sidecar = json.loads((DATA / f'parquet/cohorts/cohort=newborn2025/uf={uf}/data_origin.json').read_text())
+        assert sidecar['tail_coverage']['national_after2010_rows'] == 61_469
+        assert sidecar['tail_coverage']['modeled_rows_after_top50_exclusion'] == len(tail) - len(set(tail) & set(observed))
 
 
 @pytest.mark.real_data
@@ -113,3 +157,29 @@ def test_cohort_sidecars_declare_model_and_complete_partitions():
     assert model['tail_scope'] == 'national_after2010'
     assert 'not UF-observed' in ' '.join(model['limitations'])
     assert model['registrations_uf'] and model['population_uf']
+
+
+@pytest.mark.real_data
+@pytest.mark.parametrize('period', ['until2020', 'after2010'])
+def test_new_historical_sex_partitions_match_bins_and_national_empirical_prior(period):
+    base = weights(DATA / f'parquet/ibge2022/historical/period={period}/part.parquet')
+    assert len(base) == 61_469
+    prior_rows = pq.read_table(DATA / 'parquet/ibge2022/sex_prior/scope=national/part.parquet').to_pylist()
+    priors = {row['name']: row for row in prior_rows}
+    expected_support = set(base) & set(priors)
+    for sex, key in [('M', 'p_male'), ('F', 'p_female')]:
+        actual = weights(DATA / f'parquet/ibge2022/historical/period={period}/sex={sex}/part.parquet')
+        assert set(actual) == expected_support
+        assert set(actual).isdisjoint(set(base) - set(priors))
+        expected = {name: base[name] * priors[name][key] for name in expected_support}
+        denominator = math.fsum(expected.values())
+        assert denominator > 0
+        for name, numerator in expected.items():
+            assert actual[name] == pytest.approx(numerator / denominator, abs=2e-15)
+            assert math.isfinite(actual[name]) and actual[name] >= 0
+        assert math.fsum(actual.values()) == pytest.approx(1.0)
+        sidecar = json.loads((DATA / f'parquet/ibge2022/historical/period={period}/sex={sex}/data_origin.json').read_text())
+        assert sidecar['derived'] is True
+        assert sidecar['sex_prior_scope'] == 'national'
+        assert sidecar['source_rows'] == 61_469
+        assert 'not UF-sex' in ' '.join(sidecar['limitations'])

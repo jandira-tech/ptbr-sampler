@@ -26,11 +26,13 @@ Counts = Mapping[str, int]
 SexPriors = Mapping[str, Mapping[str, float]]
 
 
-def _normalise(values: Mapping[str, float]) -> dict[str, float]:
-    clean = {str(name).casefold(): float(weight) for name, weight in values.items() if float(weight) > 0}
+def _normalise(values: Mapping[str, float], *, preserve_zeros: bool = False) -> dict[str, float]:
+    clean = {str(name).casefold(): float(weight) for name, weight in values.items() if preserve_zeros or float(weight) > 0}
     if not clean or any(not math.isfinite(weight) or weight < 0 for weight in clean.values()):
-        raise ValueError('derived distribution must contain finite positive weights')
+        raise ValueError('derived distribution must contain finite nonnegative weights')
     total = math.fsum(clean.values())
+    if not math.isfinite(total) or total <= 0:
+        raise ValueError('derived distribution needs finite positive total weights')
     return {name: weight / total for name, weight in clean.items()}
 
 
@@ -58,28 +60,25 @@ def derive_newborn_distribution(observed_simple: Counts, *, births: int, nationa
     if residual < -1e-12:
         raise ValueError('observed top50 mass exceeds births; residual would be negative')
     residual = max(0.0, residual)
-    tail_source = _normalise(national_post2010)
+    tail_source = _normalise(national_post2010, preserve_zeros=True)
     tail = {name: weight for name, weight in tail_source.items() if name not in observed}
-    if residual and not tail:
-        raise ValueError('residual mass requires a nonempty national post2010 tail')
     tail_total = math.fsum(tail.values())
+    if residual and tail_total <= 0:
+        raise ValueError('residual mass requires positive eligible national post2010 tail mass')
     result = dict(observed)
     for name, weight in tail.items():
-        result[name] = result.get(name, 0.0) + residual * weight / tail_total
-    total = math.fsum(result.values())
-    if not math.isfinite(total) or total <= 0:
-        raise ValueError('newborn distribution is not finite and positive')
-    return {name: weight / total for name, weight in result.items() if weight > 0}
+        result[name] = result.get(name, 0.0) + residual * weight / tail_total if tail_total else 0.0
+    return _normalise(result, preserve_zeros=True)
 
 
 def blend_distributions(census2022: Weights, newborn2025: Weights, *, alpha: float) -> dict[str, float]:
     """Return ``(1-alpha)*census2022 + alpha*newborn2025`` over union support."""
     if not math.isfinite(alpha) or not 0 <= alpha <= 1:
         raise ValueError('alpha must be finite and in [0, 1]')
-    census = _normalise(census2022)
-    newborn = _normalise(newborn2025)
+    census = _normalise(census2022, preserve_zeros=True)
+    newborn = _normalise(newborn2025, preserve_zeros=True)
     result = {name: (1 - alpha) * census.get(name, 0.0) + alpha * newborn.get(name, 0.0) for name in set(census) | set(newborn)}
-    return _normalise(result)
+    return _normalise(result, preserve_zeros=True)
 
 
 def derive_national_marginal(uf_distributions: Mapping[str, Weights], official_populations: Mapping[str, int]) -> dict[str, float]:
@@ -88,14 +87,14 @@ def derive_national_marginal(uf_distributions: Mapping[str, Weights], official_p
         raise ValueError('national marginal needs matching UF distributions and official populations')
     if any(population <= 0 for population in official_populations.values()):
         raise ValueError('official UF populations must be positive')
-    distributions = {uf: _normalise(values) for uf, values in uf_distributions.items()}
+    distributions = {uf: _normalise(values, preserve_zeros=True) for uf, values in uf_distributions.items()}
     population = sum(official_populations.values())
     support = set().union(*(set(values) for values in distributions.values()))
     result = {
         name: math.fsum(official_populations[uf] * distributions[uf].get(name, 0.0) for uf in uf_distributions) / population
         for name in support
     }
-    return _normalise(result)
+    return _normalise(result, preserve_zeros=True)
 
 
 def apply_national_sex_prior(distribution: Weights, sex_priors: SexPriors, sex: str) -> dict[str, float]:
@@ -109,18 +108,14 @@ def apply_national_sex_prior(distribution: Weights, sex_priors: SexPriors, sex: 
     if selected not in {'M', 'F'}:
         raise ValueError("sex must be 'M' or 'F'")
     key = 'p_male' if selected == 'M' else 'p_female'
-    source = _normalise(distribution)
-    conditioned = {
-        name: weight * float(sex_priors[name][key])
-        for name, weight in source.items()
-        if name in sex_priors and float(sex_priors[name][key]) > 0
-    }
-    return _normalise(conditioned)
+    source = _normalise(distribution, preserve_zeros=True)
+    conditioned = {name: weight * float(sex_priors[name][key]) for name, weight in source.items() if name in sex_priors}
+    return _normalise(conditioned, preserve_zeros=True)
 
 
 def rows_from_weight_table(rows: list[dict[str, Any]]) -> dict[str, float]:
-    """Read a name/weight Parquet projection into the pure derivation API."""
-    return {row['name']: float(row['weight']) for row in rows if float(row['weight']) > 0}
+    """Read all labels, retaining zero-mass stock-bin rows as support evidence."""
+    return {row['name']: float(row['weight']) for row in rows}
 
 
 _DERIVED_SCHEMA = pa.schema([('name', pa.large_string()), ('count', pa.uint64()), ('weight', pa.float64())])
@@ -131,7 +126,7 @@ def _read_weights(path: Path) -> dict[str, float]:
 
 
 def _write_distribution(directory: Path, distribution: Weights, metadata: dict[str, Any]) -> None:
-    values = _normalise(distribution)
+    values = _normalise(distribution, preserve_zeros=True)
     ordered = sorted(values.items(), key=lambda item: (-item[1], item[0]))
     directory.mkdir(parents=True, exist_ok=True)
     # Derived probabilities cannot in general be represented by source counts.
@@ -178,7 +173,7 @@ def build_cohorts(
             observed_mass = math.fsum(row['count'] for row in simple_rows) / births[uf]
             residual = 1.0 - observed_mass
             excluded = {name.casefold() for name in observed}
-            remaining_tail = {name: weight for name, weight in _normalise(tail).items() if name not in excluded}
+            remaining_tail = {name: weight for name, weight in _normalise(tail, preserve_zeros=True).items() if name not in excluded}
             tail_coverage = {
                 'national_after2010_rows': len(tail),
                 'modeled_rows_after_top50_exclusion': len(remaining_tail),

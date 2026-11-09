@@ -14,7 +14,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from ptbr_sampler.data_pipeline.arpen import arpen_url, fetch_arpen2025
-from ptbr_sampler.data_pipeline.derived import build_cohorts
+from ptbr_sampler.data_pipeline.derived import _write_distribution, apply_national_sex_prior, build_cohorts
 from ptbr_sampler.data_pipeline.geography import read_pop2026, read_population_workbook, rebuild_geography_files
 from ptbr_sampler.data_pipeline.http import HttpClient
 from ptbr_sampler.data_pipeline.ibge import (
@@ -203,6 +203,46 @@ def build_ibge(sqlite_path: Path, output: Path, sanitized_root: Path, *, acquire
                     ],
                 },
             )
+            sex_priors = {
+                name.casefold(): {
+                    'p_male': male / (male + female) if male + female else 0.0,
+                    'p_female': female / (male + female) if male + female else 0.0,
+                }
+                for name, male, female in empirical
+            }
+            for period in ('until2020', 'after2010'):
+                historical = {name: float(values[period]) for name, values in bins.items()}
+                for sex in ('M', 'F'):
+                    conditioned = apply_national_sex_prior(historical, sex_priors, sex)
+                    _write_distribution(
+                        staged / 'historical' / f'period={period}' / f'sex={sex}',
+                        conditioned,
+                        {
+                            'source': 'ibge2022',
+                            'source_url': SOURCES['ibge2022'].url,
+                            'upstream_revision': SOURCES['ibge2022'].upstream_revision,
+                            'acquired_at_utc': acquired_at_utc or utc_now(),
+                            'period': period,
+                            'sex': sex,
+                            'derived': True,
+                            'source_rows': len(historical),
+                            'coverage': f'National {period} historical bin conditioned by national empirical sex prior',
+                            'formula': f'p_{sex}[i] ∝ historical_{period}[i] * national_IBGE_p_{sex}[i]; null-sex omitted; renormalized',
+                            'transformation': (
+                                'IBGE historical normalized bin multiplied by IBGE national empirical sex prior, then renormalized'
+                            ),
+                            'sex_prior_scope': 'national',
+                            'provenance': 'Derived from IBGE historical stock differences and IBGE 2022 national homens/mulheres.',
+                            'suppression': (
+                                'Only names absent from national empirical sex rows are dropped; '
+                                'known zero-probability labels remain support.'
+                            ),
+                            'limitations': [
+                                'National empirical sex prior only; not UF-sex observed data.',
+                                'after2010 covers 2011-2020 and until2020 is cumulative through 2020.',
+                            ],
+                        },
+                    )
             _publish(staged, output / 'ibge2022')
         coverage.update(
             {

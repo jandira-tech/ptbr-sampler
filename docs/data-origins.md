@@ -53,6 +53,17 @@ is recomputed from final UF probabilities with stable ties; `random=True`
 draws uniformly over the final selected support. Sex conditioning applies the
 national empirical IBGE prior to the selected cohort table, drops null-sex
 rows only in M/F partitions, and renormalizes; it is not UF-sex evidence.
+The same national derivation is precomputed for `UNTIL_2020` and `AFTER_2010`
+under `parquet/ibge2022/historical/period=<until2020|after2010>/sex=<M|F>/`:
+
+```
+p_sex[i] ∝ historical_bin[i] * national_IBGE_p_sex[i]
+```
+
+Both historical sources have 61,469 labels. Zero-mass stock-bin labels remain
+in newborn/current/conditioned support with zero weight rather than being
+clipped out. Known zero-probability sex labels also remain; only names absent
+from the national empirical sex rows are omitted in conditioned tables.
 
 Each cohort partition has a `data_origin.json` sidecar recording the exact
 formula, SIMPLE-only decision, residual, alpha, denominator, and tail coverage.

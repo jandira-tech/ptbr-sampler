@@ -164,3 +164,26 @@ def test_cli_generate_exposes_cohort_uf_and_new_periods():
     assert result.exit_code == 0
     assert '--cohort' in result.stdout
     assert '--uf' in result.stdout
+
+
+@pytest.mark.parametrize('period', [TimePeriod.UNTIL_2020, TimePeriod.AFTER_2010])
+@pytest.mark.parametrize('sex', ['M', 'F', 'mixed'])
+def test_new_historical_period_sex_works_through_sampler_and_public_api(period, sex):
+    sampler = bundled()
+    if sex != 'mixed':
+        table = sampler._first_names_table(time_period=period, sex=sex)
+        assert np.isclose(table.weights.sum(), 1.0)
+    from sample import sample
+
+    result = sample(q=1, time_period=period, sex_conditioning=sex, return_only_name=True)
+    assert result['name']
+
+
+def test_after2010_sex_conditioning_is_accepted_by_cli():
+    from typer.testing import CliRunner
+    from ptbr_sampler.cli import app
+
+    result = CliRunner().invoke(
+        app, ['generate', '--qty', '1', '--time-period', 'after2010', '--sex-conditioning', 'F', '--return-only-name']
+    )
+    assert result.exit_code == 0, result.stdout

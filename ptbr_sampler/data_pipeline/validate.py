@@ -142,6 +142,17 @@ def validate_runtime_data(data_dir: Path) -> dict[str, int]:
             if path.parent.name == 'births':
                 continue
             _check_name_parquet(path)
+    historical_root = data_dir / 'parquet' / 'ibge2022' / 'historical'
+    for period in ('until2020', 'after2010'):
+        base_rows, _ = _check_name_parquet(historical_root / f'period={period}' / 'part.parquet')
+        if base_rows != 61_469:
+            raise ValueError(f'{period} historical source support mismatch: {base_rows}')
+        for conditioned_sex in ('M', 'F'):
+            directory = historical_root / f'period={period}' / f'sex={conditioned_sex}'
+            _check_name_parquet(directory / 'part.parquet')
+            metadata = json.loads((directory / 'data_origin.json').read_text(encoding='utf-8'))
+            if not metadata.get('derived') or metadata.get('sex_prior_scope') != 'national' or metadata.get('source_rows') != base_rows:
+                raise ValueError(f'incomplete derived historical sex sidecar: {directory}')
     cohorts = data_dir / 'parquet' / 'cohorts'
     for cohort in ('current', 'census2022', 'newborn2025'):
         for scope in ['scope=national', *(f'uf={uf}' for uf in UF_CODES)]:
