@@ -110,10 +110,11 @@ def parse_cnpj(cnpj, formatted=True):
     return CNPJ(int(cnpj), int(firm), int(estbl), check, valid)
 
 
-def random_cnpj(formatted=True):
+def random_cnpj(formatted=True, rng: random.Random | None = None):
     """Create a random, valid CNPJ identifier."""
-    firm = random.randint(10000000, 99999999)
-    establishment = random.choice(['0001', '0002', '0003', '0004', '0005'])
+    rng = random if rng is None else rng
+    firm = rng.randint(10000000, 99999999)
+    establishment = rng.choice(['0001', '0002', '0003', '0004', '0005'])
     cnpj = cnpj_from_firm_id(firm, establishment)
     if formatted:
         return format_cnpj(cnpj)

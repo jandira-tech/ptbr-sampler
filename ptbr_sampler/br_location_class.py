@@ -118,7 +118,7 @@ class BrazilianLocationSampler:
         # Build reverse lookup: state abbreviation -> full state name
         self.abbr_to_name: dict[str, str] = {data['state_abbr']: name for name, data in self.data['states'].items()}
 
-    def get_state(self, random_mode: bool = False) -> tuple[str, str]:
+    def get_state(self, random_mode: bool = False, rng: random.Random | None = None) -> tuple[str, str]:
         """Get a random state weighted by population percentage.
 
         Args:
@@ -129,12 +129,13 @@ class BrazilianLocationSampler:
         Returns:
             Tuple of (state_name, state_abbreviation)
         """
+        rng = random if rng is None else rng
         weights = None if random_mode else self.state_weights
-        state_name = random.choices(self.state_names, weights=weights, k=1)[0]
+        state_name = rng.choices(self.state_names, weights=weights, k=1)[0]
         state_abbr = self.data['states'][state_name]['state_abbr']
         return state_name, state_abbr
 
-    def get_city(self, state_abbr: str | None = None, random_mode: bool = False) -> tuple[str, str]:
+    def get_city(self, state_abbr: str | None = None, random_mode: bool = False, rng: random.Random | None = None) -> tuple[str, str]:
         """Get a random city weighted by population percentage.
 
         Args:
@@ -148,18 +149,20 @@ class BrazilianLocationSampler:
         Raises:
             ValueError: If no cities found for given state
         """
+        rng_kwargs = {} if rng is None else {'rng': rng}
+        rng = random if rng is None else rng
         if state_abbr is None:
-            _, state_abbr = self.get_state(random_mode=random_mode)
+            _, state_abbr = self.get_state(random_mode=random_mode, **rng_kwargs)
 
         if state_abbr not in self.city_weights_by_state:
             raise ValueError(f'No cities found for state: {state_abbr}')
 
         weights = None if random_mode else self.city_weights_by_state[state_abbr]
-        city_name = random.choices(self.city_names_by_state[state_abbr], weights=weights, k=1)[0]
+        city_name = rng.choices(self.city_names_by_state[state_abbr], weights=weights, k=1)[0]
 
         return city_name, state_abbr
 
-    def get_state_and_city(self, random_mode: bool = False) -> tuple[str, str, str]:
+    def get_state_and_city(self, random_mode: bool = False, rng: random.Random | None = None) -> tuple[str, str, str]:
         """Get a random state and city combination weighted by population percentage.
 
         Args:
@@ -170,11 +173,13 @@ class BrazilianLocationSampler:
         Returns:
             Tuple of (state_name, state_abbreviation, city_name)
         """
-        state_name, state_abbr = self.get_state(random_mode=random_mode)
-        city_name, _ = self.get_city(state_abbr, random_mode=random_mode)
+        rng_kwargs = {} if rng is None else {'rng': rng}
+        rng = random if rng is None else rng
+        state_name, state_abbr = self.get_state(random_mode=random_mode, **rng_kwargs)
+        city_name, _ = self.get_city(state_abbr, random_mode=random_mode, **rng_kwargs)
         return state_name, state_abbr, city_name
 
-    def batch_sample_locations(self, n: int, random_mode: bool = False) -> list[dict[str, str]]:
+    def batch_sample_locations(self, n: int, random_mode: bool = False, rng: random.Random | None = None) -> list[dict[str, str]]:
         """Draw n location samples with batched random calls.
 
         Mathematically identical to calling get_state_and_city() n times —
@@ -192,8 +197,9 @@ class BrazilianLocationSampler:
             List of dicts with keys: state_name, state_abbr, city_name
         """
         # Stage 1: batch-draw all states (self.state_names holds full names)
+        rng = random if rng is None else rng
         state_weights = None if random_mode else self.state_weights
-        drawn_state_names = random.choices(self.state_names, weights=state_weights, k=n)
+        drawn_state_names = rng.choices(self.state_names, weights=state_weights, k=n)
 
         # Map full names to abbreviations for city lookup
         state_abbr_map = {name: self.data['states'][name]['state_abbr'] for name in set(drawn_state_names)}
@@ -206,7 +212,7 @@ class BrazilianLocationSampler:
             abbr = state_abbr_map[state_name]
             if abbr in self.city_names_by_state:
                 city_weights = None if random_mode else self.city_weights_by_state[abbr]
-                city_draws[state_name] = random.choices(
+                city_draws[state_name] = rng.choices(
                     self.city_names_by_state[abbr],
                     weights=city_weights,
                     k=count,
@@ -238,7 +244,7 @@ class BrazilianLocationSampler:
 
         return results
 
-    def _get_random_cep_for_city(self, city_name: str) -> str:
+    def _get_random_cep_for_city(self, city_name: str, rng: random.Random | None = None) -> str:
         """Generate random CEP from city's available CEPs or CEP range.
 
         Args:
@@ -254,10 +260,11 @@ class BrazilianLocationSampler:
             raise ValueError(f'City not found: {city_name}')
 
         city_data = self.city_data_by_name[city_name]
+        rng = random if rng is None else rng
 
         # Try using specific CEPs first
         if city_data.get('ceps'):
-            return random.choice(city_data['ceps'])
+            return rng.choice(city_data['ceps'])
 
         # Fall back to generating from CEP range if available.
         if city_data.get('cep_range_begins') and city_data.get('cep_range_ends'):
@@ -265,7 +272,7 @@ class BrazilianLocationSampler:
             range_end = int(city_data['cep_range_ends'].replace('-', ''))
             # Always zero-pad to 8 digits so leading zeros aren't lost when
             # the numeric range straddles value<10_000_000 (e.g., starts "01").
-            return f'{random.randint(range_start, range_end):08d}'
+            return f'{rng.randint(range_start, range_end):08d}'
 
     def _format_cep(self, cep: str, with_dash: bool = True) -> str:
         """Format CEP string with optional dash.
@@ -281,7 +288,14 @@ class BrazilianLocationSampler:
         return f'{cep[:5]}-{cep[5:]}' if with_dash else cep
 
     def format_full_location(
-        self, city: str, state: str, state_abbr: str, include_cep: bool = True, cep_without_dash: bool = False, name: str | None = None
+        self,
+        city: str,
+        state: str,
+        state_abbr: str,
+        include_cep: bool = True,
+        cep_without_dash: bool = False,
+        name: str | None = None,
+        rng: random.Random | None = None,
     ) -> str:
         """Format location information into a single string.
 
@@ -302,7 +316,7 @@ class BrazilianLocationSampler:
         parts = [base]
 
         if include_cep:
-            cep = self._get_random_cep_for_city(city)
+            cep = self._get_random_cep_for_city(city, rng=rng)
             formatted_cep = self._format_cep(cep, not cep_without_dash)
             parts.append(formatted_cep)
 
@@ -316,6 +330,7 @@ class BrazilianLocationSampler:
         only_cep: bool = False,
         cep_without_dash: bool = False,
         random_mode: bool = False,
+        rng: random.Random | None = None,
     ) -> str:
         """Get a random location with various formatting options.
 
@@ -331,19 +346,20 @@ class BrazilianLocationSampler:
         Returns:
             Formatted location string according to specified options
         """
+        rng_kwargs = {} if rng is None else {'rng': rng}
         if only_cep:
-            city_name, _ = self.get_city(random_mode=random_mode)
-            cep = self._get_random_cep_for_city(city_name)
+            city_name, _ = self.get_city(random_mode=random_mode, **rng_kwargs)
+            cep = self._get_random_cep_for_city(city_name, **rng_kwargs)
             return self._format_cep(cep, not cep_without_dash)
 
         if state_abbr_only:
-            return self.get_state(random_mode=random_mode)[1]
+            return self.get_state(random_mode=random_mode, **rng_kwargs)[1]
 
         if state_full_only:
-            return self.get_state(random_mode=random_mode)[0]
+            return self.get_state(random_mode=random_mode, **rng_kwargs)[0]
 
         if city_only:
-            return self.get_city(random_mode=random_mode)[0]
+            return self.get_city(random_mode=random_mode, **rng_kwargs)[0]
 
-        state_name, state_abbr, city_name = self.get_state_and_city(random_mode=random_mode)
-        return self.format_full_location(city_name, state_name, state_abbr, True, cep_without_dash)
+        state_name, state_abbr, city_name = self.get_state_and_city(random_mode=random_mode, **rng_kwargs)
+        return self.format_full_location(city_name, state_name, state_abbr, True, cep_without_dash, rng=rng)

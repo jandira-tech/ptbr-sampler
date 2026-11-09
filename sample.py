@@ -6,6 +6,7 @@ to use programmatically (sensible defaults, single-keyword ``q`` alias,
 unwrapped dict return when ``q == 1``).
 """
 
+import random as _stdlib_random
 from pathlib import Path
 
 from ptbr_sampler.br_name_class import Cohort, TimePeriod
@@ -66,6 +67,7 @@ def sample(
     experimental_uf_sex_conditioning: bool = False,
     cohort: Cohort | str = Cohort.CURRENT,
     uf: str | None = None,
+    rng: _stdlib_random.Random | None = None,
     **kwargs,
 ) -> dict | list[dict]:
     """
@@ -81,6 +83,8 @@ def sample(
             locations. The corpus-derived 30.99% middle-name rate is unchanged.
         cohort: ``current`` (default), ``census2022``, or ``newborn2025``.
         uf: Optional fixed UF for location, first-name, and surname sampling.
+        rng: Optional ``random.Random``-compatible stream. ``None`` preserves
+            module-global ``random.seed(...)`` behavior.
         experimental_uf_sex_conditioning: Compatibility option that supplies a
             mixed per-row sex only when no explicit sex_conditioning was set.
             UF conditioning is always active; this option no longer gates it.
@@ -140,6 +144,7 @@ def sample(
     merged['experimental_uf_sex_conditioning'] = experimental_uf_sex_conditioning
     merged['cohort'] = cohort
     merged['uf'] = uf
+    merged['rng'] = rng
 
     return sampler_function(**merged)
 

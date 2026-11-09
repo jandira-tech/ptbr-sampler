@@ -96,13 +96,21 @@ class BrazilianRG:
         self.include_state_prefix = include_state_prefix
         self.only_rg = only_rg
 
-    def _generate_from_pattern(self, pattern):
+    def _generate_from_pattern(self, pattern, rng: random.Random | None = None):
         """
         Generate a string by replacing each '#' in the pattern with a random digit (0-9).
         """
-        return ''.join(str(random.randint(0, 9)) if char == '#' else char for char in pattern)
+        rng = random if rng is None else rng
+        return ''.join(str(rng.randint(0, 9)) if char == '#' else char for char in pattern)
 
-    def generate(self, state: str | None = None, include_issuer: bool = True, include_state_prefix: bool = False, only_rg: bool = False):
+    def generate(
+        self,
+        state: str | None = None,
+        include_issuer: bool = True,
+        include_state_prefix: bool = False,
+        only_rg: bool = False,
+        rng: random.Random | None = None,
+    ):
         """
         Generate a complete, realistic RG number string according to the state-specific pattern.
 
@@ -113,7 +121,7 @@ class BrazilianRG:
             A string representing the final RG number, optionally prefixed with the issuer and/or state code.
         """
         pattern = BrazilianRG.STATE_PATTERNS[self.state]
-        rg_number = self._generate_from_pattern(pattern)
+        rg_number = self._generate_from_pattern(pattern, rng=rng)
 
         if self.only_rg:
             return rg_number
@@ -126,7 +134,8 @@ class BrazilianRG:
         # For MG, randomly decide to include the "MG" prefix (state code).
         if self.state == 'MG':
             # Randomly choose True or False
-            mg_prefix = random.choice([True, False])
+            rng = random if rng is None else rng
+            mg_prefix = rng.choice([True, False])
             if mg_prefix:
                 parts.append('MG')
         else:

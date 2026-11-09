@@ -6,9 +6,9 @@ routed through ``random.choices`` now go through :class:`AliasTable`, giving
 O(1) per-draw cost regardless of support size. The batch and single-sample
 paths share one draw implementation — the only difference is ``k``.
 
-Reproducibility: the alias tables draw from a NumPy ``Generator`` seeded
-from Python's ``random`` module on each call, so callers that rely on
-``random.seed(...)`` continue to get deterministic output.
+Reproducibility: alias tables draw from a private NumPy ``Generator`` seeded
+from the supplied ``random.Random``-compatible stream. With ``rng=None`` that
+is the module-global Python stream, preserving ``random.seed(...)`` behavior.
 """
 
 import json
@@ -71,14 +71,14 @@ class NameComponents:
     surname: str
 
 
-def _rng_from_python_random() -> np.random.Generator:
-    """Return a NumPy ``Generator`` seeded from Python's ``random`` state.
+def _rng_from_python_random(rng: random.Random | None = None) -> np.random.Generator:
+    """Seed a private NumPy generator from the selected Python random stream.
 
-    Tying NumPy reproducibility to the stdlib ``random`` module keeps
-    existing tests that do ``random.seed(n)`` deterministic, while letting
-    the alias tables operate on vectorised NumPy arrays.
+    ``None`` deliberately uses the module-global stream for backward-compatible
+    ``random.seed(...)`` behavior. NumPy's global RNG is never read or advanced.
     """
-    return np.random.default_rng(random.getrandbits(64))
+    source = random if rng is None else rng
+    return np.random.default_rng(source.getrandbits(64))
 
 
 class BrazilianNameSampler:
@@ -463,12 +463,13 @@ class BrazilianNameSampler:
     # Middle-name helpers
     # ------------------------------------------------------------------
 
-    def _should_add_middle_name(self) -> bool:
+    def _should_add_middle_name(self, rng: random.Random | None = None) -> bool:
         if not self.middle_names_data:
             return False
-        return random.random() < (self.middle_names_data['percentage_with_second'] / 100)
+        rng = random if rng is None else rng
+        return rng.random() < (self.middle_names_data['percentage_with_second'] / 100)
 
-    def _get_random_middle_name(self, random_mode: bool = False) -> str:
+    def _get_random_middle_name(self, random_mode: bool = False, rng: random.Random | None = None) -> str:
         """Return one middle name draw using the cached alias table.
 
         Kept as a compatibility shim so callers and tests that reach into
@@ -482,8 +483,8 @@ class BrazilianNameSampler:
             raise ValueError(f'Error processing middle names data: {err}') from err
         if table is None:
             return ''
-        rng = _rng_from_python_random()
-        draws = _alias_draw(table, 1, rng, random_mode=random_mode)
+        alias_rng = _rng_from_python_random(rng)
+        draws = _alias_draw(table, 1, alias_rng, random_mode=random_mode)
         return str(draws[0])
 
     # ------------------------------------------------------------------
@@ -504,6 +505,7 @@ class BrazilianNameSampler:
         random_mode: bool = False,
         uf: str | None = None,
         sex: str | None = None,
+        rng: random.Random | None = None,
     ) -> str | NameComponents:
         """Get a single random name. Delegates to the unified batch path
         with ``k=1`` so the batch and single-sample code paths share one
@@ -527,7 +529,7 @@ class BrazilianNameSampler:
                 legacy and new national historical periods also accept it.
         """
         if only_middle:
-            middle_name = self._get_random_middle_name(random_mode=random_mode)
+            middle_name = self._get_random_middle_name(random_mode=random_mode, rng=rng)
             if return_components:
                 return NameComponents('', middle_name, '')
             return middle_name.upper() if raw else middle_name
@@ -544,6 +546,7 @@ class BrazilianNameSampler:
             random_mode=random_mode,
             uf=uf,
             sex=sex,
+            rng=rng,
         )[0]
 
         if return_components:
@@ -569,6 +572,7 @@ class BrazilianNameSampler:
         random_mode: bool = False,
         ufs: list[str] | tuple[str, ...] | None = None,
         sexes: list[str] | tuple[str, ...] | None = None,
+        rng: random.Random | None = None,
     ) -> list[NameComponents]:
         """Draw ``n`` name components with one vectorised alias lookup per
         independent draw (first names, middle names, two surnames).
@@ -603,6 +607,7 @@ class BrazilianNameSampler:
             random_mode=random_mode,
             ufs=ufs,
             sexes=sexes,
+            rng=rng,
         )
 
     def get_random_surname(
@@ -612,6 +617,7 @@ class BrazilianNameSampler:
         with_only_one_surname: bool = False,
         random_mode: bool = False,
         uf: str | None = None,
+        rng: random.Random | None = None,
     ) -> str:
         """Get random surname(s), optionally from top 40 only.
 
@@ -619,16 +625,17 @@ class BrazilianNameSampler:
             random_mode: When ``True``, draw surnames uniformly across the
                 table instead of using empirical frequencies.
         """
-        rng = _rng_from_python_random()
+        alias_rng = _rng_from_python_random(rng)
         table = self._top_40_table(uf) if top_40 else self._surnames_table(uf)
-        draws = _alias_draw(table, 2, rng, random_mode=random_mode)
+        draws = _alias_draw(table, 1 if with_only_one_surname else 2, alias_rng, random_mode=random_mode)
         surname1 = str(draws[0])
-        surname2 = str(draws[1])
+        surname2 = '' if with_only_one_surname else str(draws[1])
         return self._assemble_surname(
             surname1,
             surname2,
             raw=raw,
             with_only_one_surname=with_only_one_surname,
+            rng=rng,
         )
 
     # ------------------------------------------------------------------
@@ -651,8 +658,9 @@ class BrazilianNameSampler:
         sex: str | None = None,
         ufs: list[str] | tuple[str, ...] | None = None,
         sexes: list[str] | tuple[str, ...] | None = None,
+        rng: random.Random | None = None,
     ) -> list[NameComponents]:
-        rng = _rng_from_python_random()
+        alias_rng = _rng_from_python_random(rng)
 
         # Normalise the per-row UF / sex inputs. Accepts either scalar
         # ``uf``/``sex`` (broadcast to every row) or per-row ``ufs`` / ``sexes``.
@@ -662,7 +670,7 @@ class BrazilianNameSampler:
             cohort=cohort,
             raw=raw,
             random_mode=random_mode,
-            rng=rng,
+            rng=alias_rng,
             uf=uf,
             sex=sex,
             ufs=ufs,
@@ -673,7 +681,7 @@ class BrazilianNameSampler:
             n,
             raw=raw,
             always_middle=always_middle,
-            rng=rng,
+            rng=alias_rng,
             random_mode=random_mode,
         )
 
@@ -692,8 +700,8 @@ class BrazilianNameSampler:
         for bucket_uf, indices in buckets.items():
             table = self._top_40_table(bucket_uf) if top_40 else self._surnames_table(bucket_uf)
             count = len(indices)
-            draws_a = _alias_draw(table, count, rng, random_mode=random_mode)
-            draws_b = None if with_only_one_surname else _alias_draw(table, count, rng, random_mode=random_mode)
+            draws_a = _alias_draw(table, count, alias_rng, random_mode=random_mode)
+            draws_b = None if with_only_one_surname else _alias_draw(table, count, alias_rng, random_mode=random_mode)
             for draw_index, row_index in enumerate(indices):
                 surnames_out[row_index] = (
                     str(draws_a[draw_index]),
@@ -708,6 +716,7 @@ class BrazilianNameSampler:
                 surname2 or '',
                 raw=raw,
                 with_only_one_surname=with_only_one_surname,
+                rng=rng,
             )
             results.append(NameComponents(first_names[i], middle_names[i], surname))
         return results
@@ -728,10 +737,11 @@ class BrazilianNameSampler:
     ) -> list[str]:
         """Draw ``n`` first names, optionally conditioned on per-row UF / sex.
 
-        When neither per-row nor scalar UF / sex are provided (or no
-        Parquet partition matches), every draw goes through the unconditioned
-        period table — this is the legacy fast path and matches the
-        existing behaviour bit-for-bit on the bundled (period-only) data.
+        Unconditioned draws use the selected national cohort/period table.
+        Conditional draws resolve their requested partitions explicitly;
+        missing bundled modern artifacts raise instead of silently substituting
+        a different distribution. Custom historical fixtures retain their
+        documented condition-specific resolution order.
         """
         per_row_ufs: list[str | None] | None
         per_row_sexes: list[str | None] | None
@@ -751,9 +761,8 @@ class BrazilianNameSampler:
             return [(str(name).upper() if raw else str(name)) for name in draws]
 
         # Conditional path — bucket by (uf, sex) and draw per bucket so we
-        # still amortise per-call overhead. Rows with missing partitions
-        # silently fall back to the period-only table inside
-        # ``_first_names_table`` — that's the no-data-yet behaviour.
+        # still amortise per-call overhead. Modern missing partitions raise;
+        # custom historical fixtures follow their explicit resolution order.
         from collections import defaultdict  # noqa: PLC0415 - keep imports local to the conditional path
 
         buckets: dict[tuple[str | None, str | None], list[int]] = defaultdict(list)
@@ -823,9 +832,10 @@ class BrazilianNameSampler:
         *,
         raw: bool,
         with_only_one_surname: bool,
+        rng: random.Random | None = None,
     ) -> str:
         s1 = surname1.upper() if raw else surname1
-        s1 = self._apply_prefix(s1, allow_prefix=True)
+        s1 = self._apply_prefix(s1, allow_prefix=True, rng=rng)
         if with_only_one_surname:
             return s1
         s2 = surname2.upper() if raw else surname2
@@ -835,40 +845,36 @@ class BrazilianNameSampler:
             s2 = self._apply_prefix(s2, allow_prefix=False)
         return f'{s1} {s2}'
 
-    def _apply_prefix(self, surname: str, allow_prefix: bool = True) -> str:
-        """Apply prefix to surname based on complex rules and probabilities.
-
-        Uses ``random.random`` to stay compatible with tests that seed the
-        standard library RNG. The alias tables produce the surname stems;
-        this pass only decorates them.
-        """
+    def _apply_prefix(self, surname: str, allow_prefix: bool = True, rng: random.Random | None = None) -> str:
+        """Decorate an alias-drawn surname using the selected random stream."""
         if not allow_prefix:
             return surname
+        rng = random if rng is None else rng
         is_raw = surname.isupper()
         surname_upper = surname.upper()
 
         if surname_upper in self.SURNAME_PREFIXES:
             if surname_upper in ['SANTOS', 'SILVA']:
-                compound_chance = random.random()
+                compound_chance = rng.random()
                 if compound_chance < 0.05:
                     compound_prefix = 'E' if is_raw else 'e'
                     return f'{surname} {compound_prefix}'
                 if compound_chance < 0.15:
-                    compound_prefix = ('DA' if random.random() < 0.7 else 'DO') if is_raw else ('da' if random.random() < 0.7 else 'do')
+                    compound_prefix = ('DA' if rng.random() < 0.7 else 'DO') if is_raw else ('da' if rng.random() < 0.7 else 'do')
                     return f'{surname} {compound_prefix}'
 
             prefix_options = self.SURNAME_PREFIXES[surname_upper]
             total_weight = sum(weight for _, weight in prefix_options)
-            rand = random.random() * total_weight
+            rand = rng.random() * total_weight
 
             cumulative = 0
             for candidate_prefix, weight in prefix_options:
                 cumulative += weight
                 if rand <= cumulative:
                     final_prefix = candidate_prefix
-                    if final_prefix in ['da', 'do'] and random.random() < 0.08:
+                    if final_prefix in ['da', 'do'] and rng.random() < 0.08:
                         final_prefix = ('DOS' if final_prefix == 'do' else 'DAS') if is_raw else ('dos' if final_prefix == 'do' else 'das')
-                    elif final_prefix == 'de' and surname[0].lower() in 'aeiou' and random.random() < 0.7:
+                    elif final_prefix == 'de' and surname[0].lower() in 'aeiou' and rng.random() < 0.7:
                         final_prefix = "D'" if is_raw else "d'"
                         return f'{final_prefix}{surname}'
                     else:

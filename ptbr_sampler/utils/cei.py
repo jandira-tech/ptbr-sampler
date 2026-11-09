@@ -56,10 +56,11 @@ def pad_cei(cei, validate=False):
     return padded
 
 
-def random_cei(formatted=True):
+def random_cei(formatted=True, rng: random.Random | None = None):
     """Create a random, valid CEI identifier."""
-    uf = random.randint(11, 53)
-    stem = f'{uf}{random.randint(100000000, 999999999)}'
+    rng = random if rng is None else rng
+    uf = rng.randint(11, 53)
+    stem = f'{uf}{rng.randint(100000000, 999999999)}'
     cei = f'{stem}{cei_check_digit(stem)}'
     if formatted:
         return format_cei(cei)

@@ -59,9 +59,10 @@ def pad_pis(pis, validate=False):
     return padded
 
 
-def random_pis(formatted=True):
+def random_pis(formatted=True, rng=None):
     """Create a random, valid PIS identifier."""
-    pis = randint(1000000000, 9999999999)
+    random_int = randint if rng is None else rng.randint
+    pis = random_int(1000000000, 9999999999)
     pis = str(pis) + str(pis_check_digit(pis))
     if formatted:
         return format_pis(pis)

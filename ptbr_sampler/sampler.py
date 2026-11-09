@@ -8,6 +8,7 @@ import asyncio
 import copy
 import json
 import random as _stdlib_random
+from collections import OrderedDict
 from collections.abc import Callable
 from pathlib import Path
 
@@ -23,6 +24,10 @@ from .document_sampler import DocumentSampler
 
 # Module-level JSON cache to avoid re-parsing on repeated sample() calls.
 _json_cache: dict[str, dict] = {}
+# Fully initialized samplers are immutable during sampling. Keep a small LRU;
+# random streams and scalar document generators remain strictly per call.
+_sampler_cache: OrderedDict[tuple, tuple[BrazilianLocationSampler, BrazilianNameSampler]] = OrderedDict()
+_SAMPLER_CACHE_SIZE = 8
 
 
 def _load_json_cached(path: str | Path) -> dict:
@@ -38,13 +43,84 @@ def _load_json_cached(path: str | Path) -> dict:
     return _json_cache[key]
 
 
-def _coin_flip_sexes(n: int) -> list[str]:
+def _coin_flip_sexes(n: int, rng: _stdlib_random.Random | None = None) -> list[str]:
     """Draw ``n`` sexes 50/50 for rows with no sex given.
 
     The module is imported as ``_stdlib_random`` because :func:`sample`
     names its explicit-random flag ``random``.
     """
-    return [_stdlib_random.choice(('M', 'F')) for _ in range(n)]
+    rng = _stdlib_random if rng is None else rng
+    return [rng.choice(('M', 'F')) for _ in range(n)]
+
+
+def _resolved_cache_path(path: str | Path | None) -> str | None:
+    return str(Path(path).resolve()) if path is not None else None
+
+
+def _get_cached_samplers(
+    *,
+    json_path: str | Path,
+    locations_path: str | Path | None,
+    surnames_path: str | Path,
+    names_path: str | Path | None,
+    middle_names_path: str | Path | None,
+    parquet_root: Path | None,
+    lru_size: int,
+    fixed_uf: str | None,
+) -> tuple[BrazilianLocationSampler, BrazilianNameSampler]:
+    """Return path-isolated, reusable samplers with their alias LRU intact."""
+    key = (
+        _resolved_cache_path(json_path),
+        _resolved_cache_path(locations_path),
+        _resolved_cache_path(surnames_path),
+        _resolved_cache_path(names_path),
+        _resolved_cache_path(middle_names_path),
+        _resolved_cache_path(parquet_root),
+        lru_size,
+        fixed_uf,
+    )
+    cached = _sampler_cache.get(key)
+    if cached is not None:
+        _sampler_cache.move_to_end(key)
+        return cached
+
+    location_sampler = BrazilianLocationSampler(copy.deepcopy(_load_json_cached(json_path)))
+    if locations_path:
+        try:
+            locations_data = copy.deepcopy(_load_json_cached(locations_path))
+            if 'cities' in locations_data:
+                location_sampler.update_cities(locations_data['cities'])
+            if 'states' in locations_data:
+                location_sampler.update_states(locations_data['states'])
+        except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f'Warning: Could not use locations_path data: {e}')
+
+    if fixed_uf is not None:
+        states = {name: state for name, state in location_sampler.data['states'].items() if state.get('state_abbr') == fixed_uf}
+        cities = {key: city for key, city in location_sampler.data['cities'].items() if city.get('city_uf') == fixed_uf}
+        if not states or not cities:
+            raise ValueError(f'uf {fixed_uf} has no bundled location data')
+        location_sampler.data['cities'] = cities
+        location_sampler.data['states'] = states
+        location_sampler._calculate_weights()
+
+    surnames_data = copy.deepcopy(_load_json_cached(surnames_path))
+    name_data = {'surnames': surnames_data['surnames']}
+    if names_path:
+        name_data.update(copy.deepcopy(_load_json_cached(names_path)))
+    name_sampler = BrazilianNameSampler(
+        name_data,
+        middle_names_path,
+        None,
+        parquet_root=parquet_root,
+        lru_size=lru_size,
+    )
+    value = (location_sampler, name_sampler)
+    _sampler_cache[key] = value
+    _sampler_cache.move_to_end(key)
+    while len(_sampler_cache) > _SAMPLER_CACHE_SIZE:
+        _sampler_cache.popitem(last=False)
+    return value
 
 
 def parse_result(
@@ -145,6 +221,7 @@ async def get_address_data_batch(
     ceps: list[str],
     make_api_call: bool = False,
     progress_callback: Callable[[int, str], None] | None = None,
+    rng: _stdlib_random.Random | None = None,
 ) -> list[dict]:
     """
     Get address data for multiple CEPs, either from API or generated.
@@ -196,16 +273,16 @@ async def get_address_data_batch(
             # If neighborhood is empty, use address_for_offline
             if not address_data['neighborhood']:
                 address_provider = AddressProvider_for_offline()
-                address_data['neighborhood'] = address_provider.bairro()
+                address_data['neighborhood'] = address_provider.bairro(rng=rng)
 
             # If street is empty, use address_for_offline
             if not address_data['street']:
                 address_provider = AddressProvider_for_offline()
-                address_data['street'] = address_provider.street_prefix() + ' ' + address_provider.last_name()
+                address_data['street'] = address_provider.street_prefix(rng=rng) + ' ' + address_provider.last_name(rng=rng)
 
             # Always get building number from address_for_offline
             address_provider = AddressProvider_for_offline()
-            address_data['building_number'] = address_provider.building_number()
+            address_data['building_number'] = address_provider.building_number(rng=rng)
 
             address_data_list.append(address_data)
 
@@ -222,9 +299,9 @@ async def get_address_data_batch(
 
             address_provider = AddressProvider_for_offline()
             address_data = {
-                'street': address_provider.street_prefix() + ' ' + address_provider.last_name(),
-                'neighborhood': address_provider.bairro(),
-                'building_number': address_provider.building_number(),
+                'street': address_provider.street_prefix(rng=rng) + ' ' + address_provider.last_name(rng=rng),
+                'neighborhood': address_provider.bairro(rng=rng),
+                'building_number': address_provider.building_number(rng=rng),
                 'cep': formatted_cep,
             }
             address_data_list.append(address_data)
@@ -240,7 +317,7 @@ async def get_address_data_batch(
     return address_data_list
 
 
-async def get_address_data(cep: str, make_api_call: bool = False) -> dict:
+async def get_address_data(cep: str, make_api_call: bool = False, rng: _stdlib_random.Random | None = None) -> dict:
     """
     Get address data for a single CEP, either from API or generated.
 
@@ -251,7 +328,7 @@ async def get_address_data(cep: str, make_api_call: bool = False) -> dict:
     Returns:
         Dictionary with address data (street, neighborhood, building_number)
     """
-    result = await get_address_data_batch([cep], make_api_call)
+    result = await get_address_data_batch([cep], make_api_call, rng=rng)
     return result[0] if result else {}
 
 
@@ -300,6 +377,8 @@ def sample(
     sex_conditioning: str | None = None,
     cohort: Cohort | str = Cohort.CURRENT,
     uf: str | None = None,
+    lru_size: int = 32,
+    rng: _stdlib_random.Random | None = None,
 ) -> dict | list[dict]:
     """
     Generate randomized Brazilian profiles composed of name, location, and document fields according to the supplied flags.
@@ -347,6 +426,11 @@ def sample(
         cohort (Cohort | str): current (default), census2022, or newborn2025.
             An explicit period disables blending; only current + period is allowed.
         uf (str | None): Optional fixed UF for location, names, and surnames.
+        rng (random.Random | None): Optional injected stream. Every random
+            selection, including the private NumPy alias seed, comes from this
+            object. ``None`` uses Python's module-global stream as before.
+        lru_size (int): Per-sampler Parquet alias cache capacity and part of the
+            high-level resource-cache key.
         experimental_uf_sex_conditioning (bool): Compatibility flag. If True
             and no sex was selected, use mixed 50/50 sex. UF conditioning is
             always active and no longer depends on this flag.
@@ -361,8 +445,8 @@ def sample(
               * ``None`` (default) — no sex conditioning, period-only table
             Compatible with ``experimental_uf_sex_conditioning``: when both
             are on, UF still comes from the sampled location and sex from
-            this argument. When the per-row partition is missing, the
-            sampler falls back through the resolution chain documented in
+            this argument. Missing bundled modern partitions raise clearly;
+            custom historical fixtures use the resolution chain documented in
             ``BrazilianNameSampler._first_names_table``.
 
     Returns:
@@ -407,59 +491,18 @@ def sample(
         only_document = False
 
     try:
-        # Initialize samplers — use cached JSON to avoid re-parsing on repeated calls.
-        # Deep-copy every cached payload before mutating/consuming so the shared
-        # cache entry is never touched.
-        location_json = _load_json_cached(json_path)
-        location_sampler = BrazilianLocationSampler(copy.deepcopy(location_json))
-        doc_sampler = DocumentSampler()
-
-        # Load location data if provided - do this only once
-        if locations_path:
-            try:
-                locations_data = copy.deepcopy(_load_json_cached(locations_path))
-                # Use locations data if available
-                if 'cities' in locations_data:
-                    location_sampler.update_cities(locations_data['cities'])
-                if 'states' in locations_data:
-                    location_sampler.update_states(locations_data['states'])
-            except (FileNotFoundError, json.JSONDecodeError, KeyError, TypeError) as e:
-                # Log but continue with default data
-                print(f'Warning: Could not use locations_path data: {e}')
-
-        # A fixed UF constrains geography as well as name/surname conditioning.
-        # Filter both datasets before weights are calculated, retaining the same
-        # population-weighted city distribution within the selected UF.
-        if fixed_uf is not None:
-            states = {name: state for name, state in location_sampler.data['states'].items() if state.get('state_abbr') == fixed_uf}
-            cities = {key: city for key, city in location_sampler.data['cities'].items() if city.get('city_uf') == fixed_uf}
-            if not states or not cities:
-                raise ValueError(f'uf {fixed_uf} has no bundled location data')
-            location_sampler.data['cities'] = cities
-            location_sampler.data['states'] = states
-            location_sampler._calculate_weights()
-
-        # Load surnames data for name sampler (cached)
-        surnames_data = copy.deepcopy(_load_json_cached(surnames_path))
-
-        # Create complete data for name sampler
-        name_data = {'surnames': surnames_data['surnames']}
-        if names_path:
-            names_json = copy.deepcopy(_load_json_cached(names_path))
-            name_data.update(names_json)
-
-        # Wire the sampler to the bundled partitioned Parquet tree when
-        # present — that's the critical-path reader described in
-        # ``docs/architecture.md``. The JSON dict above is still kept so
-        # attributes like ``top_40_surnames`` remain populated for callers
-        # that opt out of the Parquet partitions.
-        _parquet_root = Path(__file__).resolve().parent / 'data' / 'parquet'
-        name_sampler = BrazilianNameSampler(
-            name_data,  # Pass the combined data
-            middle_names_path,
-            None,  # No need for names_path as we've already loaded it
-            parquet_root=_parquet_root if _parquet_root.exists() else None,
+        parquet_root = Path(__file__).resolve().parent / 'data' / 'parquet'
+        location_sampler, name_sampler = _get_cached_samplers(
+            json_path=json_path,
+            locations_path=locations_path,
+            surnames_path=surnames_path,
+            names_path=names_path,
+            middle_names_path=middle_names_path,
+            parquet_root=parquet_root if parquet_root.exists() else None,
+            lru_size=lru_size,
+            fixed_uf=fixed_uf,
         )
+        doc_sampler = DocumentSampler()
 
         # Initialize results list and parallel state/city tracking so the
         # address phase can reuse the same draws without a second batch.
@@ -477,7 +520,7 @@ def sample(
             sex_conditioning_norm = sc
         per_row_sexes: list[str] | None = None
         if sex_conditioning_norm == 'MIXED':
-            per_row_sexes = _coin_flip_sexes(actual_qty)
+            per_row_sexes = _coin_flip_sexes(actual_qty, rng=rng)
         elif sex_conditioning_norm in ('M', 'F'):
             per_row_sexes = [sex_conditioning_norm] * actual_qty
 
@@ -487,25 +530,25 @@ def sample(
                 documents = {}
 
                 # Generate location first to get proper state for RG
-                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random)
+                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random, rng=rng)
                 state_city_info.append((state_name, state_abbr, city_name))
 
                 # Generate all requested documents
                 if always_cpf or only_cpf:
-                    documents['cpf'] = doc_sampler.generate_cpf()
+                    documents['cpf'] = doc_sampler.generate_cpf(rng=rng)
                 if always_pis or only_pis:
-                    documents['pis'] = doc_sampler.generate_pis()
+                    documents['pis'] = doc_sampler.generate_pis(rng=rng)
                 if always_cnpj or only_cnpj:
-                    documents['cnpj'] = doc_sampler.generate_cnpj()
+                    documents['cnpj'] = doc_sampler.generate_cnpj(rng=rng)
                 if always_cei or only_cei:
-                    documents['cei'] = doc_sampler.generate_cei()
+                    documents['cei'] = doc_sampler.generate_cei(rng=rng)
                 if always_rg or only_rg:
-                    documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer)}'
+                    documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer, rng=rng)}'
                 if always_phone or only_fone:
                     # Get the DDD from the city data
                     city_data = location_sampler.city_data_by_name.get(city_name, {})
                     ddd = city_data.get('ddd', None)
-                    documents['phone'] = generate_phone_number(ddd)
+                    documents['phone'] = generate_phone_number(ddd, rng=rng)
 
                 results.append((None, None, documents))
 
@@ -521,23 +564,23 @@ def sample(
                 # No need to reload location data - already loaded once at the beginning
 
                 # Generate location first to get proper state for RG
-                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random)
+                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random, rng=rng)
                 state_city_info.append((state_name, state_abbr, city_name))
                 if only_cpf:
-                    documents['cpf'] = doc_sampler.generate_cpf()
+                    documents['cpf'] = doc_sampler.generate_cpf(rng=rng)
                 if only_pis:
-                    documents['pis'] = doc_sampler.generate_pis()
+                    documents['pis'] = doc_sampler.generate_pis(rng=rng)
                 if only_cnpj:
-                    documents['cnpj'] = doc_sampler.generate_cnpj()
+                    documents['cnpj'] = doc_sampler.generate_cnpj(rng=rng)
                 if only_cei:
-                    documents['cei'] = doc_sampler.generate_cei()
+                    documents['cei'] = doc_sampler.generate_cei(rng=rng)
                 if only_rg:
-                    documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer)}'
+                    documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer, rng=rng)}'
                 if only_fone:
                     # Get the DDD from the city data
                     city_data = location_sampler.city_data_by_name.get(city_name, {})
                     ddd = city_data.get('ddd', None)
-                    documents['phone'] = generate_phone_number(ddd)
+                    documents['phone'] = generate_phone_number(ddd, rng=rng)
 
                 results.append((None, None, documents))
 
@@ -552,7 +595,7 @@ def sample(
             name_only_sexes = per_row_sexes
             draws_first_names = not (only_surname or only_middle)
             if experimental_uf_sex_conditioning and name_only_sexes is None and draws_first_names:
-                name_only_sexes = _coin_flip_sexes(actual_qty)
+                name_only_sexes = _coin_flip_sexes(actual_qty, rng=rng)
             for i in range(actual_qty):
                 documents = {}
                 name_components = None
@@ -560,7 +603,7 @@ def sample(
                 # No need to reload location data - already loaded once at the beginning
 
                 # Generate location first to get proper state and DDD
-                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random)
+                state_name, state_abbr, city_name = location_sampler.get_state_and_city(random_mode=random, rng=rng)
                 state_city_info.append((state_name, state_abbr, city_name))
 
                 if only_surname:
@@ -573,6 +616,7 @@ def sample(
                             with_only_one_surname=with_only_one_surname,
                             random_mode=random,
                             uf=state_abbr,
+                            rng=rng,
                         ),
                     )
                 elif only_middle:
@@ -581,6 +625,7 @@ def sample(
                         only_middle=True,
                         return_components=True,
                         random_mode=random,
+                        rng=rng,
                     )
                 else:
                     name_components = name_sampler.get_random_name(
@@ -595,25 +640,26 @@ def sample(
                         random_mode=random,
                         uf=state_abbr,
                         sex=name_only_sexes[i] if name_only_sexes is not None else None,
+                        rng=rng,
                     )
 
                     # Add documents for full names
                     if always_cpf:
-                        documents['cpf'] = doc_sampler.generate_cpf()
+                        documents['cpf'] = doc_sampler.generate_cpf(rng=rng)
                     if always_pis:
-                        documents['pis'] = doc_sampler.generate_pis()
+                        documents['pis'] = doc_sampler.generate_pis(rng=rng)
                     if always_cnpj:
-                        documents['cnpj'] = doc_sampler.generate_cnpj()
+                        documents['cnpj'] = doc_sampler.generate_cnpj(rng=rng)
                     if always_cei:
-                        documents['cei'] = doc_sampler.generate_cei()
+                        documents['cei'] = doc_sampler.generate_cei(rng=rng)
                     if always_rg:
                         # Use the generated state for RG
-                        documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer)}'
+                        documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer, rng=rng)}'
                     if always_phone:
                         # Get the DDD from the city data
                         city_data = location_sampler.city_data_by_name.get(city_name, {})
                         ddd = city_data.get('ddd', None)
-                        documents['phone'] = generate_phone_number(ddd)
+                        documents['phone'] = generate_phone_number(ddd, rng=rng)
 
                 # Add the location string for name-only results
                 location_str = f'{city_name} - , {state_name} ({state_abbr})'
@@ -628,18 +674,16 @@ def sample(
             # through the same vectorised alias lookup. ``--batch`` is a
             # flush-to-disk cadence (see ``save_to_jsonl`` below), not a
             # sampling-strategy switch.
-            batch_locations = location_sampler.batch_sample_locations(actual_qty, random_mode=random)
-            # Build per-row UF / sex when the experimental conditioning is on.
-            # Sex is drawn 50/50 because the bundled data has no sex prior;
-            # downstream the name sampler falls back to the period-only table
-            # if a (uf, period, sex) partition is absent, so this is safe to
-            # pass even when only some partitions have been ingested.
+            batch_locations = location_sampler.batch_sample_locations(actual_qty, random_mode=random, rng=rng)
+            # Build per-row UF / sex for mixed conditioning. Name tables use
+            # the precomputed conditionals and fail clearly when a selected
+            # bundled modern artifact is missing rather than substituting data.
             batch_ufs: list[str] | None = [loc['state_abbr'] for loc in batch_locations]
             batch_sexes: list[str] | None = per_row_sexes
             if experimental_uf_sex_conditioning and batch_sexes is None:
                 # Compatibility flag now only enables mixed sex when the caller
                 # made no explicit choice; UF conditioning is always active.
-                batch_sexes = _coin_flip_sexes(actual_qty)
+                batch_sexes = _coin_flip_sexes(actual_qty, rng=rng)
             batch_names = name_sampler.batch_sample_names(
                 actual_qty,
                 time_period=selected_period,
@@ -652,6 +696,7 @@ def sample(
                 random_mode=random,
                 ufs=batch_ufs,
                 sexes=batch_sexes,
+                rng=rng,
             )
 
             for i in range(actual_qty):
@@ -670,28 +715,28 @@ def sample(
                 elif state_full_only:
                     location = state_name
                 elif only_cep:
-                    location = location_sampler._get_random_cep_for_city(city_name)
+                    location = location_sampler._get_random_cep_for_city(city_name, rng=rng)
                     location = location_sampler._format_cep(location, not cep_without_dash)
                 else:
                     location = location_sampler.format_full_location(
-                        city_name, state_name, state_abbr, include_cep=True, cep_without_dash=cep_without_dash
+                        city_name, state_name, state_abbr, include_cep=True, cep_without_dash=cep_without_dash, rng=rng
                     )
 
                 # Generate documents using the correct state
                 if always_cpf or only_cpf:
-                    documents['cpf'] = doc_sampler.generate_cpf()
+                    documents['cpf'] = doc_sampler.generate_cpf(rng=rng)
                 if always_pis or only_pis:
-                    documents['pis'] = doc_sampler.generate_pis()
+                    documents['pis'] = doc_sampler.generate_pis(rng=rng)
                 if always_cnpj or only_cnpj:
-                    documents['cnpj'] = doc_sampler.generate_cnpj()
+                    documents['cnpj'] = doc_sampler.generate_cnpj(rng=rng)
                 if always_cei or only_cei:
-                    documents['cei'] = doc_sampler.generate_cei()
+                    documents['cei'] = doc_sampler.generate_cei(rng=rng)
                 if always_rg or only_rg:
-                    documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer)}'
+                    documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer, rng=rng)}'
                 if always_phone or only_fone:
                     city_data = location_sampler.city_data_by_name.get(city_name, {})
                     ddd = city_data.get('ddd', None)
-                    documents['phone'] = generate_phone_number(ddd)
+                    documents['phone'] = generate_phone_number(ddd, rng=rng)
 
                 name_components = batch_names[i]
 
@@ -715,7 +760,7 @@ def sample(
             state_name, state_abbr, city_name = all_state_city_info[i]
 
             # Get a random CEP for the city
-            cep = location_sampler._get_random_cep_for_city(city_name)
+            cep = location_sampler._get_random_cep_for_city(city_name, rng=rng)
             formatted_cep = location_sampler._format_cep(cep, not cep_without_dash)
             all_ceps.append(formatted_cep)
 
@@ -724,7 +769,7 @@ def sample(
             progress_callback(actual_qty * 3 // 4, 'API calls starting')  # Show approximately 75% progress
 
         # Get address data for all CEPs at once
-        address_data_list = asyncio.run(get_address_data_batch(all_ceps, make_api_call, progress_callback))
+        address_data_list = asyncio.run(get_address_data_batch(all_ceps, make_api_call, progress_callback, rng=rng))
 
         # Update progress to indicate API calls are complete
         if progress_callback and make_api_call:
@@ -753,7 +798,7 @@ def sample(
                 # Get the DDD from the city data
                 city_data = location_sampler.city_data_by_name.get(city_name, {})
                 ddd = city_data.get('ddd', None)
-                documents['phone'] = generate_phone_number(ddd)
+                documents['phone'] = generate_phone_number(ddd, rng=rng)
 
             # Add to the new results list with state_info
             results_with_state_info.append((location_str, name_components, documents))

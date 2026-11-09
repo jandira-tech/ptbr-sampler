@@ -66,7 +66,7 @@ def pad_cpf(cpf, validate=False):
     return padded
 
 
-def random_cpf(formatted=True):
+def random_cpf(formatted=True, rng: random.Random | None = None):
     """
     Generate a random, valid Brazilian CPF identifier.
 
@@ -76,7 +76,8 @@ def random_cpf(formatted=True):
     Returns:
         str: A valid CPF as a formatted string when `formatted` is True, otherwise an 11-digit numeric string.
     """
-    stem = random.randint(100000000, 999999999)
+    rng = random if rng is None else rng
+    stem = rng.randint(100000000, 999999999)
     d1, d2 = cpf_check_digits(stem)
     cpf = f'{stem}{d1}{d2}'
     if formatted:

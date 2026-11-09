@@ -590,25 +590,25 @@ class AddressProvider_for_offline:
         'Itaipu',
     )
 
-    def street_prefix(self) -> str:
+    def street_prefix(self, rng: random.Random | None = None) -> str:
         """
         :example: 'rua'
         """
-        return self.random_element(self.street_prefixes)
+        return self.random_element(self.street_prefixes, rng=rng)
 
-    def bairro(self) -> str:
+    def bairro(self, rng: random.Random | None = None) -> str:
         """
         Randomly returns a bairro (neighborhood) name.
         The names were taken from the city of Belo Horizonte - Minas Gerais
         :example: 'Serra'
         """
-        return self.random_element(self.bairros)
+        return self.random_element(self.bairros, rng=rng)
 
     # aliases
-    def neighborhood(self) -> str:
-        return self.bairro()
+    def neighborhood(self, rng: random.Random | None = None) -> str:
+        return self.bairro(rng=rng)
 
-    def random_element(self, elements):
+    def random_element(self, elements, rng: random.Random | None = None):
         """
         Returns a random element from a sequence.
 
@@ -618,18 +618,20 @@ class AddressProvider_for_offline:
         Returns:
             A random element from the sequence
         """
-        return random.choice(elements)
+        rng = random if rng is None else rng
+        return rng.choice(elements)
 
-    def building_number(self) -> str:
+    def building_number(self, rng: random.Random | None = None) -> str:
         """
         Returns a random building number.
 
         Returns:
             A random building number as a string
         """
-        return str(random.randint(1, 999))
+        rng = random if rng is None else rng
+        return str(rng.randint(1, 999))
 
-    def last_name(self) -> str:
+    def last_name(self, rng: random.Random | None = None) -> str:
         """
         Returns a random last name.
 
@@ -670,9 +672,9 @@ class AddressProvider_for_offline:
             'Cardoso',
             'Ramos',
         ]
-        return self.random_element(last_names)
+        return self.random_element(last_names, rng=rng)
 
-    def first_name(self) -> str:
+    def first_name(self, rng: random.Random | None = None) -> str:
         """
         Returns a random first name.
 
@@ -680,9 +682,9 @@ class AddressProvider_for_offline:
             A random first name as a string
         """
         # Use the non_weighted_random_name method to get a random first name
-        return self.non_weighted_random_name()
+        return self.non_weighted_random_name(rng=rng)
 
-    def non_weighted_random_name(self, names_path: str | None = None) -> str:
+    def non_weighted_random_name(self, names_path: str | None = None, rng: random.Random | None = None) -> str:
         """
         Returns a random name from the names data file without weighting.
 
@@ -711,7 +713,7 @@ class AddressProvider_for_offline:
                 return 'João'
 
             # Return a random name
-            return self.random_element(all_names)
+            return self.random_element(all_names, rng=rng)
         except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
             # In case of error, return a default name
             print(f'Warning: Could not load names from {names_path}: {e}')
