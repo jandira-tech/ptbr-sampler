@@ -18,6 +18,7 @@ from ptbr_sampler.data_pipeline.http import HttpClient, HttpError
 from ptbr_sampler.data_pipeline.ibge import OfficialIBGEClient
 from ptbr_sampler.data_pipeline.io import file_metadata, write_json
 from ptbr_sampler.data_pipeline.registry import SOURCE_REGISTRY, SOURCES, default_cache_dir
+from ptbr_sampler.data_pipeline.validate import validate_runtime_data
 
 app = typer.Typer(help='Fetch, verify, and build the PT-BR sampler datasets.', no_args_is_help=True)
 console = Console()
@@ -113,19 +114,13 @@ def validate(data_dir: DataOption = DEFAULT_DATA) -> None:
         console.print('[red]manifest.json missing; run fetch and build first[/red]')
         raise typer.Exit(1)
     try:
-        manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-        coverage = manifest['coverage']
-        expected = {'ibge_ufs': 27, 'cities': 5_570, 'states': 27, 'arpen_births': 2_537_697}
-        for key, value in expected.items():
-            if coverage.get(key) != value:
-                raise ValueError(f'{key}: expected {value}, got {coverage.get(key)}')
-        for parquet in data_dir.joinpath('parquet').rglob('*.parquet'):
-            if any(parent in {'ibge2022', 'arpen2025'} for parent in parquet.parts) and not parquet.with_name('data_origin.json').is_file():
-                raise ValueError(f'missing data_origin.json beside {parquet}')
-    except (ValueError, KeyError, json.JSONDecodeError) as error:
+        result = validate_runtime_data(data_dir)
+    except (ValueError, KeyError, json.JSONDecodeError, OSError) as error:
         console.print(f'[red]validation failed: {error}[/red]')
         raise typer.Exit(1) from error
-    console.print('[green]Dataset manifest, coverage, and sidecars valid.[/green]')
+    console.print(
+        f'[green]Validated {result["artifacts_verified"]} artifacts, Parquet totals/weights, geography, and Arpen births.[/green]'
+    )
 
 
 def main() -> None:

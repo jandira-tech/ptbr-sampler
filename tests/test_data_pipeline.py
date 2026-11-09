@@ -238,12 +238,36 @@ def test_committed_runtime_inventory_geography_and_arpen():
             sidecar_path = parquet.with_name('data_origin.json')
             assert sidecar_path.is_file(), parquet
             sidecar = json.loads(sidecar_path.read_text())
-            assert {'source', 'source_url', 'rows', 'coverage', 'transformation', 'provenance', 'suppression', 'limitations'} <= sidecar.keys()
-    assert abs(sum(city['population_percentage_total'] for city in cities['cities'].values()) - 100) < 1e-6
+            assert {
+                'source',
+                'source_url',
+                'rows',
+                'coverage',
+                'transformation',
+                'provenance',
+                'suppression',
+                'limitations',
+            } <= sidecar.keys()
+    joined_national = locations['states'] and sum(state['joined_city_population'] for state in locations['states'].values())
+    official_national = sum(state['state_population'] for state in locations['states'].values())
+    assert (
+        abs(sum(city['population_percentage_total'] for city in cities['cities'].values()) - 100 * joined_national / official_national)
+        < 1e-6
+    )
     for state in locations['states'].values():
         uf = state['state_abbr']
-        assert abs(sum(city['population_percentage_state'] for city in cities['cities'].values() if city['city_uf'] == uf) - 100) < 1e-6
-        assert sum(city['city_population'] for city in cities['cities'].values() if city['city_uf'] == uf) == state['state_population']
+        expected_percentage = 100 * state['joined_city_population'] / state['state_population']
+        assert (
+            abs(
+                sum(city['population_percentage_state'] for city in cities['cities'].values() if city['city_uf'] == uf)
+                - expected_percentage
+            )
+            < 1e-6
+        )
+        assert (
+            sum(city['city_population'] for city in cities['cities'].values() if city['city_uf'] == uf) == state['joined_city_population']
+        )
+        assert state['joined_city_population'] + state['unmatched_source_population'] == state['state_population']
 
 
 def test_fetch_arpen_source_uses_verified_national_and_uf_queries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

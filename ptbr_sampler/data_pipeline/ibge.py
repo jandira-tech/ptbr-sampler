@@ -24,6 +24,17 @@ REQUIRED_TABLES = {
 NATIONAL_COUNTS = {'nome': (128_458, 190_383_184), 'sobrenome': (201_601, 333_496_261)}
 UF_COUNTS = {'nome': (379_611,), 'sobrenome': (459_233,)}
 ANCHORS = {('nome', 'maria'): 12_284_478, ('sobrenome', 'silva'): 34_030_104, ('sobrenome', 'santos'): 21_367_475}
+OFFICIAL_UF_ANCHORS = {
+    ('SP', 'nome', 'maria'): 2_131_207,
+    ('SP', 'sobrenome', 'silva'): 5_928_587,
+    ('SP', 'sobrenome', 'santos'): 3_974_662,
+    ('AC', 'nome', 'maria'): 72_420,
+}
+_SP_PUBLICATION = 'https://www.agenciasp.sp.gov.br/maria-jose-silva-santos-veja-os-nomes-e-sobrenomes-mais-frequentes-no-estado-de-sp/'
+OFFICIAL_UF_ANCHOR_EVIDENCE = {
+    **{key: _SP_PUBLICATION for key in OFFICIAL_UF_ANCHORS if key[0] == 'SP'},
+    ('AC', 'nome', 'maria'): 'https://g1.globo.com/ac/acre/noticia/2025/11/04/nomes-mais-populares-acre-censo-2022.ghtml',
+}
 STOCK_YEARS = tuple(range(1930, 2021, 10))
 
 
@@ -82,6 +93,14 @@ def validate_mirror(connection: sqlite3.Connection) -> dict[str, Any]:
         ).fetchone()
         if actual is None or actual[0] != expected:
             raise ValueError(f'IBGE official anchor mismatch for {name}: {actual} != {expected}')
+    for (uf, kind, name), expected in OFFICIAL_UF_ANCHORS.items():
+        actual = connection.execute(
+            'select frequencia from frequencias where id_local=? and ano=2022 and tipo_nome=? and nome=?',
+            (int(UF_CODES[uf]), kind, name),
+        ).fetchone()
+        if actual is None or actual[0] != expected:
+            raise ValueError(f'IBGE published UF anchor mismatch for {uf}/{name}: {actual} != {expected}')
+    coverage['published_uf_anchors'] = len(OFFICIAL_UF_ANCHORS)
     return coverage
 
 
@@ -174,4 +193,23 @@ class OfficialIBGEClient:
         payload = self._get(url, timeout)
         if not isinstance(payload, list) or not payload:
             raise ValueError('empty or malformed official v3 name history')
+        expected_localities = {str(localidade)}
+        if str(localidade) == '0':
+            expected_localities |= {'BR', 'Brasil', '0'}
+        for row in payload:
+            if not isinstance(row, dict):
+                raise ValueError('malformed official v3 history row')  # noqa: TRY004
+            if not isinstance(row.get('nome'), str) or row['nome'].casefold() != name.casefold():
+                raise ValueError('official v3 history name mismatch')
+            if not isinstance(row.get('localidade'), str | int) or str(row['localidade']) not in expected_localities:
+                raise ValueError('official v3 history locality mismatch')
+            periods = row.get('res')
+            if not isinstance(periods, list) or not periods:
+                raise ValueError('official v3 history res must be a nonempty list')
+            for period in periods:
+                if not isinstance(period, dict) or not isinstance(period.get('periodo'), str) or not period['periodo'].strip():
+                    raise ValueError('official v3 history period is required')
+                frequency = period.get('frequencia')
+                if not isinstance(frequency, int) or isinstance(frequency, bool) or frequency < 0:
+                    raise ValueError('official v3 history frequency must be a nonnegative integer')
         return payload

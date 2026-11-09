@@ -16,7 +16,13 @@ import pyarrow.parquet as pq
 from ptbr_sampler.data_pipeline.arpen import arpen_url, fetch_arpen2025
 from ptbr_sampler.data_pipeline.geography import rebuild_geography_files
 from ptbr_sampler.data_pipeline.http import HttpClient
-from ptbr_sampler.data_pipeline.ibge import derive_historical_bins, read_ibge_mirror, validate_mirror
+from ptbr_sampler.data_pipeline.ibge import (
+    OFFICIAL_UF_ANCHOR_EVIDENCE,
+    OFFICIAL_UF_ANCHORS,
+    derive_historical_bins,
+    read_ibge_mirror,
+    validate_mirror,
+)
 from ptbr_sampler.data_pipeline.io import atomic_write, sha256_file, utc_now, write_json
 from ptbr_sampler.data_pipeline.registry import SOURCES, UF_CODES
 
@@ -264,6 +270,7 @@ def build_all(data_dir: Path, cache: Path, *, client: HttpClient | None = None, 
         cache / 'geography' / 'POP2026_20261029.xlsx',
         data_dir / 'cities_with_ceps.json',
         data_dir / 'locations_data.json',
+        comparison_workbook_path=cache / 'geography' / 'estimativa_dou_2026.xlsx',
     )
     coverage.update(
         {
@@ -281,7 +288,15 @@ def build_all(data_dir: Path, cache: Path, *, client: HttpClient | None = None, 
         'rows': geography_totals['cities'],
         'coverage': '5,570 municipalities and 27 UFs',
         'transformation': 'Exact seven-digit IBGE-code join over CEP base; percentages raw_count*100/reconciled_total',
-        'provenance': 'POP2026 TCU-corrected XLSX; estimativa_dou_2026.xlsx retained for comparison',
+        'provenance': 'POP2026 TCU-corrected XLSX; keyed comparison against estimativa_dou_2026.xlsx',
+        'dou_comparison': {
+            'url': geography_totals['comparison']['source_url'],
+            'sha256': geography_totals['comparison']['sha256'],
+            'summary': geography_totals['comparison']['summary'],
+            'national_population_delta': geography_totals['comparison']['national_population_delta'],
+            'artifact': geography_totals['comparison_path'],
+        },
+        'official_uf_reconciliation': geography_totals['reconciliation'],
         'suppression': 'No municipality suppression',
         'limitations': [
             (
@@ -305,6 +320,7 @@ def build_all(data_dir: Path, cache: Path, *, client: HttpClient | None = None, 
             or path.parent.name == 'sanitized'
             or 'sanitized' in path.parts
             or path.name.endswith('.data_origin.json')
+            or path.name in {'cities_with_ceps.json', 'locations_data.json'}
         )
     ]
     artifacts = sorted(f'ptbr_sampler/data/{path.relative_to(data_dir)}' for path in new_artifacts)
@@ -328,6 +344,19 @@ def build_all(data_dir: Path, cache: Path, *, client: HttpClient | None = None, 
         'artifacts': artifacts,
         'artifact_sha256': {artifact: sha256_file(data_dir / artifact.removeprefix('ptbr_sampler/data/')) for artifact in artifacts},
         'geography_table_totals': geography_totals,
+        'geography_comparison': geography_totals['comparison'],
+        'geography_reconciliation': geography_totals['reconciliation'],
+        'official_uf_anchors': [
+            {
+                'uf': uf,
+                'kind': kind,
+                'name': name,
+                'count': count,
+                'evidence_url': OFFICIAL_UF_ANCHOR_EVIDENCE[(uf, kind, name)],
+                'ibge_url': f'https://censo2022.ibge.gov.br/nomes/nome/{name}?tipo={kind}&localidade={UF_CODES[uf]}',
+            }
+            for (uf, kind, name), count in sorted(OFFICIAL_UF_ANCHORS.items())
+        ],
         'limitations': [
             'Official IBGE v3 live rebuild is separate and may be unavailable; mirror anchors were checked against known official figures.',
             'Arpen rankings are top-50 samples, not complete distributions.',
