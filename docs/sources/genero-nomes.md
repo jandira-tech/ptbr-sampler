@@ -74,10 +74,14 @@ of thin air.
 
 ## Sampler integration
 
-Pass `sex_conditioning='M'`, `'F'`, `'mixed'`, or `'population'` with
+Pass `sex_conditioning='M'`, `'F'`, or `'mixed'` with
 `census_year=2010` to `ptbr_sampler.sampler.sample(...)`, or
-`--census-year 2010 --sex-conditioning {M,F,mixed,population}` on the
-CLI. See `docs/data-origins.md` §1 for the resolution chain and
+`--census-year 2010 --sex-conditioning {M,F,mixed}` on the
+CLI. `sex_conditioning='population'` is supported only with the default
+`census_year=2022`, where it draws from the observed 2022 sex prior;
+with `census_year=2010` it raises
+`ValueError("sex_conditioning='population' requires census_year=2022")`.
+See `docs/data-origins.md` §1 for the resolution chain and
 `docs/sources/bibliography.md` for the cross-reference to the IBGE Nomes API.
 
 ## Coverage caveat

@@ -370,7 +370,8 @@ def test_ingest_ibge_2022_restores_backup_when_staging_swap_fails(tmp_path: Path
 
     assert sentinel.is_file() and sentinel.read_text(encoding='utf-8') == 'keep-me'
     assert not (out_root / '.bak_census_year=2022').exists()
-    assert not list(out_root.glob('.tmp_census_year=2022_*'))
+    assert not (out_root / '.tmp_census_year=2022').exists()
+    assert not list(out_root.glob('.tmp_census_year=2022*'))
 
 
 def test_collect_runtime_artifacts_ignores_backup_and_hidden_ancestor_dirs(tmp_path: Path):
@@ -394,7 +395,7 @@ def test_publish_to_huggingface_hashes_staged_files_for_manifest(tmp_path: Path,
     import hashlib
     import os
     from types import SimpleNamespace
-    import huggingface_hub
+    huggingface_hub = pytest.importorskip('huggingface_hub')
     from scripts import publish_hf_dataset
 
     data_dir = tmp_path / 'data'

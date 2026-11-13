@@ -351,3 +351,58 @@ def test_data_dir_override_offline_true_sha256_and_census_year_validation(
     with pytest.raises(ValueError, match='hf_repo_id'):
         ds_mod.load_dataset_manifest()
     ds_mod.load_dataset_manifest.cache_clear()
+
+
+def test_from_parquet_accepts_ptbr_sampler_data_dir_outside_default_json_roots(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When PTBR_SAMPLER_DATA_DIR points outside cwd/home/tempdir/cache (e.g. /opt/ptbr-data in Docker),
+    BrazilianNameSampler.from_parquet must accept middle_names.json resolved from PTBR_SAMPLER_DATA_DIR.
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    import tempfile
+
+    from ptbr_sampler.br_name_class import BrazilianNameSampler
+
+    work_dir = tmp_path / 'work'
+    home_dir = tmp_path / 'home'
+    sys_tmp_dir = tmp_path / 'tmp'
+    cache_dir = tmp_path / 'cache' / 'ptbr-sampler'
+    ext_data_dir = tmp_path / 'opt_ptbr_data'
+    for d in (work_dir, home_dir, sys_tmp_dir, cache_dir, ext_data_dir):
+        d.mkdir(parents=True, exist_ok=True)
+
+    (ext_data_dir / 'middle_names.json').write_text(
+        json.dumps(
+            {
+                'second_names': {'Clara': {'count': 10, 'percentage': 100.0}},
+                'percentage_with_second': 30.0,
+            }
+        ),
+        encoding='utf-8',
+    )
+    fn_part = ext_data_dir / 'parquet' / 'census_year=2022' / 'first_names' / 'scope=national' / 'part.parquet'
+    sn_part = ext_data_dir / 'parquet' / 'census_year=2022' / 'surnames' / 'scope=national' / 'part.parquet'
+    fn_part.parent.mkdir(parents=True, exist_ok=True)
+    sn_part.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(pa.table({'name': ['Maria'], 'count': [100], 'weight': [1.0]}), fn_part)
+    pq.write_table(
+        pa.table({'name': ['Silva', 'Santos'], 'count': [60, 40], 'weight': [0.6, 0.4]}),
+        sn_part,
+    )
+
+    monkeypatch.chdir(work_dir)
+    monkeypatch.setenv('HOME', str(home_dir))
+    monkeypatch.setattr(tempfile, 'gettempdir', lambda: str(sys_tmp_dir))
+    monkeypatch.setenv('PTBR_SAMPLER_CACHE_DIR', str(cache_dir))
+    monkeypatch.setenv('PTBR_SAMPLER_DATA_DIR', str(ext_data_dir))
+    monkeypatch.setenv('PTBR_SAMPLER_IGNORE_LOCAL_DATA', '1')
+
+    sampler = BrazilianNameSampler.from_parquet(census_year=2022)
+    assert sampler.middle_names_data is not None
+    assert sampler.middle_names_data['percentage_with_second'] == 30.0
+    full_name = sampler.get_random_name(include_middle=False)
+    assert full_name.startswith('Maria')
+

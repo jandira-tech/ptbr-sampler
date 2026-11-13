@@ -145,17 +145,17 @@ def _rng_from_python_random(py_rng: random.Random | None = None) -> np.random.Ge
 
 
 def _allowed_json_roots() -> tuple[str, ...]:
-    return tuple(
-        dict.fromkeys(
-            (
-                os.path.realpath(Path(__file__).resolve().parents[1]),
-                os.path.realpath(Path.cwd()),
-                os.path.realpath(Path.home()),
-                os.path.realpath(tempfile.gettempdir()),
-                os.path.realpath(get_revision_cache_dir().parent),
-            )
-        )
+    roots = (
+        os.path.realpath(Path(__file__).resolve().parents[1]),
+        os.path.realpath(Path.cwd()),
+        os.path.realpath(Path.home()),
+        os.path.realpath(tempfile.gettempdir()),
+        os.path.realpath(get_revision_cache_dir().parent),
     )
+    env_data_dir = os.environ.get('PTBR_SAMPLER_DATA_DIR')
+    if env_data_dir:
+        roots = (*roots, os.path.realpath(Path(env_data_dir).expanduser()))
+    return tuple(dict.fromkeys(roots))
 
 
 def _validate_local_json_path(raw: str | Path) -> Path:
