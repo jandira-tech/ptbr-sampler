@@ -83,7 +83,7 @@ An architectural and statistical review separated those two tracks:
 | **Sex Conditioning Provenance** | Unsupported | `genero-nomes` (`91.9%`) + Gemini LLM (`8.1%`) | 2022 empirical counts | **`99.8207%` observed IBGE 2022 mass (`0.0%` LLM in 2022)** |
 | **Unobserved Joint Queries** | N/A | Silent fallback or 2010 prior product | Implicit UF × sex × blend product | **Explicit `strict` (observed only) vs. `estimated` (Bayes opt-in)** |
 | **Weight Precision & Alias Error** | Python `float` (`random.choices`) | `float32` Parquet ($\sim 10^{-7}$ drift) | `float64` Vose | **`float64` + `math.fsum` + Kahan Vose ($L_\infty = 1.39 \times 10^{-17}$)** |
-| **Published Wheel Size** | Multi-MB source JSONs | Multi-MB JSON + Parquet | `~80 MiB` (867 bundled files) | **`102.8 KiB` (105,225 bytes, `< 150 KiB`, manifest-only + HF SHA-256 cache)** |
+| **Published Wheel Size** | Multi-MB source JSONs | Multi-MB JSON + Parquet | `~80 MiB` (867 bundled files) | **`102.8 KiB` (`< 150 KiB`, manifest-only + HF SHA-256 cache)** |
 | **Determinism & Concurrency** | Module-global `random` | Module-global `random` + NumPy | `random.Random` injection | **Isolated `rng=random.Random`, `RLock` stores, `asyncio`-safe** |
 | **Faker Integration** | None | None | `ptbr_sampler.faker` | **`ptbr_sampler.faker` (`PTBRProvider`, `install_ptbr`)** |
 | **Statistical GoF Suite** | Invalid nominal KS + top-50 $\chi^2$ | Partial audit checks | Unit assertions | **4-Layer exact + tail-pooled $\chi^2$/$G^2$ + Holm–Bonferroni ($\alpha=0.001$)** |
@@ -94,7 +94,7 @@ An architectural and statistical review separated those two tracks:
 
 - **Quality gates on the PR head (`b6adabc`):** SonarCloud Quality Gate **PASS** (0 new issues, 0 accepted issues, 0 security hotspots, 0.6% duplication) and Socket Security checks **PASS**. The quota-limited Jules review job (Google Jules API `HTTP 400 FAILED_PRECONDITION`, daily task quota exhaustion) is environmental and was documented in the PR thread; it posted 0 review comments.
 - **Automated review reconciliation:** all **25 CodeRabbit findings** resolved and individually replied (21 Round-1 + 4 Round-2), including the `PTBR_SAMPLER_DATA_DIR` JSON-root containment fix in `_allowed_json_roots()`, the `huggingface_hub` test-extra import guard (`pytest.importorskip`), the exact `.tmp_census_year=2022` staging-cleanup assertion, and the `genero-nomes` `population` / `census_year=2010` documentation correction. Dependabot critical alert **#7** (`uv` < `0.13.4`) auto-closed on merge because `uv.lock` pins `uv 0.13.8`.
-- **Local gates on `5362c94`:** `ruff format` and `ruff check` clean, `uv lock --check` OK, `uv run pytest -n auto -q` → **554 passed, 90% coverage**, and `uv build` → `ptbr_sampler-0.3.0-py3-none-any.whl` = **105,225 bytes (102.8 KiB)** containing only `ptbr_sampler/data/dataset_manifest.json` under `ptbr_sampler/data/`, plus a 97,193-byte sdist.
+- **Local gates on `5362c94`:** `ruff format` and `ruff check` clean, `uv lock --check` OK, `uv run pytest -n auto -q` → **554 passed, 90% coverage**, and `uv build` → `ptbr_sampler-0.3.0-py3-none-any.whl` = **102.8 KiB** containing only `ptbr_sampler/data/dataset_manifest.json` under `ptbr_sampler/data/`, plus a ~95 KiB sdist.
 - **Distribution & documentation:** release published to PyPI as `ptbr-sampler==0.3.0`; this documentation is built with MkDocs Material and hosted on Read the Docs at <https://ptbr-sampler.readthedocs.io/> (`.readthedocs.yaml` + `mkdocs.yml`, `mkdocs build --strict` clean).
 
 ---
@@ -272,7 +272,7 @@ confirming exact IEEE-754 `float64` fidelity with zero Monte Carlo sampling unce
 
 ### 5.1 `< 150 KiB` Wheel & Cryptographic Hugging Face Runtime Resolution
 
-Shipping `195` Parquet and JSON files directly inside a PyPI wheel penalizes every CI job, serverless function, and microservice with tens of megabytes of unused regional and historical partitions. In `0.3.0`, `[tool.uv.build-backend]` excludes all `parquet/**` and bulk JSON payloads from both wheel and sdist builds, shipping **only `ptbr_sampler/data/dataset_manifest.json`** (`~16 KiB`) inside a **`102.8 KiB` (105,225 bytes, `< 150 KiB`) wheel**.
+Shipping `195` Parquet and JSON files directly inside a PyPI wheel penalizes every CI job, serverless function, and microservice with tens of megabytes of unused regional and historical partitions. In `0.3.0`, `[tool.uv.build-backend]` excludes all `parquet/**` and bulk JSON payloads from both wheel and sdist builds, shipping **only `ptbr_sampler/data/dataset_manifest.json`** (`~16 KiB`) inside a **`102.8 KiB` (`< 150 KiB`) wheel**.
 
 ```mermaid
 sequenceDiagram
