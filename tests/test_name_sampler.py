@@ -637,3 +637,12 @@ def test_name_sampler_preloaded_data_and_path_traversal_rejection(mock_name_data
     with pytest.raises(ValueError, match='traversal|Null byte'):
         BrazilianNameSampler(mock_name_data, middle_names_path='../../../etc/passwd')
 
+
+def test_name_sampler_rejects_outside_allowed_roots_and_non_json_paths(mock_name_data):
+    for bad_target in ('/etc/passwd', '/etc/shadow.json', '/var/tmp/../etc/hosts.json'):
+        with pytest.raises(ValueError, match='JSON|outside|traversal'):
+            BrazilianNameSampler(bad_target)
+        with pytest.raises(ValueError, match='JSON|outside|traversal'):
+            BrazilianNameSampler(mock_name_data, names_path=bad_target)
+        with pytest.raises(ValueError, match='JSON|outside|traversal'):
+            BrazilianNameSampler(mock_name_data, middle_names_path=bad_target)

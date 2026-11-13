@@ -16,6 +16,7 @@ import json
 import math
 import os
 import random
+import tempfile
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
@@ -143,14 +144,41 @@ def _rng_from_python_random(py_rng: random.Random | None = None) -> np.random.Ge
     return np.random.default_rng(source.getrandbits(64))
 
 
+def _allowed_json_roots() -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            (
+                os.path.realpath(Path(__file__).resolve().parents[1]),
+                os.path.realpath(Path.cwd()),
+                os.path.realpath(Path.home()),
+                os.path.realpath(tempfile.gettempdir()),
+                os.path.realpath(get_revision_cache_dir().parent),
+            )
+        )
+    )
+
+
 def _validate_local_json_path(raw: str | Path) -> Path:
-    """Reject null bytes and parent-directory traversal segments before opening a local JSON file."""
+    """Confine local JSON file paths to allowed roots and reject traversal or non-JSON targets."""
     raw_str = os.fspath(raw)
     if '\x00' in raw_str:
         raise ValueError('Null byte in JSON file path is not allowed')
-    if '..' in Path(raw_str).parts:
+    raw_path = Path(raw_str)
+    if '..' in raw_path.parts:
         raise ValueError(f'Parent-directory traversal ("..") is not allowed in JSON file path: {raw_str}')
-    return Path(os.path.realpath(raw_str))
+    if raw_path.suffix.lower() != '.json':
+        raise ValueError(f'Local JSON file path must end with .json: {raw_str}')
+    resolved = os.path.realpath(raw_str)
+    for root in _allowed_json_roots():
+        in_root = resolved == root or resolved.startswith(root + os.sep)
+        if not in_root:
+            continue
+        try:
+            if os.path.commonpath([root, resolved]) == root:
+                return Path(resolved)
+        except ValueError:
+            continue
+    raise ValueError(f'JSON file path resolves outside allowed roots: {raw_str}')
 
 
 class BrazilianNameSampler:

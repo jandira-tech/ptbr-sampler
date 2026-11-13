@@ -53,7 +53,7 @@ def name_sampler():
     name_data = {'surnames': surnames_data['surnames']}
     name_data.update(names_data)
 
-    return BrazilianNameSampler(name_data, middle_names_path, None)
+    return BrazilianNameSampler(None, middle_names_path, None, preloaded_data=name_data)
 
 
 @pytest.fixture

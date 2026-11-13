@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -19,6 +20,21 @@ DEFAULT_DATA_DIR = Path(__file__).resolve().parents[1] / 'ptbr_sampler' / 'data'
 DEFAULT_REPO_ID = 'arthrod/ptbr-sampler-data'
 _SHARED_JSON_FILES = frozenset({'cities_with_ceps.json', 'locations_data.json', 'middle_names.json'})
 _LEGACY_2010_JSON_FILES = frozenset({'names_data.json', 'surnames_data.json'})
+_SAFE_ID_CHAR_MAP: dict[str, str] = {ch: ch for ch in 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-/'}
+_HF_REPO_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$')
+_HF_REVISION_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
+
+
+def _validate_hf_repo_id(repo_id: str) -> str:
+    if '\x00' in repo_id or '..' in repo_id or not _HF_REPO_ID_RE.fullmatch(repo_id):
+        raise ValueError(f'Invalid Hugging Face repo_id: {repo_id!r}')
+    return ''.join(_SAFE_ID_CHAR_MAP[ch] for ch in repo_id)
+
+
+def _validate_hf_revision(revision: str) -> str:
+    if '\x00' in revision or '..' in revision or not _HF_REVISION_RE.fullmatch(revision):
+        raise ValueError(f'Invalid Hugging Face revision: {revision!r}')
+    return ''.join(_SAFE_ID_CHAR_MAP[ch] for ch in revision)
 
 
 def _sha256(path: Path) -> str:
@@ -112,12 +128,14 @@ def write_dataset_manifest(
     from scripts._cli_paths import resolve_cli_path  # noqa: PLC0415
 
     safe_data_dir = resolve_cli_path(data_dir)
+    safe_repo_id = _validate_hf_repo_id(repo_id)
+    safe_revision = _validate_hf_revision(revision)
     artifacts = collect_runtime_artifacts(safe_data_dir)
     manifest = {
         'schema_version': 1,
         'package_version': ptbr_sampler.__version__,
-        'hf_repo_id': repo_id,
-        'hf_revision': revision,
+        'hf_repo_id': safe_repo_id,
+        'hf_revision': safe_revision,
         'artifacts': artifacts,
     }
     out_path = safe_data_dir / 'dataset_manifest.json'
@@ -137,33 +155,33 @@ def publish_to_huggingface(
     from scripts._cli_paths import resolve_cli_path  # noqa: PLC0415
 
     safe_data_dir = resolve_cli_path(data_dir)
+    safe_repo_id = _validate_hf_repo_id(repo_id)
     artifacts = collect_runtime_artifacts(safe_data_dir)
     api = HfApi(token=token or os.environ.get('HF_TOKEN'))
-    api.create_repo(repo_id=repo_id, repo_type='dataset', private=private, exist_ok=True)
+    api.create_repo(repo_id=safe_repo_id, repo_type='dataset', private=private, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix='ptbr_hf_stage_') as tmp:
-        stage_real = os.path.realpath(tmp)
-        stage = Path(stage_real)
+        stage = resolve_cli_path(tmp)
         for rel in artifacts:
             if '..' in Path(rel).parts:
                 raise ValueError(f'Invalid artifact relative path: {rel!r}')
             src = safe_data_dir / rel
-            dst_real = os.path.realpath(stage / rel)
-            if os.path.commonpath([stage_real, dst_real]) != stage_real:
+            dst = resolve_cli_path(stage / rel)
+            if os.path.commonpath([str(stage), str(dst)]) != str(stage):
                 raise ValueError(f'Artifact destination escapes staging directory: {rel!r}')
-            dst = Path(dst_real)
             dst.parent.mkdir(parents=True, exist_ok=True)
             try:
                 os.link(src, dst)
             except OSError:
                 shutil.copy2(src, dst)
-        readme_path = Path(os.path.realpath(stage / 'README.md'))
-        if os.path.commonpath([stage_real, str(readme_path)]) != stage_real:
+        readme_path = resolve_cli_path(stage / 'README.md')
+        if os.path.commonpath([str(stage), str(readme_path)]) != str(stage):
             raise ValueError('Staging README path escaped staging directory')
-        readme_path.write_text(build_dataset_card(repo_id, artifacts), encoding='utf-8')
+        with readme_path.open('w', encoding='utf-8') as fh:
+            fh.write(build_dataset_card(safe_repo_id, artifacts))
 
         commit_info = api.upload_folder(
-            repo_id=repo_id,
+            repo_id=safe_repo_id,
             repo_type='dataset',
             folder_path=str(stage),
             commit_message=f'Publish ptbr-sampler v{ptbr_sampler.__version__} runtime datasets ({len(artifacts)} files)',
@@ -171,9 +189,9 @@ def publish_to_huggingface(
 
     commit_oid = str(commit_info.oid)
     if len(commit_oid) != 40:
-        info = api.repo_info(repo_id=repo_id, repo_type='dataset')
+        info = api.repo_info(repo_id=safe_repo_id, repo_type='dataset')
         commit_oid = str(info.sha)
-    return write_dataset_manifest(safe_data_dir, repo_id=repo_id, revision=commit_oid)
+    return write_dataset_manifest(safe_data_dir, repo_id=safe_repo_id, revision=_validate_hf_revision(commit_oid))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -189,11 +207,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     safe_data_dir = resolve_cli_path(args.data_dir)
+    safe_repo_id = _validate_hf_repo_id(args.repo_id)
     if args.publish:
-        out = publish_to_huggingface(safe_data_dir, repo_id=args.repo_id, private=args.private)
-        print(f'Published to {args.repo_id} and pinned manifest: {out}')
+        out = publish_to_huggingface(safe_data_dir, repo_id=safe_repo_id, private=args.private)
+        print(f'Published to {safe_repo_id} and pinned manifest: {out}')
     else:
-        out = write_dataset_manifest(safe_data_dir, repo_id=args.repo_id, revision=args.revision)
+        safe_revision = _validate_hf_revision(args.revision)
+        out = write_dataset_manifest(safe_data_dir, repo_id=safe_repo_id, revision=safe_revision)
         print(f'Wrote manifest ({out})')
     return 0
 

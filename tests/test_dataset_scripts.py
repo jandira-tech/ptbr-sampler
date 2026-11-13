@@ -205,7 +205,7 @@ def test_redirect_handler_blocks_disallowed_hosts():
         download_datasets._assert_allowed_https_url('https://evil.example.com/payload.parquet')
 
     handler = download_datasets._AllowedRedirectHandler()
-    req = urllib.request.Request('https://huggingface.co/datasets/x')  # noqa: S310
+    req = urllib.request.Request('https://huggingface.co/datasets/x')
     with pytest.raises(RuntimeError, match='Blocked redirect or fetch'):
         handler.redirect_request(req, None, 302, 'Found', {}, 'https://evil.example.com/steal')
 
@@ -311,3 +311,16 @@ def test_cli_scripts_reject_path_traversal_and_outside_workspace_paths(tmp_path:
         with pytest.raises(ValueError, match='CLI path|Parent-directory|repository or temp'):
             publish_hf_dataset.write_dataset_manifest(Path(bad_path))
 
+
+def test_publish_hf_dataset_rejects_malformed_repo_id_and_revision(tmp_path: Path):
+    from scripts import publish_hf_dataset
+
+    for bad_repo in ('../evil/repo', 'evil/../repo', 'no-namespace', 'org/repo/extra', 'org/bad\x00repo'):
+        with pytest.raises(ValueError, match='repo_id'):
+            publish_hf_dataset.main(['--data-dir', str(tmp_path), '--repo-id', bad_repo, '--manifest-only'])
+        with pytest.raises(ValueError, match='repo_id'):
+            publish_hf_dataset.publish_to_huggingface(tmp_path, repo_id=bad_repo)
+
+    for bad_rev in ('../evil', 'rev/slash', 'bad\x00rev', ''):
+        with pytest.raises(ValueError, match='revision'):
+            publish_hf_dataset.main(['--data-dir', str(tmp_path), '--revision', bad_rev, '--manifest-only'])
