@@ -32,9 +32,13 @@ import argparse
 import csv
 import datetime
 import json
+import math
+import shutil
 import sys
+from collections import defaultdict
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
@@ -43,11 +47,24 @@ from ptbr_sampler.sampling.vocabulary import GivenNameVocabulary
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
+CENSUS_2022_DECADE_TO_PERIOD: dict[int, str] = {
+    1930: 'ate1940',
+    1940: 'ate1950',
+    1950: 'ate1960',
+    1960: 'ate1970',
+    1970: 'ate1980',
+    1980: 'ate1990',
+    1990: 'ate2000',
+    2000: 'ate2010',
+    2010: 'ate2020',
+    2020: '2020_2022',
+}
+
 _SCHEMA = pa.schema(
     [
-        pa.field('name', pa.dictionary(pa.int32(), pa.large_string())),
-        pa.field('count', pa.uint64()),
-        pa.field('weight', pa.float32()),
+        ('name', pa.string()),
+        ('count', pa.int64()),
+        ('weight', pa.float64()),
     ]
 )
 
@@ -57,13 +74,27 @@ _SEX_PRIOR_SCHEMA = pa.schema(
         pa.field('count_male', pa.uint64()),
         pa.field('count_female', pa.uint64()),
         pa.field('count_total', pa.uint64()),
-        pa.field('p_male', pa.float32()),
-        pa.field('p_female', pa.float32()),
+        pa.field('p_male', pa.float64()),
+        pa.field('p_female', pa.float64()),
         pa.field('classification', pa.large_string()),
         pa.field('group_name', pa.large_string()),
         # Provenance label so reviewers can audit which rows are empirical
         # ('brasil.io/genero-nomes') vs LLM-tagged ('gemini-...').
         pa.field('source', pa.large_string()),
+    ]
+)
+
+_SEX_PRIOR_2022_SCHEMA = pa.schema(
+    [
+        ('name', pa.string()),
+        ('canonical_key', pa.string()),
+        ('count_total', pa.int64()),
+        ('count_male', pa.int64()),  # nullable: None when IBGE suppressed (<20)
+        ('count_female', pa.int64()),  # nullable: None when IBGE suppressed (<20)
+        ('residual_unassigned', pa.int64()),
+        ('p_male', pa.float64()),  # NaN when male cell suppressed with positive residual
+        ('p_female', pa.float64()),  # NaN when female cell suppressed with positive residual
+        ('censoring_regime', pa.string()),
     ]
 )
 
@@ -82,11 +113,13 @@ def _write_origin_sidecar(out_dir: Path, *, source: str, url: str, rows: int, ex
     back to the upstream source without grepping the ingester. Keep the
     payload small and machine-readable.
     """
+    now_iso = datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds')
     payload: dict[str, object] = {
         'source': source,
         'url': url,
         'rows': rows,
-        'fetched_at_utc': datetime.datetime.now(datetime.UTC).isoformat(timespec='seconds'),
+        'built_at_utc': now_iso,
+        'fetched_at_utc': now_iso,
         'ingester': 'scripts/ingest_to_parquet.py',
     }
     if extra:
@@ -102,21 +135,32 @@ def _write_partition(out_dir: Path, names: list[str], counts: list[int], weights
     out_dir.mkdir(parents=True, exist_ok=True)
     table = pa.table(
         {
-            'name': pa.array(names).dictionary_encode(),
-            'count': pa.array(counts, type=pa.uint64()),
-            'weight': pa.array(weights, type=pa.float32()),
+            'name': pa.array(names, type=pa.string()),
+            'count': pa.array(counts, type=pa.int64()),
+            'weight': pa.array(weights, type=pa.float64()),
         },
         schema=_SCHEMA,
     )
-    pq.write_table(table, out_dir / 'part.parquet', compression='zstd')
+    pq.write_table(table, out_dir / 'part.parquet', compression='zstd', compression_level=9)
 
 
 def _normalise(pcts: Iterable[float]) -> list[float]:
     values = [float(p) for p in pcts]
-    total = sum(p for p in values if p > 0)
+    total = math.fsum(p for p in values if p > 0 and math.isfinite(p))
     if total <= 0:
         return [0.0 for _ in values]
-    return [p / total for p in values]
+    return [p / total if (p > 0 and math.isfinite(p)) else 0.0 for p in values]
+
+
+def _normalise_entries(entries: list[tuple[str, int, float]]) -> tuple[list[str], list[int], list[float]]:
+    filtered = [(name, c, w) for name, c, w in entries if w > 0 and math.isfinite(w)]
+    if not filtered:
+        raise ValueError('partition has no positive-weight entries')
+    total = math.fsum(w for _, _, w in filtered)
+    names = [name for name, _, _ in filtered]
+    counts = [int(c) for _, c, _ in filtered]
+    weights = [float(w) / total for _, _, w in filtered]
+    return names, counts, weights
 
 
 def ingest_first_names(src: Path, out_root: Path) -> dict[str, int]:
@@ -390,9 +434,9 @@ def _merge_sex_prior(
         model = info['model'] or 'gemini'
         if gender == 'M':
             merged[name] = {
-                'count_male': 1,
+                'count_male': 0,
                 'count_female': 0,
-                'count_total': 1,
+                'count_total': 0,
                 'p_male': 1.0,
                 'p_female': 0.0,
                 'classification': 'M',
@@ -403,8 +447,8 @@ def _merge_sex_prior(
         elif gender == 'F':
             merged[name] = {
                 'count_male': 0,
-                'count_female': 1,
-                'count_total': 1,
+                'count_female': 0,
+                'count_total': 0,
                 'p_male': 0.0,
                 'p_female': 1.0,
                 'classification': 'F',
@@ -469,8 +513,8 @@ def ingest_sex_prior(csv_path: Path, out_root: Path, gemini_jsonl: Path | None =
             'count_male': pa.array(cm, type=pa.uint64()),
             'count_female': pa.array(cf, type=pa.uint64()),
             'count_total': pa.array(ct, type=pa.uint64()),
-            'p_male': pa.array(pm, type=pa.float32()),
-            'p_female': pa.array(pf, type=pa.float32()),
+            'p_male': pa.array(pm, type=pa.float64()),
+            'p_female': pa.array(pf, type=pa.float64()),
             'classification': pa.array(cls, type=pa.large_string()),
             'group_name': pa.array(grp, type=pa.large_string()),
             'source': pa.array(src, type=pa.large_string()),
@@ -479,7 +523,7 @@ def ingest_sex_prior(csv_path: Path, out_root: Path, gemini_jsonl: Path | None =
     )
     partition_dir = out_root / 'sex_prior' / 'scope=national'
     partition_dir.mkdir(parents=True, exist_ok=True)
-    pq.write_table(table, partition_dir / 'part.parquet', compression='zstd')
+    pq.write_table(table, partition_dir / 'part.parquet', compression='zstd', compression_level=9)
     sidecar_source = _GENERO_NOMES_PROVENANCE
     if any(source_counts[k] for k in ('gemini_M', 'gemini_F', 'gemini_U')):
         sidecar_source = (
@@ -636,6 +680,297 @@ def ingest_states(src: Path, out_root: Path) -> int:
     return len(labels)
 
 
+def _write_count_partition_2022(
+    rows: list[tuple[str, int]],
+    dest_dir: Path,
+    *,
+    origin_meta: dict[str, Any],
+) -> None:
+    """Write a sorted, float64-normalized Zstandard Parquet partition for Census 2022."""
+    ordered = sorted(rows, key=lambda kv: (-kv[1], kv[0]))
+    names, counts, weights = _normalise_entries([(n, c, float(c)) for n, c in ordered])
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    pq.write_table(
+        pa.table({'name': names, 'count': counts, 'weight': weights}, schema=_SCHEMA),
+        dest_dir / 'part.parquet',
+        compression='zstd',
+        compression_level=9,
+    )
+    sidecar = {
+        **origin_meta,
+        'rows': len(names),
+        'count_sum': int(sum(counts)),
+        'weight_sum': math.fsum(weights),
+        'built_at_utc': datetime.datetime.now(datetime.UTC).isoformat(),
+    }
+    (dest_dir / 'data_origin.json').write_text(json.dumps(sidecar, indent=2) + '\n', encoding='utf-8')
+
+
+def ingest_ibge_2022(raw_dir: Path, out_root: Path) -> dict[str, Any]:
+    """Ingest pinned IBGE Census 2022 tables into ``out_root / 'census_year=2022'`` atomically."""
+    from scripts.audit_datasets import (  # noqa: PLC0415
+        audit_ibge_2022_tables,
+        classify_sex_censoring,
+        format_census_2022_display_name,
+    )
+
+    audit = audit_ibge_2022_tables(raw_dir)
+    manifest_path = raw_dir / 'source_manifest.json'
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8')) if manifest_path.exists() else {}
+
+    out_root.mkdir(parents=True, exist_ok=True)
+    staging = out_root / '.tmp_census_year=2022'
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True, exist_ok=True)
+
+    try:
+        ranking = pq.read_table(raw_dir / 'name_ranking.parquet')
+        detail = pq.read_table(raw_dir / 'name_detail.parquet')
+        by_decade = pq.read_table(raw_dir / 'name_by_decade.parquet')
+        by_state = pq.read_table(raw_dir / 'name_by_state.parquet')
+        states = pq.read_table(raw_dir / 'state.parquet')
+
+        base_meta = {
+            'census_year': 2022,
+            'reference_date': '2022-08-01',
+            'dataset': manifest.get('dataset', 'olob0/ibge-nomes-no-brasil-2022'),
+            'revision': manifest.get('revision', '05efb85c92af43da2ed4ed088d1e0c9f17160e65'),
+            'ingester': 'scripts/ingest_to_parquet.py',
+        }
+
+        given_nat: list[tuple[str, int]] = []
+        surname_nat: list[tuple[str, int]] = []
+        given_total_by_key: dict[str, int] = {}
+        for name_text, name_type, freq in zip(
+            ranking['name_text'].to_pylist(),
+            ranking['name_type'].to_pylist(),
+            ranking['frequency'].to_pylist(),
+            strict=True,
+        ):
+            disp = format_census_2022_display_name(str(name_text))
+            cnt = int(freq)
+            if name_type == 'given':
+                given_nat.append((disp, cnt))
+                given_total_by_key[str(name_text)] = cnt
+            elif name_type == 'surname':
+                surname_nat.append((disp, cnt))
+
+        _write_count_partition_2022(
+            given_nat,
+            staging / 'first_names' / 'scope=national',
+            origin_meta={**base_meta, 'grain': 'national_given', 'disclosure_threshold': 20},
+        )
+        _write_count_partition_2022(
+            surname_nat,
+            staging / 'surnames' / 'scope=national',
+            origin_meta={**base_meta, 'grain': 'national_surname_token_slots', 'disclosure_threshold': 20},
+        )
+
+        sex_m_rows: list[tuple[str, int]] = []
+        sex_f_rows: list[tuple[str, int]] = []
+        prior_cols: dict[str, list[Any]] = {k: [] for k in _SEX_PRIOR_2022_SCHEMA.names}
+
+        for name_text, name_type, male, female in zip(
+            detail['name_text'].to_pylist(),
+            detail['name_type'].to_pylist(),
+            detail['male_count'].to_pylist(),
+            detail['female_count'].to_pylist(),
+            strict=True,
+        ):
+            if name_type != 'given':
+                continue
+            key = str(name_text)
+            disp = format_census_2022_display_name(key)
+            total = given_total_by_key[key]
+            m_val = None if male is None else int(male)
+            f_val = None if female is None else int(female)
+            regime = classify_sex_censoring(total=total, male=m_val, female=f_val)
+
+            if m_val is not None:
+                sex_m_rows.append((disp, m_val))
+            if f_val is not None:
+                sex_f_rows.append((disp, f_val))
+
+            if regime == 'both_observed':
+                if m_val is None or f_val is None:
+                    raise RuntimeError(f'both_observed requires non-null male/female counts for {key!r}')
+                p_m, p_f, residual = m_val / total, f_val / total, 0
+            elif regime == 'one_null_exact_zero':
+                residual = 0
+                p_m = 1.0 if m_val is not None else 0.0
+                p_f = 1.0 if f_val is not None else 0.0
+            elif regime == 'one_null_suppressed_positive':
+                obs_val = m_val if m_val is not None else (f_val or 0)
+                residual = total - obs_val
+                p_m = (m_val / total) if m_val is not None else math.nan
+                p_f = (f_val / total) if f_val is not None else math.nan
+            else:
+                residual = total
+                p_m, p_f = math.nan, math.nan
+
+            prior_cols['name'].append(disp)
+            prior_cols['canonical_key'].append(key)
+            prior_cols['count_total'].append(total)
+            prior_cols['count_male'].append(m_val)
+            prior_cols['count_female'].append(f_val)
+            prior_cols['residual_unassigned'].append(residual)
+            prior_cols['p_male'].append(p_m)
+            prior_cols['p_female'].append(p_f)
+            prior_cols['censoring_regime'].append(regime)
+
+        _write_count_partition_2022(
+            sex_m_rows,
+            staging / 'first_names' / 'sex=M',
+            origin_meta={
+                **base_meta,
+                'grain': 'national_given_sex_observed',
+                'sex': 'M',
+                'observed_male_mass': audit['censoring'].observed_male_mass,
+                'observed_female_mass': audit['censoring'].observed_female_mass,
+                'disclosure_threshold': 20,
+            },
+        )
+        _write_count_partition_2022(
+            sex_f_rows,
+            staging / 'first_names' / 'sex=F',
+            origin_meta={
+                **base_meta,
+                'grain': 'national_given_sex_observed',
+                'sex': 'F',
+                'observed_male_mass': audit['censoring'].observed_male_mass,
+                'observed_female_mass': audit['censoring'].observed_female_mass,
+                'disclosure_threshold': 20,
+            },
+        )
+
+        sex_prior_dir = staging / 'sex_prior' / 'scope=national'
+        sex_prior_dir.mkdir(parents=True, exist_ok=True)
+        pq.write_table(
+            pa.table(prior_cols, schema=_SEX_PRIOR_2022_SCHEMA),
+            sex_prior_dir / 'part.parquet',
+            compression='zstd',
+            compression_level=9,
+        )
+        (sex_prior_dir / 'data_origin.json').write_text(
+            json.dumps(
+                {
+                    **base_meta,
+                    'grain': 'national_sex_prior_nullable',
+                    'rows': len(prior_cols['name']),
+                    'disclosure_threshold': 20,
+                    'built_at_utc': datetime.datetime.now(datetime.UTC).isoformat(),
+                },
+                indent=2,
+            )
+            + '\n',
+            encoding='utf-8',
+        )
+
+        decade_buckets: dict[int, list[tuple[str, int]]] = defaultdict(list)
+        for name_text, name_type, dec, freq in zip(
+            by_decade['name_text'].to_pylist(),
+            by_decade['name_type'].to_pylist(),
+            by_decade['decade'].to_pylist(),
+            by_decade['frequency'].to_pylist(),
+            strict=True,
+        ):
+            if name_type == 'given':
+                decade_buckets[int(dec)].append((format_census_2022_display_name(str(name_text)), int(freq)))
+
+        for dec, period_key in CENSUS_2022_DECADE_TO_PERIOD.items():
+            if not decade_buckets[dec]:
+                continue
+            _write_count_partition_2022(
+                decade_buckets[dec],
+                staging / 'first_names' / f'period={period_key}',
+                origin_meta={
+                    **base_meta,
+                    'grain': 'national_birth_cohort_survivors',
+                    'olob0_decade': dec,
+                    'period': period_key,
+                    'disclosure_threshold': 20,
+                },
+            )
+
+        code_to_uf = dict(zip(states['code'].to_pylist(), states['abbreviation'].to_pylist(), strict=True))
+        code_to_pop = dict(zip(states['code'].to_pylist(), states['population'].to_pylist(), strict=True))
+        uf_given: dict[str, list[tuple[str, int]]] = defaultdict(list)
+        uf_surname: dict[str, list[tuple[str, int]]] = defaultdict(list)
+        for name_text, name_type, scode, freq in zip(
+            by_state['name_text'].to_pylist(),
+            by_state['name_type'].to_pylist(),
+            by_state['state_code'].to_pylist(),
+            by_state['frequency'].to_pylist(),
+            strict=True,
+        ):
+            uf = str(code_to_uf[int(scode)])
+            disp = format_census_2022_display_name(str(name_text))
+            if name_type == 'given':
+                uf_given[uf].append((disp, int(freq)))
+            elif name_type == 'surname':
+                uf_surname[uf].append((disp, int(freq)))
+
+        uf_to_pop = {str(code_to_uf[c]): int(p) for c, p in code_to_pop.items()}
+        for uf, pop_u in sorted(uf_to_pop.items()):
+            if uf_given[uf]:
+                _write_count_partition_2022(
+                    uf_given[uf],
+                    staging / 'first_names' / f'uf={uf}',
+                    origin_meta={
+                        **base_meta,
+                        'grain': 'uf_given',
+                        'uf': uf,
+                        'uf_population_2022': pop_u,
+                        'disclosure_threshold': 15,
+                    },
+                )
+            if uf_surname[uf]:
+                _write_count_partition_2022(
+                    uf_surname[uf],
+                    staging / 'surnames' / f'uf={uf}',
+                    origin_meta={
+                        **base_meta,
+                        'grain': 'uf_surname_token_slots',
+                        'uf': uf,
+                        'uf_population_2022': pop_u,
+                        'disclosure_threshold': 15,
+                    },
+                )
+
+        states_dir = staging / 'states'
+        states_dir.mkdir(parents=True, exist_ok=True)
+        pq.write_table(states, states_dir / 'part.parquet', compression='zstd', compression_level=9)
+        (states_dir / 'data_origin.json').write_text(
+            json.dumps(
+                {
+                    **base_meta,
+                    'grain': 'uf_resident_population_2022',
+                    'rows': states.num_rows,
+                    'built_at_utc': datetime.datetime.now(datetime.UTC).isoformat(),
+                },
+                indent=2,
+            )
+            + '\n',
+            encoding='utf-8',
+        )
+
+        final_dest = out_root / 'census_year=2022'
+        backup_dest = out_root / '.bak_census_year=2022'
+        if backup_dest.exists():
+            shutil.rmtree(backup_dest)
+        if final_dest.exists():
+            final_dest.replace(backup_dest)
+        staging.replace(final_dest)
+        if backup_dest.exists():
+            shutil.rmtree(backup_dest)
+        return audit
+    except BaseException:
+        if staging.exists():
+            shutil.rmtree(staging)
+        raise
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     default_data_dir = Path(__file__).resolve().parents[1] / 'ptbr_sampler' / 'data'
@@ -708,6 +1043,18 @@ def main(argv: list[str] | None = None) -> int:
     print('Ingesting state population weights...')
     n_states = ingest_states(data_dir / 'locations_data.json', out_root)
     print(f'  rows: {n_states}')
+
+    raw_2022 = data_dir / 'raw' / 'ibge_nomes_2022'
+    if (raw_2022 / 'name_ranking.parquet').exists():
+        print(f'Ingesting IBGE Census 2022 tables from {raw_2022}...')
+        audit_2022 = ingest_ibge_2022(raw_2022, out_root)
+        print(
+            f'  census_year=2022 written: given={audit_2022["given_rows"]:,}, '
+            f'surnames={audit_2022["surname_rows"]:,}, '
+            f'pop={audit_2022["national_population"]:,}'
+        )
+    else:
+        print('  (no raw IBGE Census 2022 data found — run "python -m scripts.download_datasets --fetch-ibge-2022" first)')
 
     print(f'\nParquet layout written under: {out_root}')
     return 0

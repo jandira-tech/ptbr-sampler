@@ -39,14 +39,18 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
+import os
 import shutil
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -54,8 +58,64 @@ _DATA_DIR = _REPO_ROOT / 'ptbr_sampler' / 'data'
 _RAW_DIR = _DATA_DIR / 'raw'
 _NOMES_V2_RAW = _RAW_DIR / 'ibge_nomes_v2'
 _GENERO_NOMES_RAW = _RAW_DIR / 'genero_nomes'
+_IBGE_2022_RAW = _RAW_DIR / 'ibge_nomes_2022'
 
+_USER_AGENT = 'ptbr-sampler/0.3.0 (+https://github.com/jandira-tech/ptbr-sampler)'
 _GENERO_NOMES_URL = 'https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz'
+
+IBGE_2022_REPO = 'olob0/ibge-nomes-no-brasil-2022'
+IBGE_2022_REVISION = '05efb85c92af43da2ed4ed088d1e0c9f17160e65'
+_ALLOWED_HF_HOST_SUFFIXES = ('huggingface.co', '.huggingface.co', '.hf.co')
+
+
+@dataclass(slots=True, frozen=True)
+class PinnedParquetSpec:
+    """Checksum-pinned upstream Parquet table specification for Census 2022."""
+
+    filename: str
+    sha256: str
+    size_bytes: int
+    expected_rows: int
+    required_columns: tuple[str, ...]
+
+
+IBGE_2022_FILES: tuple[PinnedParquetSpec, ...] = (
+    PinnedParquetSpec(
+        filename='name_ranking.parquet',
+        sha256='635691d3ce52eb59c242ecb886dbaab62b4b42e6bed4b4f1766f8c6725636c64',
+        size_bytes=1_738_567,
+        expected_rows=330_059,
+        required_columns=('name_text', 'name_type', 'frequency', 'percentage', 'rank'),
+    ),
+    PinnedParquetSpec(
+        filename='name_detail.parquet',
+        sha256='91518f2d0d1da8e438ab9f557127da06633e186914aecb717f1bbf7bfb6b2943',
+        size_bytes=2_250_879,
+        expected_rows=330_058,
+        required_columns=('name_text', 'name_type', 'letter_rank', 'male_count', 'female_count', 'median_age'),
+    ),
+    PinnedParquetSpec(
+        filename='name_by_decade.parquet',
+        sha256='9f852814bf42a47358841c054a70939c763c4fc70c7e38564ad44fb94b7fbdef',
+        size_bytes=910_784,
+        expected_rows=221_524,
+        required_columns=('name_text', 'name_type', 'decade', 'frequency'),
+    ),
+    PinnedParquetSpec(
+        filename='name_by_state.parquet',
+        sha256='5588f012d43bb38b07691044010eb7e96cb2bfc359dd3b53a6c3b0ea46f1504e',
+        size_bytes=3_729_128,
+        expected_rows=828_567,
+        required_columns=('name_text', 'name_type', 'state_code', 'frequency', 'percentage'),
+    ),
+    PinnedParquetSpec(
+        filename='state.parquet',
+        sha256='5d4aa2a4faf4cdef421f2563de63cd8298b58113779774045a29b9e13ddebc55',
+        size_bytes=1_285,
+        expected_rows=27,
+        required_columns=('code', 'abbreviation', 'name', 'region_code', 'population'),
+    ),
+)
 
 # IBGE municipal codes for the 26 UFs + the Federal District. Using the
 # 2-digit UF codes returns one row per (sexo, decada) per UF.
@@ -150,16 +210,15 @@ TARGETS: tuple[DatasetTarget, ...] = (
         ),
     ),
     DatasetTarget(
-        label='IBGE Nomes no Brasil 2022 (web app)',
+        label='IBGE Nomes no Brasil 2022 (pinned Hugging Face Parquet compilation)',
         description=(
-            'Second edition of Nomes no Brasil; adds 2022-Census surname '
-            'rankings by UF. Distributed only as a web application — no '
-            'public bulk-download endpoint. Surname UF conditioning '
-            'remains blocked on this front.'
+            'Second edition of Nomes no Brasil (2022 Census); national + UF '
+            'given-name and surname counts, national sex counts, and 10 birth '
+            'cohorts. Fetched and SHA-256 verified by --fetch-ibge-2022.'
         ),
-        source_url='https://www.ibge.gov.br/apps/nomes/',
-        raw_local_path=_DATA_DIR / 'raw' / 'ibge_nomes_2022',
-        powers='Future surnames/uf=<UF>/period=<period> partitions.',
+        source_url=f'https://huggingface.co/datasets/{IBGE_2022_REPO}/tree/{IBGE_2022_REVISION}',
+        raw_local_path=_IBGE_2022_RAW,
+        powers='ptbr_sampler/data/parquet/census_year=2022/** (default 0.3.0 partitions).',
     ),
     DatasetTarget(
         label='IBGE Estimativas da População 2024',
@@ -278,11 +337,148 @@ def report() -> int:
         print(f'{missing} dataset(s) not present locally — see source URLs above.')
     print('Once raw datasets are in place, rebuild Parquet with:')
     print('    python -m scripts.ingest_to_parquet')
+    print('To fetch pinned IBGE Census 2022 Parquet tables (~8.23 MiB, SHA-256 verified):')
+    print('    python -m scripts.download_datasets --fetch-ibge-2022')
     print('To fetch IBGE Nomes API v2 UF x sexo x decada rankings (~540 calls):')
     print('    python -m scripts.download_datasets --fetch-ibge-nomes')
     print('To fetch the brasil.io/genero-nomes sex prior (national, full long tail):')
     print('    python -m scripts.download_datasets --fetch-genero-nomes')
     return missing
+
+
+# ----------------------------------------------------------------------
+# IBGE Census 2022 pinned fetcher (Hugging Face HTTPS + SHA-256)
+# ----------------------------------------------------------------------
+
+
+def _assert_allowed_https_url(url: str) -> None:
+    parsed = urllib.parse.urlsplit(url)
+    host = (parsed.hostname or '').lower()
+    if parsed.scheme != 'https' or not any(host == sfx.lstrip('.') or host.endswith(sfx) for sfx in _ALLOWED_HF_HOST_SUFFIXES):
+        raise RuntimeError(f'Blocked redirect or fetch outside allowlisted HTTPS hosts: {url!r}')
+
+
+class _AllowedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        _assert_allowed_https_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _with_bounded_retries[T](fn: Callable[[], T], *, max_attempts: int = 4, base_sleep: float = 1.0) -> T:
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return fn()
+        except urllib.error.HTTPError as err:
+            retryable = err.code in {429, 500, 502, 503, 504}
+            if not retryable or attempt >= max_attempts:
+                raise
+            retry_after = err.headers.get('Retry-After') if err.headers is not None else None
+            delay = min(float(retry_after), 30.0) if (retry_after and retry_after.isdigit()) else base_sleep * (2 ** (attempt - 1))
+            time.sleep(delay)
+        except (TimeoutError, urllib.error.URLError):
+            if attempt >= max_attempts:
+                raise
+            time.sleep(base_sleep * (2 ** (attempt - 1)))
+    raise RuntimeError('unreachable retry loop exhaustion')  # pragma: no cover
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open('rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _validate_parquet_schema_and_rows(path: Path, spec: PinnedParquetSpec) -> int:
+    import pyarrow.parquet as pq  # noqa: PLC0415
+
+    meta = pq.read_metadata(path)
+    schema_names = set(pq.read_schema(path).names)
+    missing = set(spec.required_columns) - schema_names
+    if missing:
+        raise RuntimeError(f'{spec.filename}: missing required columns {sorted(missing)}')
+    if meta.num_rows != spec.expected_rows:
+        raise RuntimeError(f'{spec.filename}: expected {spec.expected_rows} rows, got {meta.num_rows}')
+    return int(meta.num_rows)
+
+
+def _stream_https_bytes(url: str, dest: Path, *, timeout: float = 60.0) -> None:
+    _assert_allowed_https_url(url)
+    opener = urllib.request.build_opener(_AllowedRedirectHandler())
+    req = urllib.request.Request(url, headers={'User-Agent': _USER_AGENT})  # noqa: S310 - validated by _assert_allowed_https_url
+    with opener.open(req, timeout=timeout) as resp, dest.open('wb') as out:
+        while chunk := resp.read(1 << 18):
+            out.write(chunk)
+        out.flush()
+        os.fsync(out.fileno())
+
+
+def fetch_ibge_2022(*, out_dir: Path | None = None, overwrite: bool = False) -> Path:
+    """Fetch and SHA-256-verify the 5 pinned Census 2022 Parquet tables."""
+    target_dir = out_dir or _IBGE_2022_RAW
+    target_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = target_dir / 'source_manifest.json'
+    prior_files: dict[str, dict[str, object]] = {}
+    if manifest_path.exists():
+        try:
+            prior_files = json.loads(manifest_path.read_text(encoding='utf-8')).get('files', {})
+        except (OSError, ValueError):
+            prior_files = {}
+
+    recorded: dict[str, dict[str, object]] = {}
+    for spec in IBGE_2022_FILES:
+        final_path = target_dir / spec.filename
+        url = f'https://huggingface.co/datasets/{IBGE_2022_REPO}/resolve/{IBGE_2022_REVISION}/parquet/{spec.filename}'
+        cache_valid = False
+        if (
+            not overwrite
+            and final_path.exists()
+            and final_path.stat().st_size == spec.size_bytes
+            and _sha256_file(final_path) == spec.sha256
+        ):
+            try:
+                _validate_parquet_schema_and_rows(final_path, spec)
+                cache_valid = True
+            except (OSError, RuntimeError, ValueError):
+                cache_valid = False
+
+        if not cache_valid:
+            part_path = target_dir / f'{spec.filename}.part'
+            part_path.unlink(missing_ok=True)
+            try:
+                _with_bounded_retries(lambda u=url, p=part_path: _stream_https_bytes(u, p))
+                actual_sha = _sha256_file(part_path)
+                if actual_sha != spec.sha256:
+                    raise RuntimeError(f'SHA-256 mismatch for {spec.filename}: expected {spec.sha256}, got {actual_sha}')
+                _validate_parquet_schema_and_rows(part_path, spec)
+                part_path.replace(final_path)
+            except BaseException:
+                part_path.unlink(missing_ok=True)
+                raise
+            fetched_ts = datetime.now(UTC).isoformat()
+            print(f'  fetched & verified: {spec.filename} ({spec.expected_rows:,} rows, {spec.size_bytes:,} bytes)')
+        else:
+            fetched_ts = str(prior_files.get(spec.filename, {}).get('fetched_at_utc') or datetime.now(UTC).isoformat())
+            print(f'  cached & verified : {spec.filename} ({spec.expected_rows:,} rows)')
+
+        recorded[spec.filename] = {
+            'url': url,
+            'sha256': spec.sha256,
+            'size_bytes': spec.size_bytes,
+            'rows': spec.expected_rows,
+            'fetched_at_utc': fetched_ts,
+        }
+
+    manifest = {
+        'dataset': IBGE_2022_REPO,
+        'revision': IBGE_2022_REVISION,
+        'primary_authority': 'IBGE Censo Demográfico 2022 — Nomes no Brasil',
+        'compilation_attribution': 'Gabriel Lobo (olob0/ibge-nomes-no-brasil-2022 on Hugging Face)',
+        'files': recorded,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    return manifest_path
 
 
 # ----------------------------------------------------------------------
@@ -307,7 +503,7 @@ def _fetch_ranking(
     decada: int,
     *,
     timeout: float = 20.0,
-    user_agent: str = 'ptbr-sampler/0.2 (+https://github.com/arthrod/ptbr-sampler)',
+    user_agent: str = _USER_AGENT,
 ) -> list[dict]:
     """Call ``/api/v2/censos/nomes/ranking`` once and return the ``res`` rows.
 
@@ -402,7 +598,7 @@ def fetch_genero_nomes(
     url: str = _GENERO_NOMES_URL,
     timeout: float = 120.0,
     overwrite: bool = False,
-    user_agent: str = 'ptbr-sampler/0.2 (+https://github.com/arthrod/ptbr-sampler)',
+    user_agent: str = _USER_AGENT,
 ) -> Path:
     """Download the brasil.io ``genero-nomes/nomes.csv.gz`` dump.
 
@@ -440,6 +636,13 @@ def fetch_genero_nomes(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        '--fetch-ibge-2022',
+        action='store_true',
+        help=(
+            f'Download and SHA-256-verify the 5 pinned IBGE Census 2022 Parquet tables from {IBGE_2022_REPO} @ {IBGE_2022_REVISION[:12]}.'
+        ),
+    )
+    parser.add_argument(
         '--fetch-ibge-nomes',
         action='store_true',
         help='Download UF x sexo x decada rankings from the IBGE Nomes v2 API.',
@@ -456,7 +659,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         '--overwrite',
         action='store_true',
-        help='Re-fetch even if the raw JSON already exists locally.',
+        help='Re-fetch even if valid cached raw files already exist locally.',
     )
     parser.add_argument(
         '--rebuild',
@@ -465,16 +668,27 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    report()
+    if not (args.fetch_ibge_2022 or args.fetch_ibge_nomes or args.fetch_genero_nomes or args.rebuild):
+        report()
+        return 0
 
-    if args.fetch_ibge_nomes:
-        print('\nFetching IBGE Nomes API v2 (UF x sexo x decada)...')
-        written, skipped = fetch_ibge_first_names_v2(overwrite=args.overwrite)
-        print(f'  wrote: {written}, skipped: {skipped}')
+    try:
+        if args.fetch_ibge_2022:
+            print(f'\nFetching pinned IBGE Census 2022 tables ({IBGE_2022_REPO} @ {IBGE_2022_REVISION[:12]})...')
+            manifest_path = fetch_ibge_2022(overwrite=args.overwrite)
+            print(f'  manifest: {manifest_path}')
 
-    if args.fetch_genero_nomes:
-        print('\nFetching brasil.io/genero-nomes (sex prior)...')
-        fetch_genero_nomes(overwrite=args.overwrite)
+        if args.fetch_ibge_nomes:
+            print('\nFetching IBGE Nomes API v2 (UF x sexo x decada)...')
+            written, skipped = fetch_ibge_first_names_v2(overwrite=args.overwrite)
+            print(f'  wrote: {written}, skipped: {skipped}')
+
+        if args.fetch_genero_nomes:
+            print('\nFetching brasil.io/genero-nomes (sex prior)...')
+            fetch_genero_nomes(overwrite=args.overwrite)
+    except (OSError, RuntimeError, ValueError, urllib.error.URLError) as err:
+        print(f'error: dataset fetch failed: {err}', file=sys.stderr)
+        return 1
 
     if args.rebuild:
         from scripts.ingest_to_parquet import main as ingest_main  # noqa: PLC0415 - keep ingest import lazy
@@ -484,7 +698,7 @@ def main(argv: list[str] | None = None) -> int:
         if rc != 0:
             return rc
 
-    return 0  # missing raw files is informational, not a failure
+    return 0
 
 
 if __name__ == '__main__':  # pragma: no cover

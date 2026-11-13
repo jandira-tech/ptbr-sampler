@@ -1,0 +1,13 @@
+{
+  "census_year": 2022,
+  "reference_date": "2022-08-01",
+  "dataset": "olob0/ibge-nomes-no-brasil-2022",
+  "revision": "05efb85c92af43da2ed4ed088d1e0c9f17160e65",
+  "ingester": "scripts/ingest_to_parquet.py",
+  "grain": "national_surname_token_slots",
+  "disclosure_threshold": 20,
+  "rows": 201601,
+  "count_sum": 333496261,
+  "weight_sum": 1.0,
+  "built_at_utc": "2026-11-13T07:37:39.632294+00:00"
+}
