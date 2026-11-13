@@ -40,7 +40,7 @@ covering a different axis** — not an unrelated dataset.
 ## How to fetch it
 
 ```bash
-python -m scripts.download_datasets --fetch-genero-nomes
+uv run python -m scripts.download_datasets --fetch-genero-nomes
 # Writes ptbr_sampler/data/raw/genero_nomes/nomes.csv.gz and gunzips to nomes.csv.
 ```
 
@@ -56,12 +56,16 @@ provenance is captured in stdout, not just inside the script.
    `(name, count_male, count_female, count_total, p_male, p_female,
    classification, group_name)`. This is the auditable "what we read"
    partition; downstream code joins on `name` to look up `p_sex`.
-2. **`parquet/first_names/period=<P>/sex=<S>/part.parquet`** — period × sex
-   national first-name partitions, derived from the period-only IBGE Nomes
+2. **`parquet/first_names/period=<P>/sex=<S>/part.parquet`** — legacy `census_year=2010`
+   period × sex national first-name partitions, derived from the period-only IBGE Nomes
    percentages multiplied by `p_sex(name)` and renormalised within
    `(period, sex)`. The full long tail is preserved (8k–24k rows per
-   partition); names absent from the genero-nomes dump are dropped because
-   we have no defensible sex prior for them.
+   partition); for the ~8.1% of `(name, period)` cells absent from `genero-nomes`,
+   `scripts/ingest_to_parquet.py` merges the LLM gap-fill table documented in
+   [`gemini-gender-classifications.md`](gemini-gender-classifications.md)
+   (`count=0` prior rows tagged with `source='gemini-3.1-flash-lite-preview'`),
+   dropping unmatched names only when `classifications.jsonl` is absent (default
+   `census_year=2022` uses IBGE `name_detail` directly with zero LLM gap-fill).
 
 Each new partition gets a `data_origin.json` sidecar with the source URL,
 fetch timestamp, row count, and the derivation formula — so a reviewer
@@ -70,16 +74,18 @@ of thin air.
 
 ## Sampler integration
 
-Pass `sex_conditioning='M'`, `'F'`, or `'mixed'` to
-`ptbr_sampler.sampler.sample(...)`, or `--sex-conditioning {M,F,mixed}` on the
+Pass `sex_conditioning='M'`, `'F'`, `'mixed'`, or `'population'` with
+`census_year=2010` to `ptbr_sampler.sampler.sample(...)`, or
+`--census-year 2010 --sex-conditioning {M,F,mixed,population}` on the
 CLI. See `docs/data-origins.md` §1 for the resolution chain and
 `docs/sources/bibliography.md` for the cross-reference to the IBGE Nomes API.
 
 ## Coverage caveat
 
-Across all (name, period) cells in `names_data.json`, the genero-nomes
-prior matches **91.9 %** (203,314 of 221,346 cells). The 8.1 % unmatched are
-typically very rare names that were never returned by IBGE's per-name endpoint
-when Brasil.IO ran the scrape; they're dropped from the period × sex
-partitions but remain available in the period-only partition (so disabling
-`sex_conditioning` falls back cleanly).
+Across all `(name, period)` cells in legacy `names_data.json`, the empirical
+`genero-nomes` prior matches **91.9 %** (203,314 of 221,346 cells). The
+remaining **8.1 %** unmatched cells (`< 1%` probability mass, mostly civil-registry
+spelling variants) are gap-filled in the published `census_year=2010` partitions by
+[`gemini-gender-classifications.md`](gemini-gender-classifications.md) (`count=0`
+prior rows with `source='gemini-3.1-flash-lite-preview'`) and are dropped only if
+ingestion runs without `classifications.jsonl`.

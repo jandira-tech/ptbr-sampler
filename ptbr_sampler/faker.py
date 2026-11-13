@@ -168,8 +168,12 @@ def _parse_provider_options(options: dict[str, Any]) -> dict[str, Any]:
 class PTBRProvider(BaseProvider):
     """Faker provider backed by IBGE Census 2022 / 2010 distributions and Brazilian check-digit rules.
 
-    All draws route exclusively through ``self.generator.random`` so ``Faker.seed(...)`` and
-    ``fake.seed_instance(...)`` are reproducible without touching global Python or NumPy RNG state.
+    All draws inside ``PTBRProvider`` route exclusively through ``self.generator.random`` without
+    mutating Python or NumPy module-global RNG state. ``fake.seed_instance(...)`` guarantees
+    isolated deterministic draws on single-locale ``Faker`` instances; multi-locale proxies
+    (e.g., ``Faker(['pt_BR', 'en_US'])``) dispatch across locale factories using Faker's shared
+    module-level ``random`` instance, so call ``Faker.seed(...)`` when reproducing multi-locale
+    proxy dispatch.
     """
 
     def __init__(self, generator: Any, **options: Any) -> None:

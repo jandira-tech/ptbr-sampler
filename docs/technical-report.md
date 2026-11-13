@@ -115,7 +115,7 @@ $$\tau_{\text{national}} = 20, \qquad \tau_{\text{decade}} = 20, \qquad \tau_{\t
 
 Consequently:
 - National given-name frequencies ($N_i \ge 20$ across $M = 128{,}458$ names) sum to $\sum_{i=1}^M N_i = 190{,}383{,}184$, accounting for **$93.7475\%$** of Brazil's $203{,}080{,}756$ residents. The remaining $12{,}697{,}572$ residents ($6.2525\%$) carry rare or uniquely spelled names with national frequency $< 20$.
-- Upstream `percentage` columns divide raw frequencies by $N_{\text{pop}} = 203{,}080{,}756$, summing to $93.7475\%$ for given names and $161.9529\%$ for surnames. Therefore, `scripts/ingest_to_parquet.py` **never** uses rounded `percentage` fields as probabilities; every partition normalizes integer `frequency` directly in `float64` via `math.fsum`.
+- Exact unrounded population ratios $100 \times \sum_i \text{frequency}_i / N_{\text{pop}}$ ($N_{\text{pop}} = 203{,}080{,}756$) sum to $93.7475\%$ for given names and $164.2185\%$ for surnames, whereas summing upstream's 4-decimal-rounded `percentage` column directly yields $92.3126\%$ (given names) and $161.9529\%$ (surnames) due to tail truncation. Therefore, `scripts/ingest_to_parquet.py` **never** uses rounded `percentage` fields as probabilities; every partition normalizes integer `frequency` directly in `float64` via `math.fsum`.
 
 ### 2.3 Exact Four-Regime Sex-Cell Conservation Decomposition
 
@@ -190,7 +190,7 @@ $$q_i = \frac{C_i}{C_{\text{total}}} \implies q_{\text{Silva}} = \frac{34{,}030{
 
 In default two-surname mode (`with_only_one_surname=False`), independent i.i.d. draws $S_1, S_2 \stackrel{\text{iid}}{\sim} \mathbf{q}$ would produce identical consecutive stems (`"Joao da Silva Silva"`) with probability $\sum_i q_i^2 \approx 1.71\%$ (`~1.04%` from `Silva` alone). Under `census_year=2022`, `BrazilianNameSampler` samples $S_1 \sim \mathbf{q}$ and resamples $S_2 \sim \mathbf{q}$ conditioned on $S_2 \neq S_1$:
 
-$$P(S_1 = i, S_2 = j \mid S_2 \neq S_1) = \frac{q_i\,q_j}{1 - q_i}\,\mathbf{1}_{[i \neq j]}$$
+$$P(S_1 = i, S_2 = j) = \frac{q_i\,q_j}{1 - q_i}\,\mathbf{1}_{[i \neq j]}$$
 
 Under this conditional two-slot law, the probability that surname $i$ appears in a two-surname draw is:
 
@@ -308,7 +308,7 @@ Shared global random number generators break reproducibility in multi-tenant app
 `install_ptbr(fake, aliases=False, **options)` registers `PTBRProvider` (or `_AliasedPTBRProvider` when `aliases=True`) onto single-locale `Faker('pt_BR')` or multi-locale `Faker(['pt_BR', 'en_US'])` instances:
 - **Non-Invasive Default (`aliases=False`):** Exposes 22 `ptbr_*` formatters (`ptbr_profile`, `ptbr_name`, `ptbr_first_name`, `ptbr_first_name_female`, `ptbr_first_name_male`, `ptbr_middle_name`, `ptbr_surname`, `ptbr_state`, `ptbr_state_abbr`, `ptbr_city`, `ptbr_cep`, `ptbr_postcode`, `ptbr_street`, `ptbr_street_address`, `ptbr_neighborhood`, `ptbr_building_number`, `ptbr_address`, `ptbr_cpf`, `ptbr_pis`, `ptbr_cnpj`, `ptbr_cei`, `ptbr_rg`, `ptbr_phone`, `ptbr_phone_number`) without overriding built-in `Faker('pt_BR')` methods.
 - **Opt-In Standard Locale Aliases (`aliases=True`):** Binds `name`, `first_name`, `first_name_female`, `first_name_male`, `last_name`, `city`, `state`, `state_abbr`, `postcode`, `address`, `street_address`, `bairro`, `neighborhood`, `building_number`, `cpf`, `cnpj`, `rg`, and `phone_number` to Census 2022 demographic samplers.
-- **Seed Reproducibility:** Every formatter pulls entropy exclusively from `self.generator.random`, so both `Faker.seed(S)` and `fake.seed_instance(S)` produce identical sequences across independent `Faker` instances while reusing shared `RLock`-cached `AliasTable` partitions.
+- **Seed Reproducibility:** Every formatter inside `PTBRProvider` pulls entropy exclusively from `self.generator.random`, so `fake.seed_instance(S)` produces isolated bit-identical sequences across single-locale `Faker` instances (for multi-locale `Faker(['pt_BR', 'en_US'])` proxies, Faker's proxy layer dispatches across factories via Faker's shared module-level `random`, reproduced via `Faker.seed(S)`) while reusing shared `RLock`-cached `AliasTable` partitions.
 
 ---
 

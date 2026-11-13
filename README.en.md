@@ -147,6 +147,7 @@ fake = install_ptbr(
     Faker('pt_BR'),
     uf_conditioning=True,
     sex_conditioning='population',
+    conditioning_mode='estimated',
 )
 fake.seed_instance(12345)
 
@@ -248,7 +249,7 @@ $$q_i = \frac{C_i}{\sum_{k=1}^{M_S} C_k} \implies q_{\text{Silva}} = 10.2040\%, 
 
 In two-surname mode (`with_only_one_surname=False` under `census_year=2022`), slot 2 is sampled conditionally without stem replacement ($S_2 \neq S_1$):
 
-$$P(S_1 = i, S_2 = j \mid S_2 \neq S_1) = \frac{q_i\,q_j}{1 - q_i}\,\mathbf{1}_{[i \neq j]}$$
+$$P(S_1 = i, S_2 = j) = \frac{q_i\,q_j}{1 - q_i}\,\mathbf{1}_{[i \neq j]}$$
 
 preventing unrealistic duplicate stems (`"Maria da Silva Silva"`) and yielding a two-slot person-level presence $P(i \in \{S_1, S_2\}) = q_i + \sum_{k \neq i} q_k \frac{q_i}{1 - q_k} \approx 19.65\%$ for `Silva`.
 

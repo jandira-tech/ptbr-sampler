@@ -21,7 +21,7 @@ uv sync --extra test --extra dev --extra faker --extra docs
 `scripts.download_datasets --fetch-ibge-2022` downloads the 5 Parquet files from `olob0/ibge-nomes-no-brasil-2022` at immutable commit `05efb85c92af43da2ed4ed088d1e0c9f17160e65`:
 
 ```bash
-python -m scripts.download_datasets --fetch-ibge-2022
+uv run python -m scripts.download_datasets --fetch-ibge-2022
 ```
 
 - Ordinary reruns **validate** existing files in `ptbr_sampler/data/raw/ibge_nomes_2022/` against their pinned SHA-256 digests, row counts, and Parquet schemas, skipping valid cached files and refusing corrupt ones; pass `--overwrite` to force a fresh network download.
@@ -35,14 +35,14 @@ python -m scripts.download_datasets --fetch-ibge-2022
 | `name_by_state.parquet` | `828,567` | `3,729,128` | `5588f012d43bb38b07691044010eb7e96cb2bfc359dd3b53a6c3b0ea46f1504e` |
 | `state.parquet` | `27` | `1,285` | `5d4aa2a4faf4cdef421f2563de63cd8298b58113779774045a29b9e13ddebc55` |
 
-*(Optional for historical `census_year=2010` sex conditioning: `python -m scripts.download_datasets --fetch-genero-nomes`.)*
+*(Optional for historical `census_year=2010` sex conditioning: `uv run python -m scripts.download_datasets --fetch-genero-nomes`.)*
 
 ---
 
 ## Step 2 — Ingest `float64` Partitioned Parquet Layout
 
 ```bash
-python -m scripts.ingest_to_parquet
+uv run python -m scripts.ingest_to_parquet
 ```
 
 This atomically stages and swaps `ptbr_sampler/data/parquet/census_year=2022/` (`70` partitions across `first_names`, `sex_prior`, `surnames`, and `states`) alongside the legacy 2010 partitions (`31` partitions across `first_names/period=ate*`, `sex_prior/scope=national`, `surnames/scope=national`, `middle_names`, and `states` — `101` Parquet partitions total; legacy 2010 Gemini-classified `count=0` rows are counted as `gemini_classified` with `unmatched_names=0`, `coverage_pct=100.0`).
@@ -52,7 +52,7 @@ This atomically stages and swaps `ptbr_sampler/data/parquet/census_year=2022/` (
 ## Step 3 — Run Raw & Cross-Table Statistical Audit + Tests
 
 ```bash
-python -m scripts.audit_datasets \
+uv run python -m scripts.audit_datasets \
   --raw-dir ptbr_sampler/data/raw/ibge_nomes_2022 \
   --parquet-dir ptbr_sampler/data/parquet
 
@@ -69,10 +69,10 @@ Verified Layer D cross-table coherence metrics on `0.3.0`:
 
 ```bash
 # Local manifest refresh only (no upload):
-python -m scripts.publish_hf_dataset --manifest-only
+uv run python -m scripts.publish_hf_dataset --manifest-only
 
 # Publish to Hugging Face Hub and pin the returned 40-char commit OID in dataset_manifest.json:
-python -m scripts.publish_hf_dataset --publish --repo-id arthrod/ptbr-sampler-data
+uv run python -m scripts.publish_hf_dataset --publish --repo-id arthrod/ptbr-sampler-data
 ```
 
 Published `0.3.0` bundle: `arthrod/ptbr-sampler-data` @ `c30ef6ac3dbf2d1508e41dce7b6a6e47d8e6dbde` (`195` runtime files).
@@ -83,9 +83,9 @@ Published `0.3.0` bundle: `arthrod/ptbr-sampler-data` @ `c30ef6ac3dbf2d1508e41dc
 
 ```bash
 uv build
-ptbr datasets prefetch --census-year 2022
-ptbr datasets status --verify
-PTBR_SAMPLER_OFFLINE=1 ptbr generate --qty 5 --uf-conditioning
+uv run ptbr datasets prefetch --census-year 2022
+uv run ptbr datasets status --verify
+PTBR_SAMPLER_OFFLINE=1 uv run ptbr generate --qty 5 --uf-conditioning
 ```
 
 Verified `0.3.0` wheel: `ptbr_sampler-0.3.0-py3-none-any.whl` (`~100 KiB`, strictly `< 150 KiB`), with `ptbr_sampler/data/dataset_manifest.json` as the sole file under `ptbr_sampler/data/`.

@@ -19,7 +19,7 @@ Per [IBGE Technical Note Liv102228](https://biblioteca.ibge.gov.br/visualizacao/
 - **`< 15`** per UF (`name_by_state`),
 - **`< 10`** per municipality (not ingested in `ptbr-sampler` `0.3.0`).
 
-Note that `name_ranking.percentage` equals `100 * frequency / 203,080,756`, summing to `93.7475%` for given names (because `6.2525%` = `12,697,572` residents carry names with national frequency `< 20`) and `161.9529%` for surnames (because residents carry an average of `1.6422` recorded surname tokens). Sampling weights are always normalized directly from `frequency` in `float64` using `math.fsum`.
+Exact unrounded `100 * sum(frequency) / 203,080,756` equals `93.7475%` (`190,383,184 / 203,080,756`) for given names (because `6.2525%` = `12,697,572` residents carry names with national frequency `< 20`) and `164.2185%` (`333,496,261 / 203,080,756`) for surnames (because residents carry an average of `1.6422` recorded surname tokens), whereas summing upstream's 4-decimal-rounded `name_ranking.percentage` column directly yields `92.3126%` (given names) and `161.9529%` (surnames) due to tail rounding truncation. Sampling weights are therefore never read from `percentage` and are always normalized directly from integer `frequency` in `float64` using `math.fsum`.
 
 ## Four-Regime Sex-Cell Conservation Breakdown (`name_detail`)
 

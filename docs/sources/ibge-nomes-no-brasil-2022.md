@@ -10,7 +10,7 @@
 
 IBGE's *Nomes no Brasil* 2022 portal (<https://censo2022.ibge.gov.br/nomes/>) is backed by undocumented internal v3 web-application endpoints rather than a SIDRA bulk table or a formally versioned open-data CSV/Parquet dump (and its edge WAF blocks literal substrings such as `perl`, omitting the single surname key `('perl', 'surname')` from detail lookups).
 
-However, **a complete, reproducible public Parquet compilation exists**: Gabriel Lobo's [`olob0/ibge-nomes-no-brasil-2022`](https://huggingface.co/datasets/olob0/ibge-nomes-no-brasil-2022), pinned in `ptbr-sampler` at immutable commit `05efb85c92af43da2ed4ed088d1e0c9f17160e65` (`5` Parquet files, `8.23 MiB` total; full hashes and schemas in [`docs/sources/ibge-nomes-2022-availability.md`](ibge-nomes-2022-availability.md)). `python -m scripts.download_datasets --fetch-ibge-2022` fetches and SHA-256-verifies this exact snapshot, and `arthrod/ptbr-sampler-data` distributes the ingested runtime partitions on Hugging Face Hub.
+However, **a complete, reproducible public Parquet compilation exists**: Gabriel Lobo's [`olob0/ibge-nomes-no-brasil-2022`](https://huggingface.co/datasets/olob0/ibge-nomes-no-brasil-2022), pinned in `ptbr-sampler` at immutable commit `05efb85c92af43da2ed4ed088d1e0c9f17160e65` (`5` Parquet files, `8.23 MiB` total; full hashes and schemas in [`docs/sources/ibge-nomes-2022-availability.md`](ibge-nomes-2022-availability.md)). `uv run python -m scripts.download_datasets --fetch-ibge-2022` fetches and SHA-256-verifies this exact snapshot, and `arthrod/ptbr-sampler-data` distributes the ingested runtime partitions on Hugging Face Hub.
 
 ## Confidentiality suppression thresholds (Liv102228)
 
@@ -37,7 +37,7 @@ Note that regional thresholds (`< 15` per UF, `< 10` per municipality) are **low
 | `Santos` — single-slot token share ($q_{\text{Santos}}$) | `6.4071%` | `21,367,475 / 333,496,261` normalized over surname occurrences |
 | Regional surname concentration (person presence) | Sergipe `Santos` `43.38%`, Alagoas `Silva` `35.75%`, Pernambuco `Silva` `34.23%` | Captured by `census_year=2022/surnames/uf=<UF>/part.parquet` |
 
-Because `name_ranking.percentage` divides by `203,080,756` (`93.7475%` sum for given names; `161.9529%` sum for surnames), `scripts/ingest_to_parquet.py` always normalizes sampling weights in `float64` (`math.fsum`) directly from integer `frequency` over observed support. In two-surname mode (`with_only_one_surname=False`), `census_year=2022` resamples slot 2 conditional on $s_2 \neq s_1$ so identical stems (`"Silva Silva"`) are never emitted.
+Because exact unrounded `100 * sum(frequency) / 203,080,756` equals `93.7475%` for given names and `164.2185%` for surnames (while summing upstream's 4-decimal-rounded `name_ranking.percentage` column yields `92.3126%` for given names and `161.9529%` for surnames due to tail rounding truncation), `scripts/ingest_to_parquet.py` never uses `percentage` and always normalizes sampling weights in `float64` (`math.fsum`) directly from integer `frequency` over observed support. In two-surname mode (`with_only_one_surname=False`), `census_year=2022` resamples slot 2 conditional on $s_2 \neq s_1$ so identical stems (`"Silva Silva"`) are never emitted.
 
 ## Birth-cohort alignment (decade start vs. legacy 2010 upper endpoint)
 

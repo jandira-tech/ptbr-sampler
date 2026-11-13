@@ -16,13 +16,13 @@ A partir da versão **`0.3.0`**, o `ptbr-sampler` adota o **Censo Demográfico 2
 
 ## Sumário
 
-1. [Destaques da Versão `0.3.0`](#destaques-da-versao-030)
-2. [Instalação e Pré-Aquecimento Offline / Docker](#instalacao-e-pre-aquecimento-offline--docker)
-3. [Uso Rápido: CLI, Python, Injeção de RNG e Faker](#uso-rapido-cli-python-injecao-de-rng-e-faker)
+1. [Destaques da Versão `0.3.0`](#destaques-da-versão-030)
+2. [Instalação e Pré-Aquecimento Offline / Docker](#instalação-e-pré-aquecimento-offline--docker)
+3. [Uso Rápido: CLI, Python, Injeção de RNG e Faker](#uso-rápido-cli-python-injeção-de-rng-e-faker)
 4. [Arquitetura de Dados e Amostragem](#arquitetura-de-dados-e-amostragem)
-5. [Fundamentação Teórica e Matemática](#fundamentacao-teorica-e-matematica)
-6. [Limitações Metodológicas Declaradas](#limitacoes-metodologicas-declaradas)
-7. [Créditos, Fontes de Dados e Licença](#creditos-fontes-de-dados-e-licenca)
+5. [Fundamentação Teórica e Matemática](#fundamentação-teórica-e-matemática)
+6. [Limitações Metodológicas Declaradas](#limitações-metodológicas-declaradas)
+7. [Créditos, Fontes de Dados e Licença](#créditos-fontes-de-dados-e-licença)
 
 ---
 
@@ -147,6 +147,7 @@ fake = install_ptbr(
     Faker('pt_BR'),
     uf_conditioning=True,
     sex_conditioning='population',
+    conditioning_mode='estimated',
 )
 fake.seed_instance(12345)
 
@@ -248,7 +249,7 @@ $$q_i = \frac{C_i}{\sum_{k=1}^{M_S} C_k} \implies q_{\text{Silva}} = 10,2040\%, 
 
 No modo padrão de dois sobrenomes (`with_only_one_surname=False` em `census_year=2022`), o segundo sobrenome é amostrado condicionalmente sem reposição de raiz ortográfica ($S_2 \neq S_1$):
 
-$$P(S_1 = i, S_2 = j \mid S_2 \neq S_1) = \frac{q_i\,q_j}{1 - q_i}\,\mathbf{1}_{[i \neq j]}$$
+$$P(S_1 = i, S_2 = j) = \frac{q_i\,q_j}{1 - q_i}\,\mathbf{1}_{[i \neq j]}$$
 
 evitando nomes irreais como `"Maria da Silva Silva"` e aproximando a incidência de presença em dois slots $P(i \in \{S_1, S_2\}) = q_i + \sum_{k \neq i} q_k \frac{q_i}{1 - q_k} \approx 19,65\%$ para `Silva`.
 
