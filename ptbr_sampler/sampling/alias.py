@@ -47,10 +47,13 @@ def build_alias(weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     n = w.size
     q_arr = n * (w / total)
     q = q_arr.tolist()
+    comp = [0.0] * n
     prob = [1.0] * n
     alias = list(range(n))
 
-    # Plain Python list stacks avoid per-iteration NumPy scalar boxing overhead.
+    # Plain Python list stacks avoid per-iteration NumPy scalar boxing overhead;
+    # per-bucket Kahan compensation prevents O(M * eps) drift on heavy-tailed
+    # hubs (e.g. 'Silva' absorbing >20k small buckets in 201,601 surnames).
     small: list[int] = np.flatnonzero(q_arr < 1.0).tolist()
     large: list[int] = np.flatnonzero(q_arr >= 1.0).tolist()
     small_pop = small.pop
@@ -61,9 +64,13 @@ def build_alias(weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     while small and large:
         small_idx = small_pop()
         large_idx = large_pop()
-        prob[small_idx] = q[small_idx]
+        qs = q[small_idx]
+        prob[small_idx] = qs
         alias[small_idx] = large_idx
-        ql = q[large_idx] + q[small_idx] - 1.0
+        ql_prev = q[large_idx]
+        y = (qs - 1.0) - comp[large_idx]
+        ql = ql_prev + y
+        comp[large_idx] = (ql - ql_prev) - y
         q[large_idx] = ql
         if ql < 1.0:
             small_append(large_idx)

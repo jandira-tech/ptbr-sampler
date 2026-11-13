@@ -19,10 +19,12 @@ from ptbr_sampler.sampling.validation import (
 )
 from scripts.audit_datasets import (
     CensoringSummary,
+    audit_cross_table_coherence,
     audit_ibge_2022_tables,
     classify_sex_censoring,
     compute_cohort_alignment_tvd,
     format_census_2022_display_name,
+    main as audit_main,
 )
 
 
@@ -223,3 +225,26 @@ def test_cohort_alignment_detects_ten_year_endpoint_vs_start_shift():
     # Legacy 'ate2010' (born 2000-2009) aligns with olob0 decade=2000, NOT decade=2010!
     assert matrix['ate2010'][2000] < 0.03
     assert matrix['ate2010'][2010] > 0.20
+
+
+def test_audit_cross_table_coherence_and_cli_parquet_dir(tmp_path: Path):
+    import json
+
+    from scripts.ingest_to_parquet import ingest_ibge_2022
+
+    raw_dir = tmp_path / 'raw'
+    raw_dir.mkdir()
+    _write_minimal_2022_fixture(raw_dir)
+    parquet_dir = tmp_path / 'parquet'
+    ingest_ibge_2022(raw_dir, parquet_dir)
+
+    coherence = audit_cross_table_coherence(raw_dir, parquet_dir)
+    assert 0.0 <= coherence['uf_weighted_vs_national_given_tvd'] <= 1.0
+    assert abs(coherence['decade_sum_to_national_given_ratio'] - (80.0 / 209.0)) < 1e-12
+
+    json_out = tmp_path / 'audit.json'
+    rc = audit_main(['--raw-dir', str(raw_dir), '--parquet-dir', str(parquet_dir), '--json-out', str(json_out)])
+    assert rc == 0
+    payload = json.loads(json_out.read_text(encoding='utf-8'))
+    assert 'cross_table_coherence' in payload
+    assert abs(payload['cross_table_coherence']['decade_sum_to_national_given_ratio'] - (80.0 / 209.0)) < 1e-12

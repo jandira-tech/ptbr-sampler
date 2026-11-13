@@ -36,7 +36,20 @@ def reconstruct_alias_probabilities(prob: np.ndarray, alias: np.ndarray) -> np.n
     if p.ndim != 1 or a.ndim != 1 or p.shape != a.shape or p.size == 0:
         raise ValueError('prob and alias must be non-empty 1D arrays of equal length')
     m = p.size
-    redirected = np.bincount(a, weights=1.0 - p, minlength=m)
+    donors = 1.0 - p
+    nonzero_mask = donors != 0.0
+    if not np.any(nonzero_mask):
+        return p / float(m)
+    targets = a[nonzero_mask]
+    vals = donors[nonzero_mask]
+    order = np.argsort(targets, kind='mergesort')
+    sorted_targets = targets[order]
+    sorted_vals = vals[order].tolist()
+    uniq_targets, starts = np.unique(sorted_targets, return_index=True)
+    ends = [*starts[1:].tolist(), len(sorted_vals)]
+    redirected = np.zeros(m, dtype=np.float64)
+    for tgt, s, e in zip(uniq_targets.tolist(), starts.tolist(), ends, strict=True):
+        redirected[tgt] = math.fsum(sorted_vals[s:e])
     return (p + redirected) / float(m)
 
 

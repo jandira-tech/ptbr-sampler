@@ -56,3 +56,9 @@ Legacy 2010 `names_data.json` labels cohorts by upper endpoint (`ate2010` = born
 1. **`('perl', 'surname')` absent from `name_detail.parquet`:** Present in `name_ranking.parquet` (`frequency=24`), blocked on IBGE's detail endpoint by an upstream WAF rule matching `/perl`. Tolerated explicitly in `scripts/audit_datasets.py`; surnames do not use `name_detail` sex counts.
 2. **Diacritics stripped upstream by IBGE:** Official IBGE Nomes strings fold diacritics (`Joao`, `Goncalves`) while preserving distinct orthographic spellings (`Ana` vs `Anna`, `Luis` vs `Luiz`). `ptbr-sampler` Title-Cases display tokens without inventing heuristic accents.
 3. **Surname token-slot share vs person-level presence:** `Silva` accounts for `34,030,104 / 203,080,756 = 16.76%` of residents, and `34,030,104 / 333,496,261 = 10.2040%` of recorded surname token slots. In 2-surname mode (`with_only_one_surname=False`), `census_year=2022` resamples slot 2 conditional on $s_2 \neq s_1$ to prevent duplicate stems (`"Silva Silva"`).
+
+## Cross-Table Coherence Diagnostics (`scripts.audit_datasets --parquet-dir`)
+
+- **Population-weighted UF mixture vs national given-name marginal:** $\text{TVD}(\sum_u w_u P(\cdot \mid u), P_{\text{nat}}) = 0.030919$ (`3.09%`), bounded strictly by per-UF `< 15` disclosure suppression across the 27 federative units.
+- **Birth-cohort sum vs national given-name count sum:** `186,340,745 / 190,383,184 = 0.978767` (`97.88%`), with the `2.12%` difference accounted for by per-decade `< 20` cell suppression across the 10 birth-decade cohorts.
+

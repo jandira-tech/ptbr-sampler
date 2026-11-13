@@ -225,6 +225,41 @@ def compute_cohort_alignment_tvd(
     return out
 
 
+def audit_cross_table_coherence(raw_dir: Path, parquet_dir: Path) -> dict[str, float]:
+    """Layer D: Cross-table marginal coherence diagnostics across 2022 tables."""
+    root_2022 = parquet_dir / 'census_year=2022'
+    nat = pq.read_table(root_2022 / 'first_names' / 'scope=national' / 'part.parquet')
+    states = pq.read_table(root_2022 / 'states' / 'part.parquet')
+    by_decade = pq.read_table(raw_dir / 'name_by_decade.parquet')
+
+    nat_w = dict(zip(nat['name'].to_pylist(), nat['weight'].to_pylist(), strict=True))
+    total_pop = float(sum(states['population'].to_pylist()))
+    uf_mix: dict[str, float] = defaultdict(float)
+    for uf, pop in zip(states['abbreviation'].to_pylist(), states['population'].to_pylist(), strict=True):
+        w_u = float(pop) / total_pop
+        uf_tbl = pq.read_table(root_2022 / 'first_names' / f'uf={uf}' / 'part.parquet')
+        for n, w in zip(uf_tbl['name'].to_pylist(), uf_tbl['weight'].to_pylist(), strict=True):
+            uf_mix[str(n)] += w_u * float(w)
+
+    vocab = sorted(set(nat_w) | set(uf_mix))
+    tvd_uf_vs_nat = total_variation_distance(
+        np.array([uf_mix.get(k, 0.0) for k in vocab]),
+        np.array([nat_w.get(k, 0.0) for k in vocab]),
+    )
+    given_sum = float(sum(nat['count'].to_pylist()))
+    decade_sum = float(
+        sum(
+            int(freq)
+            for nt, freq in zip(by_decade['name_type'].to_pylist(), by_decade['frequency'].to_pylist(), strict=True)
+            if nt == 'given'
+        )
+    )
+    return {
+        'uf_weighted_vs_national_given_tvd': tvd_uf_vs_nat,
+        'decade_sum_to_national_given_ratio': decade_sum / given_sum,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description='Audit Census 2022 Parquet tables.')
     parser.add_argument('--raw-dir', type=Path, required=True)
@@ -233,11 +268,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     report = audit_ibge_2022_tables(args.raw_dir)
-    serializable = {
+    serializable: dict[str, Any] = {
         **report,
         'missing_detail_keys': [list(k) for k in report['missing_detail_keys']],
         'censoring': asdict(report['censoring']),
     }
+    if args.parquet_dir is not None:
+        serializable['cross_table_coherence'] = audit_cross_table_coherence(args.raw_dir, args.parquet_dir)
     if args.json_out is not None:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps(serializable, indent=2) + '\n', encoding='utf-8')
