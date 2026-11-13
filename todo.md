@@ -28,6 +28,14 @@ Reconciled status for `ptbr-sampler` `0.3.0` against `deep-research-report(4).md
 7. **[x] Four-layer statistical validation (`ptbr_sampler/sampling/validation.py`, `tests/test_distribution_validation.py`, `scripts/audit_datasets.py`)**
    - Replaces permutation-sensitive `ks_2samp` and rescaled top-50 truncation with exact $O(M)$ alias probability reconstruction, exhaustive tail-pooled multinomial $\chi^2$ ($E_j \ge 5$) with Holm–Bonferroni FWER control, and negative controls.
 
+8. **[x] Isolated `random.Random` injection (`rng=`), fixed `uf=`/`--uf`, `RLock` thread safety, & `asyncio`-safe fast path**
+   - Threads optional `rng: random.Random | None` across `sample()`, `BrazilianNameSampler`, `BrazilianLocationSampler`, `PartitionStore`, `AliasTable`, `DocumentSampler`, `BrazilianRG`, and CPF/PIS/CNPJ/CEI/phone/address utilities without touching global `random` or `numpy.random` state.
+   - Synchronizes `PartitionStore` and sampler caches with `threading.RLock`, pins fixed `uf=` consistently across names, surnames, cities, CEPs, DDDs, and RG formats, and keeps offline `sample()` synchronous inside active `asyncio` event loops.
+
+9. **[x] First-class `Faker` provider (`ptbr_sampler.faker`), MIT license, & `THIRD_PARTY_NOTICES.md`**
+   - Ships `PTBRProvider` and `install_ptbr(fake, aliases=False, ...)` (`pip install "ptbr-sampler[faker]"`), keeping standard `Faker('pt_BR')` untouched unless `aliases=True` is requested and guaranteeing deterministic `Faker.seed()` / `fake.seed_instance()` streams.
+   - Standardizes repository code under the MIT License (`Copyright (c) 2026 Jandira Tech`) with explicit public/third-party dataset attribution in `THIRD_PARTY_NOTICES.md`.
+
 ---
 
 ## Remaining Open Assumptions (Documented, Not Overclaimed)

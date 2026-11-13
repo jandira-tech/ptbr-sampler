@@ -78,11 +78,13 @@ ptbr datasets status --verify
 
 ---
 
-## 5. Surname connectives, synthetic documents, offline addresses, and phones
+## 5. Surname connectives, synthetic documents, offline addresses, phones, & `Faker`
 
 - **Surname connectives (`da`, `de`, `dos`, `e`, …):** authorial style priors in `BrazilianNameSampler.SURNAME_PREFIXES` (`ptbr_sampler/br_name_class.py`).
-- **Documents (CPF, RG, PIS, CNPJ, CEI):** check-digit algorithms in `ptbr_sampler/document_sampler.py`, `ptbr_sampler/br_rg_class.py`, and `ptbr_sampler/utils/`; purely synthetic, never referencing real individuals.
+- **Documents (CPF, RG, PIS, CNPJ, CEI):** check-digit algorithms in `ptbr_sampler/document_sampler.py`, `ptbr_sampler/br_rg_class.py`, and `ptbr_sampler/utils/` (modulo-11 variants for CPF, CNPJ, and PIS; base-10 digit-sum folding for CEI; 27 state-specific formatting masks and issuing authorities such as `SSP-SP` and `DETRAN-RJ` for RG); purely synthetic, never referencing real individuals.
 - **Offline addresses & phones:** `ptbr_sampler/utils/address_for_offline.py` and `ptbr_sampler/utils/phone.py` (Anatel DDD + synthetic 9-digit mobile subscriber numbers).
+- **`Faker` provider & `rng=` determinism:** `ptbr_sampler.faker` (`PTBRProvider`, `install_ptbr`) and `rng=random.Random(...)` consume the exact same runtime Parquet and JSON artifacts above without duplicating data or mutating global RNG state.
+- **License boundary:** Repository software is MIT-licensed (`LICENSE`, `Copyright (c) 2026 Jandira Tech`); public statistical and third-party dataset terms remain governed by their respective notices in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
 
 ---
 

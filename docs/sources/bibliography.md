@@ -46,11 +46,13 @@ Headline statistics quoted in this repository:
 
 See `docs/sources/ibge-nomes-no-brasil-2022.md` and `docs/sources/ibge-nomes-2022-availability.md` for the full extraction, censoring decomposition, and SHA-256 manifest.
 
-### 2. IBGE Nomes API (v2, based on 2010 Census)
+### 2. IBGE Nomes API (v2, based on 2010 Census — Historical `census_year=2010` Only)
 
 Decade-of-birth frequencies for given names with `sexo=M|F` and
-`localidade=BR|<codigo_IBGE>` filters. Still the authoritative machine-readable
-endpoint until the 2022-based tables replace it.
+`localidade=BR|<codigo_IBGE>` filters. Retained in `ptbr-sampler` `0.3.0`
+strictly for opt-in historical reproduction (`census_year=2010` /
+`--census-year 2010`); superseded as the default by the 2022 Census tables
+above.
 
 - API reference: <https://servicodados.ibge.gov.br/api/docs/nomes?versao=2>
 - Ranking endpoint:
@@ -125,15 +127,14 @@ against IBGE boundaries during validation.
 
 - <https://ipeagit.github.io/geobr/>
 
-### 8. `genero-nomes` (Brasil.IO / Álvaro Justen / @turicas)
+### 8. `genero-nomes` (Brasil.IO / Álvaro Justen / @turicas — Historical `census_year=2010` Only)
 
-Per-name male/female frequency table built from the public IBGE Nomes API
-(per-name endpoint walked across the full long tail). Provides the sex
-prior that powers our `period × sex` first-name partitions
-(`parquet/first_names/period=<P>/sex=<S>/`). Same provenance lineage as our
-period data — Brasil.IO scraped the same IBGE Nomes API we pull
-period-level data from, just on the per-name endpoint instead of the
-ranking one.
+Per-name male/female frequency table built from the public IBGE 2010 Nomes API
+(per-name endpoint walked across the full long tail), licensed under
+`CC-BY-SA-4.0`. Powers the legacy `census_year=2010` `period × sex` first-name
+partitions (`parquet/first_names/period=<P>/sex=<S>/`); **not used** in the
+default `census_year=2022` pipeline (`99.8207%` directly observed IBGE 2022
+empirical sex mass).
 
 - Dataset files: <https://brasil.io/dataset/genero-nomes/files/>
 - Direct download: <https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz>
@@ -142,25 +143,33 @@ ranking one.
   <https://blog.brasil.io/2019/05/31/classificando-nomes-por-genero-usando-dados-publicos/index.html>
 - Local source page: `docs/sources/genero-nomes.md`
 
-### 9. Gemini gender classifications (`gemini-3.1-flash-lite-preview`)
+### 9. Gemini gender classifications (`gemini-3.1-flash-lite-preview` — Historical `census_year=2010` Only)
 
-Gap-fill source for the ~8 % of names in `names_data.json` absent from
-`genero-nomes` (mostly civil-registry typos and spelling variants). LLM-
-derived, **not** empirical IBGE data. Runs locally via
-`scripts/classify_unmatched_names_gemini.py` with 100 concurrent workers
-and quota-aware retry; outputs to
-`ptbr_sampler/data/raw/gemini_gender/classifications.jsonl`. Every parquet
+Gap-fill source for the ~8.1 % of `(name, period)` cells in legacy 2010
+`names_data.json` absent from `genero-nomes` (mostly civil-registry typos and
+spelling variants). LLM-derived, **not** empirical IBGE data, and **never used
+in `census_year=2022`** (`0.0%` LLM mass in 2022). Every legacy 2010 Parquet
 row this source contributes is tagged with `source =
-'gemini-3.1-flash-lite-preview'` so reviewers can audit and, if they
-need, filter back to the empirical-only subset.
+'gemini-3.1-flash-lite-preview'` and `count_* = 0` so reviewers can audit and
+filter back to the empirical-only subset.
 
 - Model docs: <https://ai.google.dev/gemini-api/docs/models>
 - API key: <https://aistudio.google.com/apikey>
 - Local methodology + audit-trail spec: `docs/sources/gemini-gender-classifications.md`
 
-## Repository's own deep-research audit
+## Algorithmic, Numerical, & Statistical Methodology References
 
-`deep-research-report(4).md` (committed at the repo root) is the statistical
-audit that produced this bibliography. It lists every assumption in the
-sampler, rates it against the sources above, and prescribes the architectural
-changes now implemented under `ptbr_sampler/sampling/`.
+### 10. Discrete Alias Sampling, Compensated Floating-Point Arithmetic, & Multiple-Testing GoF
+
+- **Walker, A. J. (1977).** "An Efficient Method for Generating Discrete Random Variables with General Distributions." *ACM Transactions on Mathematical Software (TOMS)*, 3(3), 253–256. <https://doi.org/10.1145/355744.355749>
+- **Vose, M. D. (1991).** "A Linear Algorithm for Generating Random Numbers with a Given Distribution." *IEEE Transactions on Software Engineering*, 17(9), 972–975. <https://doi.org/10.1109/32.92917>
+- **Kahan, W. (1965).** "Pracniques: Further Remarks on Reducing Truncation Errors." *Communications of the ACM*, 8(1), 40. <https://doi.org/10.1145/363707.363723>
+- **Shewchuk, J. R. (1997).** "Adaptive Precision Floating-Point Arithmetic and Fast Robust Geometric Predicates." *Discrete & Computational Geometry*, 18(3), 305–363. <https://doi.org/10.1007/PL00009321> (exact floating-point summation underlying Python's `math.fsum`).
+- **Pearson, K. (1900).** "On the Criterion that a Given System of Deviations from the Probable in the Case of a Correlated System of Variables is Such that it Can be Reasonably Supposed to have Arisen from Random Sampling." *Philosophical Magazine*, Series 5, 50(302), 157–175. <https://doi.org/10.1080/14786440009463897>
+- **Cochran, W. G. (1952).** "The $\chi^2$ Test of Goodness of Fit." *The Annals of Mathematical Statistics*, 23(3), 315–345. <https://doi.org/10.1214/aoms/1177729380> ($E_j \ge 5$ expected-count criterion for tail-pooled multinomial bins).
+- **Holm, S. (1979).** "A Simple Sequentially Rejective Multiple Test Procedure." *Scandinavian Journal of Statistics*, 6(2), 65–70. <https://www.jstor.org/stable/4615733>
+
+## Repository's own deep-research audit & technical report
+
+- [`docs/technical-report.md`](../technical-report.md): comprehensive monograph covering project evolution (`0.1.0` → `0.2.0` → `0.3.0`), mathematical derivations, IBGE `Liv102228` censoring decomposition, Kahan-compensated Walker–Vose alias tables, Faker/RNG stream isolation, Hugging Face runtime caching, and four-layer statistical validation.
+- `deep-research-report(4).md` (committed at the repo root): initial statistical audit from the `0.2.x` cycle that flagged legacy sampling assumptions and motivated the `0.3.0` modernization.

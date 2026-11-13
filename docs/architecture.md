@@ -1,11 +1,12 @@
 # Data and sampling architecture (`ptbr-sampler` `0.3.0`)
 
-`ptbr-sampler` `0.3.0` combines four design pillars so realistic Brazilian demographic sampling scales across `128,458` Census 2022 given names and `201,601` surnames without shipping an `80 MiB` wheel:
+`ptbr-sampler` `0.3.0` combines five design pillars so realistic Brazilian demographic sampling scales across `128,458` Census 2022 given names and `201,601` surnames without shipping an `80 MiB` wheel:
 
 1. **Ultra-slim wheel (`< 150 KiB`) + pinned Hugging Face runtime dataset hub (`arthrod/ptbr-sampler-data`)**
 2. **Versioned, 1D-marginal `float64` Parquet partitions** (`parquet/census_year=2022/` default + legacy `parquet/` for `census_year=2010`)
-3. **Walker/Vose $O(1)$ vectorized alias tables** (`ptbr_sampler/sampling/alias.py`) wrapped in a condition-keyed LRU (`PartitionStore`)
+3. **Kahan-compensated Walker/Vose $O(1)$ vectorized alias tables** (`ptbr_sampler/sampling/alias.py`) wrapped in a thread-safe condition-keyed LRU (`PartitionStore`)
 4. **Strict observed vs. lazy Bayes conditional estimation** (`conditioning_mode='strict' | 'estimated'`)
+5. **Isolated `random.Random` stream determinism (`rng=`), `RLock` concurrency, & first-class `Faker` integration** (`ptbr_sampler/faker.py`)
 
 ---
 
@@ -47,11 +48,20 @@ Pre-warm or audit caches explicitly with `ptbr datasets prefetch --census-year 2
 
 ---
 
-## 2. Sampling — Walker/Vose Alias Method & Bounded LRU
+## 2. Sampling — Kahan-Compensated Walker/Vose Alias Method, `RLock` LRU, & `Faker`
 
-`ptbr_sampler/sampling/alias.py` builds `(prob, alias)` in $O(m)$ using `math.fsum` and draws `k` samples in vectorized $O(k)$ NumPy operations independent of support size $m$. `AliasTable.induced_probabilities()` reconstructs the exact categorical distribution induced by `(prob, alias)` in $O(m)$ via `np.bincount`, and `AliasTable.top_k(40)` slices top-40 surname tables directly from 2022 national or UF partitions.
+`ptbr_sampler/sampling/alias.py` builds `(prob, alias)` in $O(m)$ using Shewchuk's exact floating-point summation (`math.fsum`), bulk C-level hub absorption when a high-multiplicity bucket ($q_\ell \ge 2.0$, such as `Silva` at $q_{\text{Silva}} \cdot M \approx 20{,}571$) absorbs thousands of tail buckets, and per-bucket Kahan (1965) compensated subtraction (`L_inf = 1.39e-17` on Census 2022 partitions). It draws `k` samples in vectorized $O(k)$ NumPy operations independent of support size $m$. `AliasTable.induced_probabilities()` reconstructs the exact categorical distribution induced by `(prob, alias)` in $O(m)$, and `AliasTable.top_k(40)` slices top-40 surname tables directly from 2022 national or UF partitions.
 
-`PartitionStore` (`ptbr_sampler/sampling/store.py`) caches loaded `AliasTable` instances in a bounded LRU, while `ptbr_sampler/sampler.py` caches initialized `BrazilianNameSampler` instances across `sample()` calls and sorts `(uf, sex)` buckets deterministically so seeded RNG streams are invariant to dictionary iteration order.
+### Thread Safety, Isolated `random.Random` Streams, & `asyncio` Safety
+
+- **Zero global RNG mutation:** Every public and internal entry point accepts `rng: random.Random | None = None`. When `rng` is supplied, vectorized `AliasTable` batches derive ephemeral child NumPy generators via `np.random.default_rng(rng.getrandbits(128))` without reading or mutating module-global `random` or `numpy.random` state.
+- **Synchronized caches:** `PartitionStore` (`ptbr_sampler/sampling/store.py`) and the reusable sampler caches in `ptbr_sampler/sampler.py` protect LRU lookups, insertions, and evictions behind `threading.RLock`, while sorting `(uf, sex)` buckets deterministically so seeded outputs are invariant to dictionary iteration order.
+- **Event-loop safety:** Offline `sample(..., save_to_jsonl=None)` executes through a synchronous fast path (`_generate_offline_address_batch`), avoiding nested `asyncio.run()` errors inside Jupyter, marimo, or FastAPI loops.
+- **Fixed `uf=` alignment:** Passing `uf='SP'` (or `--uf SP` on the CLI) pins location draws, given names, UF-conditioned 2022 surnames, postal CEP ranges, Anatel DDD area codes, and state-specific RG patterns (`SSP-SP`, `DETRAN-RJ`, probabilistic `MG` prefix) to the requested Federation Unit.
+
+### First-Class `Faker` Provider (`ptbr_sampler.faker`)
+
+`PTBRProvider` and `install_ptbr(fake, aliases=False, ...)` wrap the cached `BrazilianNameSampler`, `BrazilianLocationSampler`, and `DocumentSampler` instances directly, routing all randomness through `self.generator.random` so `Faker.seed(...)` and `fake.seed_instance(...)` are bit-reproducible across fresh instances. By default (`aliases=False`), only namespaced `ptbr_*` formatters (`ptbr_profile`, `ptbr_name`, `ptbr_cpf`, `ptbr_rg`, `ptbr_cep`, `ptbr_address`, `ptbr_phone`, etc.) are registered, leaving standard `Faker('pt_BR')` locale providers untouched unless `aliases=True` is explicitly requested. Multi-locale proxy `Faker(['pt_BR', 'en_US'])` instances and repeated `install_ptbr(...)` reconfigurations clean up prior `PTBRProvider` instances idempotently.
 
 ---
 

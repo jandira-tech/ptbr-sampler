@@ -11,7 +11,7 @@ This runbook documents the end-to-end dataset workflow for `ptbr-sampler` `0.3.0
 - For publishing only: `HF_TOKEN` with write permission to `arthrod/ptbr-sampler-data`
 
 ```bash
-uv sync --extra test --extra dev
+uv sync --extra test --extra dev --extra faker --extra docs
 ```
 
 ---
@@ -88,4 +88,4 @@ ptbr datasets status --verify
 PTBR_SAMPLER_OFFLINE=1 ptbr generate --qty 5 --uf-conditioning
 ```
 
-Verified `0.3.0` wheel: `ptbr_sampler-0.3.0-py3-none-any.whl` = `94,409 bytes` (`92.2 KiB` `< 150 KiB`), with `ptbr_sampler/data/dataset_manifest.json` as the sole file under `ptbr_sampler/data/`.
+Verified `0.3.0` wheel: `ptbr_sampler-0.3.0-py3-none-any.whl` (`~100 KiB`, strictly `< 150 KiB`), with `ptbr_sampler/data/dataset_manifest.json` as the sole file under `ptbr_sampler/data/`.
