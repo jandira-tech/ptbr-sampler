@@ -372,14 +372,18 @@ def sample(
         raise ValueError(f'census_year must be 2010 or 2022; got {census_year!r}')
     if conditioning_mode not in ('strict', 'estimated'):
         raise ValueError(f"conditioning_mode must be 'strict' or 'estimated'; got {conditioning_mode!r}")
-    resolved_period = resolve_time_period(time_period, census_year)
+
+    custom_names_path = _custom_path_or_none(names_path, 'names_data.json')
+    custom_surnames_path = _custom_path_or_none(surnames_path, 'surnames_data.json')
+    effective_census_year = 2010 if (custom_names_path is not None or custom_surnames_path is not None) else census_year
+    resolved_period = resolve_time_period(time_period, effective_census_year)
 
     sex_conditioning_norm: str | None = None
     if sex_conditioning is not None:
         sc = str(sex_conditioning).strip().upper()
         if sc not in ('M', 'F', 'MIXED', 'POPULATION'):
             raise ValueError(f"sex_conditioning must be 'M', 'F', 'mixed', 'population', or None; got {sex_conditioning!r}")
-        if sc == 'POPULATION' and census_year != 2022:
+        if sc == 'POPULATION' and effective_census_year != 2022:
             raise ValueError("sex_conditioning='population' requires census_year=2022")
         sex_conditioning_norm = sc
 
@@ -429,9 +433,9 @@ def sample(
         resolved_middle_path = str(resolve_bundled_or_custom_path(middle_names_path, 'middle_names.json')) if middle_names_path else None
 
         if custom_names_path is None and custom_surnames_path is None:
-            parquet_root_str = str(ensure_parquet_root(census_year))
+            parquet_root_str = str(ensure_parquet_root(effective_census_year))
             name_sampler = _get_cached_name_sampler(
-                census_year,
+                effective_census_year,
                 conditioning_mode,
                 parquet_root_str,
                 None,
@@ -449,7 +453,7 @@ def sample(
                 resolved_middle_path,
                 None,
                 parquet_root=None,
-                census_year=census_year,
+                census_year=effective_census_year,
                 conditioning_mode=conditioning_mode,  # type: ignore[arg-type]
             )
 
@@ -538,7 +542,7 @@ def sample(
                             raw=name_raw,
                             with_only_one_surname=with_only_one_surname,
                             random_mode=random,
-                            uf=state_abbr if (condition_uf and census_year == 2022) else None,
+                            uf=state_abbr if (condition_uf and effective_census_year == 2022) else None,
                         ),
                     )
                 elif only_middle:

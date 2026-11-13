@@ -221,3 +221,132 @@ def test_bundled_manifest_pins_immutable_40_char_hf_revision():
     assert manifest.package_version == '0.3.0'
     assert re.fullmatch(r'[0-9a-f]{40}', manifest.hf_revision)
     assert len(manifest.artifacts) == 195
+
+
+def test_resolve_partition_path_and_cli_status_reject_corrupt_cache_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    import hashlib
+
+    from typer.testing import CliRunner
+
+    from ptbr_sampler.cli import app
+
+    rel = 'parquet/census_year=2022/first_names/scope=national/part.parquet'
+    good_bytes = b'PAR1goodcontentPAR1'
+    good_sha = hashlib.sha256(good_bytes).hexdigest()
+    rev = 'd' * 40
+    manifest_file = tmp_path / 'dataset_manifest.json'
+    manifest_file.write_text(
+        json.dumps(
+            {
+                'schema_version': 1,
+                'package_version': '0.3.0',
+                'hf_repo_id': 'arthrod/ptbr-sampler-data',
+                'hf_revision': rev,
+                'artifacts': {
+                    rel: {'sha256': good_sha, 'size_bytes': len(good_bytes), 'census_years': [2022]},
+                },
+            }
+        ),
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(ds_mod, 'MANIFEST_PATH', manifest_file)
+    monkeypatch.setattr(ds_mod, 'PACKAGE_DATA_DIR', tmp_path / 'empty_pkg_data')
+    ds_mod.load_dataset_manifest.cache_clear()
+    monkeypatch.setenv('PTBR_SAMPLER_CACHE_DIR', str(tmp_path / 'cache'))
+    monkeypatch.delenv('PTBR_SAMPLER_IGNORE_LOCAL_DATA', raising=False)
+    monkeypatch.delenv('PTBR_SAMPLER_DATA_DIR', raising=False)
+
+    corrupt_cache_file = ds_mod.get_revision_cache_dir() / rel
+    corrupt_cache_file.parent.mkdir(parents=True, exist_ok=True)
+    corrupt_cache_file.write_bytes(b'truncated')
+
+    # 1. Offline resolve_partition_path must NOT silently return the truncated cache file
+    monkeypatch.setenv('PTBR_SAMPLER_OFFLINE', '1')
+    with pytest.raises(RuntimeError, match='PTBR_SAMPLER_OFFLINE=1'):
+        ds_mod.resolve_partition_path(corrupt_cache_file)
+
+    # 2. Same-size SHA-tampered cache file must report INVALID via `ptbr datasets status --verify` without KeyError
+    corrupt_cache_file.write_bytes(b'X' * len(good_bytes))
+    res = CliRunner().invoke(app, ['datasets', 'status', '--verify'])
+    assert res.exit_code == 1
+    assert f'INVALID: {rel}' in (res.stdout + getattr(res, 'stderr', '') or res.output)
+    ds_mod.load_dataset_manifest.cache_clear()
+
+
+def test_data_dir_override_offline_true_sha256_and_census_year_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from typer.testing import CliRunner
+
+    from ptbr_sampler.cli import app
+
+    rel = 'parquet/census_year=2022/first_names/scope=national/part.parquet'
+    good_bytes = b'PAR1validoverridePAR1'
+    good_sha = hashlib.sha256(good_bytes).hexdigest()
+    rev = 'e' * 40
+    manifest_file = tmp_path / 'dataset_manifest.json'
+    manifest_file.write_text(
+        json.dumps(
+            {
+                'schema_version': 1,
+                'package_version': '0.3.0',
+                'hf_repo_id': 'arthrod/ptbr-sampler-data',
+                'hf_revision': rev,
+                'artifacts': {
+                    rel: {'sha256': good_sha, 'size_bytes': len(good_bytes), 'census_years': [2022]},
+                },
+            }
+        ),
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(ds_mod, 'MANIFEST_PATH', manifest_file)
+    monkeypatch.setattr(ds_mod, 'PACKAGE_DATA_DIR', tmp_path / 'empty_pkg_data')
+    ds_mod.load_dataset_manifest.cache_clear()
+    monkeypatch.setenv('PTBR_SAMPLER_CACHE_DIR', str(tmp_path / 'cache'))
+    monkeypatch.setenv('PTBR_SAMPLER_IGNORE_LOCAL_DATA', '1')
+
+    # 1. PTBR_SAMPLER_OFFLINE=true (documented boolean literal) blocks uncached network downloads
+    monkeypatch.setenv('PTBR_SAMPLER_OFFLINE', 'true')
+    assert ds_mod.has_runtime_data_available(census_year=2022) is False
+    with pytest.raises(RuntimeError, match='PTBR_SAMPLER_OFFLINE'):
+        ds_mod.ensure_data_file(rel)
+
+    # 2. PTBR_SAMPLER_DATA_DIR satisfies offline availability, reports local-override, and honors verify_sha256
+    override_dir = tmp_path / 'override_data'
+    override_file = override_dir / rel
+    override_file.parent.mkdir(parents=True, exist_ok=True)
+    override_file.write_bytes(good_bytes)
+    monkeypatch.setenv('PTBR_SAMPLER_DATA_DIR', str(override_dir))
+
+    assert ds_mod.has_runtime_data_available(census_year=2022) is True
+    status_ok = ds_mod.dataset_cache_status(census_year=2022, verify_sha256=True)
+    assert status_ok['artifacts'][0]['state'] == 'local-override'
+    assert status_ok['artifacts'][0]['valid'] is True
+
+    # Tamper override file: verify_sha256=True must detect SHA-256 mismatch
+    override_file.write_bytes(b'Z' * len(good_bytes))
+    status_bad = ds_mod.dataset_cache_status(census_year=2022, verify_sha256=True)
+    assert status_bad['artifacts'][0]['valid'] is False
+    with pytest.raises(RuntimeError, match='SHA-256 mismatch'):
+        ds_mod.ensure_data_file(rel, verify_sha256=True)
+
+    # 3. Invalid census_year values must fail fast rather than silently matching 0 artifacts
+    with pytest.raises(ValueError, match='census_year'):
+        ds_mod.prefetch_datasets(census_year=2024)
+    with pytest.raises(ValueError, match='census_year'):
+        ds_mod.dataset_cache_status(census_year=2024)
+    res_src = CliRunner().invoke(app, ['sources', '--census-year', '2024'])
+    assert res_src.exit_code == 1
+
+    # 4. Path/query injection in PTBR_SAMPLER_HF_REPO is rejected
+    monkeypatch.delenv('PTBR_SAMPLER_DATA_DIR')
+    monkeypatch.delenv('PTBR_SAMPLER_OFFLINE')
+    monkeypatch.setenv('PTBR_SAMPLER_HF_REPO', 'evil/repo/../../other?x=1')
+    ds_mod.load_dataset_manifest.cache_clear()
+    with pytest.raises(ValueError, match='hf_repo_id'):
+        ds_mod.load_dataset_manifest()
+    ds_mod.load_dataset_manifest.cache_clear()

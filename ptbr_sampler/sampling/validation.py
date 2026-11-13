@@ -91,6 +91,12 @@ def exhaustive_multinomial_gof(
     probs = np.asarray(target_probs, dtype=np.float64)
     if obs.ndim != 1 or probs.ndim != 1 or obs.shape != probs.shape or obs.size == 0:
         raise ValueError('observed_counts and target_probs must be matching non-empty 1D arrays')
+    if np.any(obs < 0):
+        raise ValueError('observed_counts must be non-negative')
+    if not np.all(np.isfinite(probs)) or np.any(probs < 0.0):
+        raise ValueError('target_probs must be finite and non-negative')
+    if not math.isfinite(min_expected) or min_expected <= 0.0:
+        raise ValueError('min_expected must be positive and finite')
     prob_sum = math.fsum(probs.tolist())
     if abs(prob_sum - 1.0) > 1e-9:
         raise ValueError(f'target_probs must sum to 1.0 (got {prob_sum:.12f})')
@@ -102,14 +108,19 @@ def exhaustive_multinomial_gof(
     tvd = total_variation_distance(emp_probs, probs)
     linf = linf_distance(emp_probs, probs)
 
+    has_impossible_obs = bool(np.any((probs == 0.0) & (obs > 0)))
+
     order = np.argsort(-probs, kind='mergesort')
     pooled_obs: list[float] = []
     pooled_exp: list[float] = []
     acc_obs = 0.0
     acc_exp = 0.0
     for idx in order:
+        p_i = float(probs[idx])
+        if p_i == 0.0:
+            continue
         acc_obs += float(obs[idx])
-        acc_exp += float(probs[idx]) * n
+        acc_exp += p_i * n
         if acc_exp >= min_expected:
             pooled_obs.append(acc_obs)
             pooled_exp.append(acc_exp)
@@ -122,6 +133,20 @@ def exhaustive_multinomial_gof(
         else:
             pooled_obs.append(acc_obs)
             pooled_exp.append(acc_exp)
+
+    if has_impossible_obs:
+        impossible_bins = len(pooled_exp) + 1
+        return MultinomialGoFResult(
+            chi2_stat=math.inf,
+            g_stat=math.inf,
+            p_value=0.0,
+            df=max(impossible_bins - 1, 1),
+            pooled_bins=max(impossible_bins, 2),
+            sample_size=n,
+            expected_sum=float(math.fsum(pooled_exp)),
+            tvd=tvd,
+            linf=linf,
+        )
 
     if len(pooled_exp) < 2:
         raise ValueError('need at least 2 pooled bins with expected count >= min_expected')

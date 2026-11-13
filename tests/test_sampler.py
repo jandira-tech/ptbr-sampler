@@ -249,3 +249,60 @@ class TestUfSexConditioningNameOnly:
         _sample(qty=2, experimental_uf_sex_conditioning=True, **{fork: True})
 
         assert flips == []
+
+
+def test_custom_json_override_works_without_explicit_census_year_2010(tmp_path):
+    import json
+
+    custom_surnames = tmp_path / 'custom_surnames.json'
+    custom_surnames.write_text(
+        json.dumps(
+            {
+                'surnames': {
+                    'Zephyr': {'percentage': 0.5},
+                    'Boreal': {'percentage': 0.5},
+                    'top_40': {'Zephyr': {'percentage': 1.0}},
+                }
+            }
+        ),
+        encoding='utf-8',
+    )
+    row = _sample(qty=1, surnames_path=custom_surnames)
+    assert isinstance(row, dict)
+    assert any(token in row['surnames'] for token in ('Zephyr', 'Boreal'))
+
+    custom_names = tmp_path / 'custom_names.json'
+    custom_names.write_text(
+        json.dumps(
+            {
+                'common_names_percentage': {
+                    p.value: {'names': {'Alvorada': {'percentage': 1.0}}, 'total': 100}
+                    for p in (
+                        TimePeriod.UNTIL_1930,
+                        TimePeriod.UNTIL_1940,
+                        TimePeriod.UNTIL_1950,
+                        TimePeriod.UNTIL_1960,
+                        TimePeriod.UNTIL_1970,
+                        TimePeriod.UNTIL_1980,
+                        TimePeriod.UNTIL_1990,
+                        TimePeriod.UNTIL_2000,
+                        TimePeriod.UNTIL_2010,
+                    )
+                }
+            }
+        ),
+        encoding='utf-8',
+    )
+    row_name = _sample(qty=1, names_path=custom_names, surnames_path=custom_surnames)
+    assert isinstance(row_name, dict)
+    assert row_name['name'] == 'Alvorada'
+    assert any(token in row_name['surnames'] for token in ('Zephyr', 'Boreal'))
+
+
+def test_top_level_package_exports_ergonomic_sample_wrapper():
+    from ptbr_sampler import sample as pkg_sample
+
+    row = pkg_sample(q=1)
+    assert isinstance(row, dict)
+    assert 'name' in row
+    assert 'cpf' in row

@@ -16,7 +16,7 @@ Starting in **`0.3.0`**, heavy Parquet and JSON payloads are **excluded from the
 Set `PTBR_SAMPLER_OFFLINE=1` to forbid network egress (raising a deterministic `RuntimeError` if a partition is uncached), and pre-warm Docker images or CI runners with:
 
 ```bash
-ptbr datasets prefetch --census-year 2022   # or --census-year all
+ptbr datasets prefetch --census-year 2022   # or --all-vintages
 ptbr datasets status --verify
 ```
 

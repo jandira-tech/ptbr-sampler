@@ -255,3 +255,16 @@ class TestLayerCMonteCarloAndNegativeControls:
 
         assert exhaustive_multinomial_gof(obs_big, table.weights, min_expected=5.0).p_value > 0.001
         assert exhaustive_multinomial_gof(obs_small, table.weights, min_expected=5.0).p_value > 0.001
+
+
+def test_exhaustive_multinomial_gof_rejects_positive_observation_in_zero_prob_cell():
+    import math
+
+    res = exhaustive_multinomial_gof(
+        np.array([50, 49, 1], dtype=np.int64),
+        np.array([0.5, 0.5, 0.0], dtype=np.float64),
+        min_expected=5.0,
+    )
+    assert math.isinf(res.chi2_stat)
+    assert math.isinf(res.g_stat)
+    assert res.p_value == 0.0

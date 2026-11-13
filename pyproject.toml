@@ -2,6 +2,8 @@
 name = 'ptbr-sampler'
 version = '0.3.0'
 description = 'Brazilian Name and Location Generator'
+readme = 'README.md'
+license-files = ['LICENSE', 'THIRD_PARTY_NOTICES.md']
 authors = [{name = 'arthrod', email = 'arthrod@gmail.com'}]
 requires-python = '>=3.12'
 keywords = ['brazil', 'name', 'location', 'generator']
@@ -57,6 +59,12 @@ wheel-exclude = [
     'ptbr_sampler/data/surnames_data.json',
     'ptbr_sampler/data/middle_names.json',
     'ptbr_sampler/tests/**',
+    'ptbr_sampler/add_city_name.py',
+    'ptbr_sampler/examine_data.py',
+    'ptbr_sampler/merge_city_data.py',
+    'ptbr_sampler/sample1.py',
+    'ptbr_sampler/sample2.py',
+    'ptbr_sampler/teste.py',
 ]
 source-exclude = [
     'ptbr_sampler/data/parquet/**',
@@ -66,6 +74,13 @@ source-exclude = [
     'ptbr_sampler/data/names_data.json',
     'ptbr_sampler/data/surnames_data.json',
     'ptbr_sampler/data/middle_names.json',
+    'ptbr_sampler/tests/**',
+    'ptbr_sampler/add_city_name.py',
+    'ptbr_sampler/examine_data.py',
+    'ptbr_sampler/merge_city_data.py',
+    'ptbr_sampler/sample1.py',
+    'ptbr_sampler/sample2.py',
+    'ptbr_sampler/teste.py',
 ]
 
 [tool.ruff]

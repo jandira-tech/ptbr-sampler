@@ -14,6 +14,7 @@ from Python's ``random`` module on each call, so callers that rely on
 import contextlib
 import json
 import math
+import os
 import random
 from collections import OrderedDict
 from collections.abc import Callable
@@ -308,7 +309,10 @@ class BrazilianNameSampler:
         if middle_names_path is not None:
             resolved_mp = Path(middle_names_path).resolve()
             default_candidates = {(PACKAGE_DATA_DIR / 'middle_names.json').resolve()}
-            with contextlib.suppress(FileNotFoundError):
+            env_data_dir = os.environ.get('PTBR_SAMPLER_DATA_DIR')
+            if env_data_dir:
+                default_candidates.add((Path(env_data_dir).expanduser() / 'middle_names.json').resolve())
+            with contextlib.suppress(FileNotFoundError, ValueError):
                 default_candidates.add((get_revision_cache_dir() / 'middle_names.json').resolve())
             self._use_shared_middle_parquet = resolved_mp in default_candidates
 

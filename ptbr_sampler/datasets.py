@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import threading
 import time
@@ -30,8 +31,19 @@ DEFAULT_HF_BASE_URL: str = 'https://huggingface.co'
 USER_AGENT: str = 'ptbr-sampler/0.3.0 (+https://github.com/jandira-tech/ptbr-sampler)'
 _ALLOWED_HF_HOST_SUFFIXES: tuple[str, ...] = ('huggingface.co', '.huggingface.co', '.hf.co')
 _RETRYABLE_HTTP_CODES: frozenset[int] = frozenset({429, 500, 502, 503, 504})
+_REPO_ID_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*$')
+_REVISION_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]*$')
 _THREAD_LOCKS_GUARD = threading.Lock()
 _THREAD_LOCKS: dict[Path, threading.Lock] = {}
+
+
+def _is_offline() -> bool:
+    return os.environ.get('PTBR_SAMPLER_OFFLINE', '').strip().lower() in {'1', 'true', 'yes'}
+
+
+def _validate_census_year(census_year: int | None) -> None:
+    if census_year is not None and census_year not in (2010, 2022):
+        raise ValueError(f'census_year must be 2010 or 2022; got {census_year!r}')
 
 
 @dataclass(slots=True, frozen=True)
@@ -80,11 +92,17 @@ def load_dataset_manifest() -> DatasetManifest:
             size_bytes=int(meta['size_bytes']),
             census_years=tuple(int(y) for y in meta.get('census_years', (2010, 2022))),
         )
+    hf_repo_id = os.environ.get('PTBR_SAMPLER_HF_REPO') or str(raw['hf_repo_id'])
+    hf_revision = os.environ.get('PTBR_SAMPLER_HF_REVISION') or str(raw['hf_revision'])
+    if '..' in hf_repo_id or not _REPO_ID_RE.fullmatch(hf_repo_id):
+        raise ValueError(f'Invalid hf_repo_id: {hf_repo_id!r}')
+    if '..' in hf_revision or not _REVISION_RE.fullmatch(hf_revision):
+        raise ValueError(f'Invalid hf_revision: {hf_revision!r}')
     return DatasetManifest(
         schema_version=int(raw.get('schema_version', 1)),
         package_version=str(raw.get('package_version', '0.3.0')),
-        hf_repo_id=os.environ.get('PTBR_SAMPLER_HF_REPO') or str(raw['hf_repo_id']),
-        hf_revision=os.environ.get('PTBR_SAMPLER_HF_REVISION') or str(raw['hf_revision']),
+        hf_repo_id=hf_repo_id,
+        hf_revision=hf_revision,
         artifacts=artifacts,
     )
 
@@ -131,29 +149,33 @@ def _artifact_lock(lock_path: Path) -> Iterator[None]:
                 fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
 
 
+def _is_allowed_hf_host(host: str) -> bool:
+    return any(host == s.lstrip('.') or (s.startswith('.') and host.endswith(s)) for s in _ALLOWED_HF_HOST_SUFFIXES)
+
+
 class _CrossOriginSafeRedirectHandler(urllib.request.HTTPRedirectHandler):
     def __init__(self, *, allow_loopback_http: bool = False) -> None:
         super().__init__()
         self._allow_loopback_http = allow_loopback_http
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        parsed_orig = urllib.parse.urlsplit(req.full_url)
+        orig_host = (parsed_orig.hostname or '').lower()
         parsed_new = urllib.parse.urlsplit(newurl)
         host = (parsed_new.hostname or '').lower()
-        if parsed_new.scheme == 'https':
-            if not any(host == s.lstrip('.') or (s.startswith('.') and host.endswith(s)) for s in _ALLOWED_HF_HOST_SUFFIXES):
-                raise urllib.error.URLError(f'Disallowed redirect host: {host!r}')
-        elif self._allow_loopback_http and parsed_new.scheme == 'http' and host in {'127.0.0.1', 'localhost'}:
-            pass
-        else:
+        allowed_https = parsed_new.scheme == 'https' and bool(host) and (_is_allowed_hf_host(host) or host == orig_host)
+        allowed_http = self._allow_loopback_http and parsed_new.scheme == 'http' and host in {'127.0.0.1', 'localhost'}
+        if not (allowed_https or allowed_http):
             raise urllib.error.URLError(f'Disallowed redirect URL scheme/host: {newurl!r}')
 
         new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
-        if new_req is not None:
-            parsed_orig = urllib.parse.urlsplit(req.full_url)
-            if (parsed_orig.scheme, parsed_orig.netloc.lower()) != (parsed_new.scheme, parsed_new.netloc.lower()):
-                for hdr_dict in (new_req.headers, new_req.unredirected_hdrs):
-                    for key in [k for k in hdr_dict if k.lower() == 'authorization']:
-                        del hdr_dict[key]
+        if new_req is not None and (parsed_orig.scheme, parsed_orig.netloc.lower()) != (
+            parsed_new.scheme,
+            parsed_new.netloc.lower(),
+        ):
+            for hdr_dict in (new_req.headers, new_req.unredirected_hdrs):
+                for key in [k for k in hdr_dict if k.lower() == 'authorization']:
+                    del hdr_dict[key]
         return new_req
 
 
@@ -164,10 +186,17 @@ def _download_url_to_part(
     allow_loopback_http: bool = False,
     timeout: float = 60.0,
 ) -> tuple[str, int]:
+    parsed = urllib.parse.urlsplit(url)
+    host = (parsed.hostname or '').lower()
+    if not (
+        (parsed.scheme == 'https' and bool(host))
+        or (allow_loopback_http and parsed.scheme == 'http' and host in {'127.0.0.1', 'localhost'})
+    ):
+        raise ValueError(f'Disallowed download URL scheme/host: {url!r}')
+
     headers = {'User-Agent': USER_AGENT}
     token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGING_FACE_HUB_TOKEN')
-    parsed = urllib.parse.urlsplit(url)
-    if token and (parsed.hostname or '').lower() == 'huggingface.co':
+    if token and host == 'huggingface.co':
         headers['Authorization'] = f'Bearer {token}'
 
     opener = urllib.request.build_opener(_CrossOriginSafeRedirectHandler(allow_loopback_http=allow_loopback_http))
@@ -211,19 +240,39 @@ def _download_with_retries(
     raise RuntimeError('unreachable')  # pragma: no cover
 
 
+def _verify_file_against_entry(path: Path, rel: str, entry: ArtifactEntry) -> None:
+    actual_size = path.stat().st_size
+    if actual_size != entry.size_bytes:
+        raise RuntimeError(f'Byte-length mismatch for {rel}: expected {entry.size_bytes}, got {actual_size}')
+    actual_sha = _sha256_file(path)
+    if actual_sha != entry.sha256:
+        raise RuntimeError(f'SHA-256 mismatch for {rel}: expected {entry.sha256}, got {actual_sha}')
+
+
 def ensure_data_file(relpath: str | Path, *, verify_sha256: bool = False) -> Path:
     """Resolve a runtime dataset file from override dir, local checkout, or verified HF cache."""
     rel = _normalize_relpath(relpath)
 
     env_data_dir = os.environ.get('PTBR_SAMPLER_DATA_DIR')
     if env_data_dir:
-        override_file = (Path(env_data_dir).expanduser() / rel).resolve()
+        override_root = Path(env_data_dir).expanduser().resolve()
+        override_file = (override_root / rel).resolve()
+        if not override_file.is_relative_to(override_root):
+            raise ValueError(f'Dataset override path escapes PTBR_SAMPLER_DATA_DIR: {relpath!r}')
         if override_file.is_file():
+            if verify_sha256 and MANIFEST_PATH.is_file():
+                mf = load_dataset_manifest()
+                if rel in mf.artifacts:
+                    _verify_file_against_entry(override_file, rel, mf.artifacts[rel])
             return override_file
 
     if os.environ.get('PTBR_SAMPLER_IGNORE_LOCAL_DATA') != '1':
         local_file = PACKAGE_DATA_DIR / rel
         if local_file.is_file():
+            if verify_sha256 and MANIFEST_PATH.is_file():
+                mf = load_dataset_manifest()
+                if rel in mf.artifacts:
+                    _verify_file_against_entry(local_file, rel, mf.artifacts[rel])
             return local_file
 
     manifest = load_dataset_manifest()
@@ -240,9 +289,9 @@ def ensure_data_file(relpath: str | Path, *, verify_sha256: bool = False) -> Pat
     ):
         return cache_file
 
-    if os.environ.get('PTBR_SAMPLER_OFFLINE') == '1':
+    if _is_offline():
         raise RuntimeError(
-            f'Dataset artifact {rel!r} is not cached at {cache_file} and PTBR_SAMPLER_OFFLINE=1. '
+            f'Dataset artifact {rel!r} is not cached at {cache_file} and PTBR_SAMPLER_OFFLINE=1 (offline mode active). '
             'Pre-warm the cache with `ptbr datasets prefetch`.'
         )
 
@@ -254,8 +303,15 @@ def ensure_data_file(relpath: str | Path, *, verify_sha256: bool = False) -> Pat
         base_url = (os.environ.get('PTBR_SAMPLER_HF_BASE_URL') or DEFAULT_HF_BASE_URL).rstrip('/')
         parsed_base = urllib.parse.urlsplit(base_url)
         allow_loopback = parsed_base.scheme == 'http' and (parsed_base.hostname or '') in {'127.0.0.1', 'localhost'}
-        if parsed_base.scheme != 'https' and not allow_loopback:
-            raise ValueError(f'PTBR_SAMPLER_HF_BASE_URL must use https:// (got {base_url!r})')
+        if (
+            (parsed_base.scheme != 'https' and not allow_loopback)
+            or not parsed_base.hostname
+            or parsed_base.username
+            or parsed_base.password
+            or parsed_base.query
+            or parsed_base.fragment
+        ):
+            raise ValueError(f'PTBR_SAMPLER_HF_BASE_URL must be a clean https:// origin (got {base_url!r})')
 
         url = f'{base_url}/datasets/{manifest.hf_repo_id}/resolve/{manifest.hf_revision}/{rel}'
         part_path = cache_file.with_name(f'{cache_file.name}.{os.getpid()}.{threading.get_ident()}.part')
@@ -308,15 +364,19 @@ def ensure_parquet_root(census_year: int = 2022) -> Path:
 def resolve_partition_path(path: Path) -> Path:
     """Lazy PartitionStore resolver: maps logical cache/package paths to ensure_data_file on demand."""
     resolved = path.resolve()
-    if os.environ.get('PTBR_SAMPLER_IGNORE_LOCAL_DATA') != '1' and resolved.is_file():
-        return resolved
-
-    roots: list[Path] = [PACKAGE_DATA_DIR.resolve(), get_revision_cache_dir().resolve()]
     env_data_dir = os.environ.get('PTBR_SAMPLER_DATA_DIR')
     if env_data_dir:
-        roots.insert(0, Path(env_data_dir).expanduser().resolve())
+        override_root = Path(env_data_dir).expanduser().resolve()
+        try:
+            rel = resolved.relative_to(override_root).as_posix()
+        except ValueError:
+            pass
+        else:
+            if resolved.is_file():
+                return resolved
+            return ensure_data_file(rel)
 
-    for root in roots:
+    for root in (PACKAGE_DATA_DIR.resolve(), get_revision_cache_dir().resolve()):
         try:
             rel = resolved.relative_to(root).as_posix()
         except ValueError:
@@ -327,18 +387,28 @@ def resolve_partition_path(path: Path) -> Path:
 
 
 def has_runtime_data_available(*, census_year: int = 2022) -> bool:
+    _validate_census_year(census_year)
     probe = 'parquet/census_year=2022/first_names/scope=national/part.parquet' if census_year == 2022 else 'names_data.json'
+    env_data_dir = os.environ.get('PTBR_SAMPLER_DATA_DIR')
+    if env_data_dir:
+        override_root = Path(env_data_dir).expanduser().resolve()
+        override_probe = (override_root / probe).resolve()
+        if override_probe.is_relative_to(override_root) and override_probe.is_file():
+            return True
     if os.environ.get('PTBR_SAMPLER_IGNORE_LOCAL_DATA') != '1' and (PACKAGE_DATA_DIR / probe).is_file():
         return True
     if not MANIFEST_PATH.is_file():
         return False
     manifest = load_dataset_manifest()
-    if probe in manifest.artifacts and (get_revision_cache_dir(manifest) / probe).is_file():
-        return True
-    return os.environ.get('PTBR_SAMPLER_OFFLINE') != '1'
+    if probe in manifest.artifacts:
+        cache_probe = get_revision_cache_dir(manifest) / probe
+        if cache_probe.is_file() and cache_probe.stat().st_size == manifest.artifacts[probe].size_bytes:
+            return True
+    return not _is_offline()
 
 
 def prefetch_datasets(*, census_year: int | None = 2022, verify_sha256: bool = True) -> list[Path]:
+    _validate_census_year(census_year)
     manifest = load_dataset_manifest()
     downloaded: list[Path] = []
     for rel, entry in sorted(manifest.artifacts.items()):
@@ -349,26 +419,44 @@ def prefetch_datasets(*, census_year: int | None = 2022, verify_sha256: bool = T
 
 
 def dataset_cache_status(*, census_year: int | None = None, verify_sha256: bool = False) -> dict[str, Any]:
+    _validate_census_year(census_year)
     manifest = load_dataset_manifest()
     rev_dir = get_revision_cache_dir(manifest)
+    env_data_dir = os.environ.get('PTBR_SAMPLER_DATA_DIR')
+    override_root = Path(env_data_dir).expanduser().resolve() if env_data_dir else None
     rows: list[dict[str, Any]] = []
     for rel, entry in sorted(manifest.artifacts.items()):
         if census_year is not None and census_year not in entry.census_years:
             continue
+        override_file = (override_root / rel).resolve() if override_root is not None else None
         local_file = PACKAGE_DATA_DIR / rel
         cache_file = rev_dir / rel
-        if os.environ.get('PTBR_SAMPLER_IGNORE_LOCAL_DATA') != '1' and local_file.is_file():
+        resolved_path: str | None
+        if (
+            override_root is not None
+            and override_file is not None
+            and override_file.is_relative_to(override_root)
+            and override_file.is_file()
+        ):
+            state = 'local-override'
+            resolved_path = str(override_file)
+            valid = override_file.stat().st_size == entry.size_bytes and (not verify_sha256 or _sha256_file(override_file) == entry.sha256)
+        elif os.environ.get('PTBR_SAMPLER_IGNORE_LOCAL_DATA') != '1' and local_file.is_file():
             state = 'local-checkout'
-            valid = not verify_sha256 or _sha256_file(local_file) == entry.sha256
-        elif cache_file.is_file() and cache_file.stat().st_size == entry.size_bytes:
+            resolved_path = str(local_file)
+            valid = local_file.stat().st_size == entry.size_bytes and (not verify_sha256 or _sha256_file(local_file) == entry.sha256)
+        elif cache_file.is_file():
             state = 'cached'
-            valid = not verify_sha256 or _sha256_file(cache_file) == entry.sha256
+            resolved_path = str(cache_file)
+            valid = cache_file.stat().st_size == entry.size_bytes and (not verify_sha256 or _sha256_file(cache_file) == entry.sha256)
         else:
             state = 'remote-hf'
+            resolved_path = None
             valid = True
         rows.append(
             {
                 'relpath': rel,
+                'resolved_path': resolved_path,
                 'size_bytes': entry.size_bytes,
                 'census_years': list(entry.census_years),
                 'state': state,

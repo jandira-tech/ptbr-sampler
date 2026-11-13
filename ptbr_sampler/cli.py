@@ -765,6 +765,9 @@ def sources(
 
     Mirrors ``docs/data-origins.md``. Use ``--kind`` or ``--census-year`` to filter.
     """
+    if census_year is not None and census_year not in (2010, 2022):
+        typer.echo(f'Error: census_year must be 2010 or 2022; got {census_year!r}', err=True)
+        raise typer.Exit(code=1)
     console.print('[bold]ptbr-sampler — data origins[/bold]\n', soft_wrap=True)
     for origin in DATA_ORIGINS:
         if kind and kind.casefold() not in origin.kind.casefold():
@@ -832,7 +835,7 @@ def datasets_status(
 
     if invalid:
         for row in invalid:
-            typer.echo(f'INVALID: {row["relative_path"]} ({row["resolved_path"]})', err=True)
+            typer.echo(f'INVALID: {row["relpath"]} ({row.get("resolved_path") or row["state"]})', err=True)
         raise typer.Exit(code=1)
 
 

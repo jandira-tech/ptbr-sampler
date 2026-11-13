@@ -78,8 +78,7 @@ ptbr sources --census-year 2022
 ### Python API
 
 ```python
-from ptbr_sampler.br_name_class import BrazilianNameSampler, TimePeriod
-from sample import sample
+from ptbr_sampler import BrazilianNameSampler, TimePeriod, sample
 
 # End-to-end sampling (defaults: census_year=2022, time_period=TimePeriod.ALL, conditioning_mode='strict')
 records = sample(q=5, uf_conditioning=True)

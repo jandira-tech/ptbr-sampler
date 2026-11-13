@@ -17,4 +17,4 @@ All notable changes to `ptbr-sampler` are documented in this file.
 
 ### Fixed
 - Corrected 2010 `data_origin.json` metadata reporting where `count=0` Gemini-classified rows were miscounted as unmatched rather than `gemini_classified` (`unmatched_names=0`, `coverage_pct=100.0`).
-- Added third-party attribution and provenance documentation (`NOTICE.md`, `docs/sources/ibge-nomes-2022-availability.md`) for IBGE Censo Demográfico 2022, Gabriel Lobo (`olob0/ibge-nomes-no-brasil-2022`), and Álvaro Justen (`brasil.io/genero-nomes`, CC BY-SA 4.0).
+- Added third-party attribution and provenance documentation (`THIRD_PARTY_NOTICES.md`, `docs/sources/ibge-nomes-2022-availability.md`) for IBGE Censo Demográfico 2022, Gabriel Lobo (`olob0/ibge-nomes-no-brasil-2022`), and Álvaro Justen (`brasil.io/genero-nomes`, CC BY-SA 4.0).
