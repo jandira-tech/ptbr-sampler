@@ -1,163 +1,91 @@
-# Data and sampling architecture
+# Data and sampling architecture (`ptbr-sampler` `0.3.0`)
 
-The sampler was previously built around nested Python dictionaries loaded from
-JSON. That design does not scale once names are conditioned on
-`(uf × decade × sex)` and surnames on `(uf × period)` — roughly 540 first-name
-tables and 270 surname tables, most with 200–50,000 entries each. Python dict
-overhead alone (~240 B per entry) eats the memory budget before the raw
-numbers do.
+`ptbr-sampler` `0.3.0` combines five design pillars so realistic Brazilian demographic sampling scales across `128,458` Census 2022 given names and `201,601` surnames without shipping an `80 MiB` wheel:
 
-This document describes the architecture that replaces it. Three decisions
-collapse the problem:
+1. **Ultra-slim wheel (`< 150 KiB`) + pinned Hugging Face runtime dataset hub (`arthrod/ptbr-sampler-data`)**
+2. **Versioned, 1D-marginal `float64` Parquet partitions** (`parquet/census_year=2022/` default + legacy `parquet/` for `census_year=2010`)
+3. **Kahan-compensated Walker/Vose $O(1)$ vectorized alias tables** (`ptbr_sampler/sampling/alias.py`) wrapped in a thread-safe condition-keyed LRU (`PartitionStore`)
+4. **Strict observed vs. lazy Bayes conditional estimation** (`conditioning_mode='strict' | 'estimated'`)
+5. **Isolated `random.Random` stream determinism (`rng=`), `RLock` concurrency, & first-class `Faker` integration** (`ptbr_sampler/faker.py`)
 
-## 1. Storage — partitioned Parquet
+---
 
-```
-ptbr_sampler/data/parquet/
-├── first_names/uf=<UF>/decade=<decade>/sex=<M|F>/part.parquet
-├── surnames/uf=<UF>/period=<period>/part.parquet
-├── middle_names/part.parquet
-├── states/part.parquet
-└── cities/part.parquet
-```
+## 1. Storage & Runtime Dataset Resolution
 
-Columns in each partition: `name` (dictionary-encoded string), `count` (uint64),
-`weight` (f32, pre-normalised within the partition so it sums to 1).
-
-Read via `pyarrow.dataset` with filter pushdown — only the partitions actually
-referenced by the conditioning tuple are materialised. The rest stays on disk.
-The same files can be queried ad-hoc through DuckDB without re-ingestion.
-
-`BrazilianNameSampler` consults the Parquet store before falling back to the
-JSON payload. In practice the production entry point
-(`ptbr_sampler.sampler.sample`) is wired to the bundled tree, so every first
-name, surname, and middle-name draw is materialised from a Parquet partition
-on first use. Pass `parquet_root=None` (or construct with a bespoke dict) to
-force JSON-only mode — that's the path exercised by `mock_name_data` unit
-tests that need to override the distribution.
-
-JSON is fine up to ~10 MB. Above that, Python dict overhead alone (≈240 B per
-entry) eats you before the raw numbers do. The 2022 Census surname data
-conditioned by UF × period is several hundred MB as JSON but under ~50 MB as
-Parquet with dictionary encoding.
-
-## 2. Sampling — Walker/Vose alias method
-
-`random.choices` and `numpy.random.choice(p=…)` both rebuild cumulative
-weights on every call — O(m) per draw, where m is the support size. For a
-50k-entry surname distribution that is tens of milliseconds per sample and
-scales linearly with m.
-
-The alias method is O(m) to build once, O(1) per draw forever after, and
-fully vectorisable. See `ptbr_sampler/sampling/alias.py` for the implementation.
-
-The cost structure is now identical for `k=1` and `k=100_000` — the property
-we want. See the scaling table in `README.md`.
-
-The alternatives weighed before the alias method (SQLite, NumPy, binary
-search over cumulative weights, a hybrid cache) and their benchmark script
-are kept on the git tag `archive/updates-2026-02-01`, not on `main`. Read
-them with `git show archive/updates-2026-02-01:OPTIMIZATION_SOLUTIONS.md`.
-
-## 3. Lazy-load with bounded LRU
-
-Population is concentrated — SP/MG/RJ alone cover ~40% of state draws, which
-means most `(uf, period, sex)` tuples are rarely hit. `PartitionStore` wraps
-partition loading in a bounded LRU keyed on the conditioning tuple. Hot
-conditions stay resident, cold ones page from disk and build their alias
-tables on first touch.
-
-See `ptbr_sampler/sampling/store.py`.
-
-## Cost profile
-
-| n | Cold (first time this condition seen) | Warm |
-|---:|---|---|
-| 1 | ~50–200 ms | ~1–10 µs |
-| 1,000 | ~50–200 ms | ~1 ms |
-| 100,000 | ~50–200 ms | ~20–50 ms (memory-bandwidth bound) |
-
-Cold cost is disk I/O plus alias construction. It is **fixed**, not
-proportional to `n`. Cold-start amortises across a run as more conditions get
-cached.
-
-## What `--batch` means now
-
-The old sampler branched statistically on batch size:
-
-```python
-if actual_qty > 1:
-    batch_sample_names(...)
-else:
-    get_random_name(...)
+```text
+ptbr_sampler/data/
+├── dataset_manifest.json              # ONLY data file shipped inside the <150 KiB wheel (~16 KiB)
+└── parquet/                           # Fetched lazily per partition into ~/.cache/ptbr-sampler/<hf_revision>/
+    ├── census_year=2022/              # PRIMARY DEFAULT (IBGE Census 2022 @ 1 Aug 2022)
+    │   ├── first_names/
+    │   │   ├── scope=national/part.parquet
+    │   │   ├── sex=<M|F>/part.parquet
+    │   │   ├── period=<ate1940..ate2020|2020_2022>/part.parquet
+    │   │   └── uf=<UF>/part.parquet
+    │   ├── sex_prior/scope=national/part.parquet
+    │   ├── surnames/
+    │   │   ├── scope=national/part.parquet
+    │   │   └── uf=<UF>/part.parquet
+    │   └── states/part.parquet
+    ├── first_names/...                # Historical opt-in (census_year=2010)
+    ├── surnames/scope=national/...
+    ├── middle_names/part.parquet
+    └── states/part.parquet            # IBGE 2024 population estimates
 ```
 
-Both paths are now the same vectorised alias lookup with `k=1` or `k=N`. The
-`--batch` flag is kept purely as a **flush-to-disk cadence** for JSONL writes
-(how often `fsync` is called, how many records sit in the in-memory buffer).
-This removes a latent source of statistical drift between the two paths.
+Each marginal partition stores `(name: str, count: int64, weight: float64)` normalized via `math.fsum` so $\|\mathbf{w}\|_1 - 1 < 10^{-15}$. We deliberately **never** materialize the `27 × 10 × 2 = 540` Cartesian `UF × cohort × sex` product on disk (`< 13 MiB` total 2022 Parquet footprint).
 
-## Validation
+### Resolution hierarchy (`ptbr_sampler/datasets.py`)
 
-`tests/test_distribution_validation.py` uses `scipy.stats.chisquare` and
-`scipy.stats.ks_2samp` to verify that 100k-sample empirical marginals match
-the ingested weights per condition. This catches alias-table bugs and
-data-ingestion regressions.
+When `PartitionStore` or `BrazilianLocationSampler` touches a file, `ensure_data_file(relpath)` checks:
 
-## Realism vs. random mode
+1. `PTBR_SAMPLER_DATA_DIR/<relpath>` (air-gapped / container mount),
+2. Local git checkout `ptbr_sampler/data/<relpath>` (zero network I/O when running inside the repository),
+3. User cache `<PTBR_SAMPLER_CACHE_DIR or ~/.cache/ptbr-sampler>/<hf_revision>/<relpath>`,
+4. Streaming HTTPS download from `https://huggingface.co/datasets/<PTBR_SAMPLER_HF_REPO or arthrod/ptbr-sampler-data>/resolve/<hf_revision>/<relpath>` under a cross-process `fcntl.flock` lock, verifying exact byte length and SHA-256 into `<dest>.<pid>.part` before atomic `os.replace`. `Authorization` headers (`HF_TOKEN`) are stripped on cross-origin CDN redirects (`*.hf.co`), and `PTBR_SAMPLER_OFFLINE=1` disables all network access.
 
-The default sampler path is **realism-by-default**: geography is drawn first
-(population-weighted state, then population-weighted city within that state),
-and names are drawn from the alias tables that encode the IBGE-derived
-empirical frequencies.
+Pre-warm or audit caches explicitly with `ptbr datasets prefetch --census-year 2022`, `ptbr datasets status --verify`, and `ptbr datasets clear-cache`.
 
-Callers can opt out of realism via `random=True` (Python API) or `--random`
-(CLI). The escape hatch:
+---
 
-- draws states and cities **uniformly** instead of population-weighted,
-- draws first names, middle names, and surnames **uniformly** across the
-  alias tables (`AliasTable.sample_uniform`) instead of frequency-weighted,
-- replaces the empirical 30.99% middle-name flag with a flat 50% coin flip.
+## 2. Sampling — Kahan-Compensated Walker/Vose Alias Method, `RLock` LRU, & `Faker`
 
-This is intentional: `random=True` is for callers who explicitly want
-maximally non-deterministic, distribution-free output. The default
-remains realism-tracking.
+`ptbr_sampler/sampling/alias.py` builds `(prob, alias)` in $O(m)$ using Shewchuk's exact floating-point summation (`math.fsum`), bulk C-level hub absorption when a high-multiplicity bucket ($q_\ell \ge 2.0$, such as `Silva` at $q_{\text{Silva}} \cdot M \approx 20{,}571$) absorbs thousands of tail buckets, and per-bucket Kahan (1965) compensated subtraction (`L_inf = 1.39e-17` on Census 2022 partitions). It draws `k` samples in vectorized $O(k)$ NumPy operations independent of support size $m$. `AliasTable.induced_probabilities()` reconstructs the exact categorical distribution induced by `(prob, alias)` in $O(m)$, and `AliasTable.top_k(40)` slices top-40 surname tables directly from 2022 national or UF partitions.
 
-The realistic default only conditions on **dimensions that actually exist
-in the bundled data**: `period` for first names, `scope=national` for
-surnames, and population shares for geography. UF-, sex-, and
-period-conditioned surname realism remain blocked on the IBGE 2022
-ingest (see `docs/data-origins.md` and the README "Known realism gaps").
+### Thread Safety, Isolated `random.Random` Streams, & `asyncio` Safety
 
-## Known gaps (not fixed by the architecture)
+- **Zero global RNG mutation:** Every public and internal entry point accepts `rng: random.Random | None = None`. When `rng` is supplied, vectorized `AliasTable` batches derive ephemeral child NumPy generators via `np.random.default_rng(rng.getrandbits(128))` without reading or mutating module-global `random` or `numpy.random` state.
+- **Synchronized caches:** `PartitionStore` (`ptbr_sampler/sampling/store.py`) and the reusable sampler caches in `ptbr_sampler/sampler.py` protect LRU lookups, insertions, and evictions behind `threading.RLock`, while sorting `(uf, sex)` buckets deterministically so seeded outputs are invariant to dictionary iteration order.
+- **Event-loop safety:** Offline `sample(..., save_to_jsonl=None)` executes through a synchronous fast path (`_generate_offline_address_batch`), avoiding nested `asyncio.run()` errors inside Jupyter, marimo, or FastAPI loops.
+- **Fixed `uf=` alignment:** Passing `uf='SP'` (or `--uf SP` on the CLI) pins location draws, given names, UF-conditioned 2022 surnames, postal CEP ranges, Anatel DDD area codes, and state-specific RG patterns (`SSP-SP`, `DETRAN-RJ`, probabilistic `MG` prefix) to the requested Federation Unit.
 
-1. **Middle-name vocabulary contamination.** `ptbr_sampler/data/middle_names.json`
-   contains surnames (`Araújo`, `Borges`, `Bezerra`, …), the administrative
-   token `Cancelado`, and a bare `-`. No alias table fixes dirty tokens. A
-   vocabulary-filtering pass against the first-name whitelist lives in
-   `ptbr_sampler/sampling/vocabulary.py`; ingestion through
-   `scripts/ingest_to_parquet.py` applies it by default and writes the
-   cleaned distribution to `parquet/middle_names/`. Pass
-   `--skip-middle-names-filter` to inspect the raw distribution.
-2. **Sex conditioning — experimental, top-20.** The committed
-   `names_data.json` has no sex dimension; the default path stays
-   sex-mixed. The IBGE Nomes v2 ranking endpoint exposes
-   `(UF, sex, decade)` triples (top-20 each), and
-   `scripts/download_datasets.py --fetch-ibge-nomes` ingests them into
-   `first_names/uf=<UF>/period=<P>/sex=<S>/`. Turn it on with
-   `experimental_uf_sex_conditioning=True` (Python) or
-   `--experimental-uf-sex` (CLI). The sampler still falls back to the
-   period-only table per row when a specific partition is missing.
-3. **UF-conditioned surnames.** The 2022-Census surname tables by UF
-   live in the IBGE web app only — no public API, no bulk download.
-   Surnames stay on the pooled-national distribution today.
-4. **Time horizon capped at `UNTIL_2010`.** The bundled first-name buckets
-   stop at the 2010 Census. Recent cohorts (born 2011–2024) are not
-   directly represented; whole-population realism for "people alive
-   today" is still useful, but newborn-flow realism for 2024 needs the
-   Arpen 2024 ranking as a separate benchmark (`docs/sources/arpen-2024-rankings.md`).
-5. **`percentage_with_second = 30.99%`.** Computed from the raw
-   `total_with_second_names / total_people` ratio in `middle_names.json`;
-   transparent for that corpus, but the corpus itself is the authorial
-   extraction, not an IBGE dissemination. Read it as a transparent
-   estimate, not as a population-level statistic.
+### First-Class `Faker` Provider (`ptbr_sampler.faker`)
+
+`PTBRProvider` and `install_ptbr(fake, aliases=False, ...)` wrap the cached `BrazilianNameSampler`, `BrazilianLocationSampler`, and `DocumentSampler` instances directly, routing all provider randomness through `self.generator.random` (`fake.seed_instance(...)` is bit-reproducible across single-locale `Faker` instances; multi-locale `Faker(['pt_BR', 'en_US'])` proxies use Faker's shared module-level `random` for factory selection and reproduce under `Faker.seed(...)`). By default (`aliases=False`), only namespaced `ptbr_*` formatters (`ptbr_profile`, `ptbr_name`, `ptbr_cpf`, `ptbr_rg`, `ptbr_cep`, `ptbr_address`, `ptbr_phone`, etc.) are registered, leaving standard `Faker('pt_BR')` locale providers untouched unless `aliases=True` is explicitly requested. Multi-locale proxy `Faker(['pt_BR', 'en_US'])` instances and repeated `install_ptbr(...)` reconfigurations clean up prior `PTBRProvider` instances and cached proxy method mappings idempotently.
+
+---
+
+## 3. Conditioning Modes & Statistical Semantics (`census_year=2022`)
+
+- **`conditioning_mode='strict'` (default):** serves only directly published 2022 marginals (`national`, `national × sex`, `national × cohort`, `UF`). Requesting unobserved multi-axis intersections (`UF × sex`, `cohort × sex`, `UF × cohort`) raises `ValueError` instead of silently dropping an axis.
+- **`conditioning_mode='estimated'` (opt-in):** lazily constructs `UF × sex` (`time_period=ALL`) and `cohort × sex` (`uf=None`) in memory (`< 5 ms`) by multiplying the marginal `weight` vector against the 2022 national `sex_prior` empirical rate $\hat{p}_{\text{obs}}(i) = N_{i,\text{obs}} / N_i$ (`NaN` for suppressed cells, never imputing withheld `< 20` counts). `UF × cohort` remains rejected in all modes.
+- **Surname slot share vs. presence:** IBGE's `Silva = 16.76%` is person-level presence across `~1.6422` recorded surname tokens/person; the normalized single-slot weight is $q_{\text{Silva}} = 10.2040\%$. In `census_year=2022` two-surname mode (`with_only_one_surname=False`), slot 2 is resampled conditional on $s_2 \neq s_1$ to eliminate duplicate stems (`"Silva Silva"`).
+- **Realism vs. `random=True`:** `random=False` (default) samples population-weighted geography (2024 IBGE municipal estimates) and frequency-weighted 2022 Census names; `random=True` switches geography, names, and middle-name incidence (`50%` vs `30.99%`) to uniform draws.
+
+---
+
+## 4. Four-Layer Statistical Validation
+
+1. **Layer A (Deterministic conservation):** `scripts/audit_datasets.py` & `tests/test_dataset_audit.py` verify schema, SHA-256 digests, Liv102228 censoring regimes (`both_observed`, `one_null_exact_zero`, `one_null_suppressed_positive`, `both_null_suppressed`), and weight normalization $\|\mathbf{w}\|_1 = 1$.
+2. **Layer B (Exact $O(M)$ alias reconstruction):** `tests/test_distribution_validation.py` verifies $\mathrm{TVD}(p_{\text{alias}}, w) < 10^{-13}$ with zero Monte Carlo noise in `< 50 ms`.
+3. **Layer C (`@pytest.mark.slow` exhaustive Monte Carlo GoF):** tail-pooled multinomial $\chi^2$ with all expected bin counts $E_j \ge 5$, Holm–Bonferroni FWER control ($\alpha_{\text{FWER}} = 0.001$), and two mandatory negative controls (head-to-tail mass leak and `top_40` truncation).
+4. **Layer D (Cross-table demographic coherence):** UF-sum vs. national bounds and 2010-vs-2022 cohort alignment TVD in `scripts/audit_datasets.py`.
+
+---
+
+## 5. Remaining Boundaries & Methodological Caveats
+
+1. **Mixed reference dates (`2022` names vs. `2024` geography):** Names come from the 1 August 2022 Census (`203.08M` residents), whereas `locations_data.json` / `cities_with_ceps.json` use 1 July 2024 IBGE population estimates (`212.6M`).
+2. **Confidentiality suppression (`Liv102228`):** Cells `< 20` nationally/by-decade, `< 15` per UF, and `< 10` per municipality are suppressed by IBGE (`0.1793%` = `341,280` national given-name occurrences lack observed sex breakdown).
+3. **Diacritics in 2022 IBGE strings:** IBGE disseminates folded uppercase/ASCII roots (`Joao`, `Goncalves`), while preserving distinct spelling roots (`Ana`/`Anna`, `Luis`/`Luiz`). `ptbr-sampler` preserves IBGE's orthographic equivalence classes without heuristic accent restoration.
+4. **Authorial middle names & surname connectives:** `middle_names.json` (`percentage_with_second = 30.99%`) and `SURNAME_PREFIXES` (`da`, `de`, `dos`) remain authorial/civil-registry conventions because IBGE disseminates only the first given name and bare surname tokens.

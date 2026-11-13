@@ -6,7 +6,18 @@ from pathlib import Path
 
 import pytest
 
-from ptbr_sampler.br_name_class import BrazilianNameSampler, NameComponents, TimePeriod
+from ptbr_sampler.br_name_class import (
+    LEGACY_2010_PERIODS,
+    BrazilianNameSampler,
+    NameComponents,
+    TimePeriod,
+)
+from ptbr_sampler.datasets import has_runtime_data_available
+
+_SKIP_IF_NO_RUNTIME_DATA = pytest.mark.skipif(
+    not has_runtime_data_available(),
+    reason='Runtime dataset artifacts not available locally',
+)
 
 
 def _minimal_middle_names_payload() -> dict:
@@ -31,12 +42,7 @@ class TestInitialization:
             BrazilianNameSampler('nonexistent_path.json')
 
     def test_init_missing_surnames_raises(self):
-        data = {
-            'common_names_percentage': {
-                p.value: {'names': {'Test': {'percentage': 1.0}}, 'total': 1}
-                for p in TimePeriod
-            }
-        }
+        data = {'common_names_percentage': {p.value: {'names': {'Test': {'percentage': 1.0}}, 'total': 1} for p in LEGACY_2010_PERIODS}}
         with pytest.raises(ValueError, match="Missing 'surnames' data"):
             BrazilianNameSampler(data)
 
@@ -163,7 +169,7 @@ class TestNameGeneration:
 
     def test_time_period_selection(self, mock_name_data):
         sampler = BrazilianNameSampler(mock_name_data)
-        for period in TimePeriod:
+        for period in LEGACY_2010_PERIODS:
             name = sampler.get_random_name(time_period=period)
             assert isinstance(name, str)
             assert len(name) > 0
@@ -178,9 +184,7 @@ class TestNameGeneration:
         mp.write_text(json.dumps(_minimal_middle_names_payload()), encoding='utf-8')
         sampler = BrazilianNameSampler(mock_name_data, middle_names_path=mp)
         random.seed(1)
-        name = sampler.get_random_name(
-            include_surname=False, always_middle=True, return_components=False
-        )
+        name = sampler.get_random_name(include_surname=False, always_middle=True, return_components=False)
         # First name + middle name only (2 tokens)
         parts = name.split()
         assert len(parts) == 2
@@ -451,3 +455,228 @@ class TestSurnameJrSuffix:
         sampler.surname_data = {'Junior': {'percentage': 1.0}}
         results = sampler.batch_sample_names(5, raw=True)
         assert all(nc.surname.endswith('JR') for nc in results)
+
+
+def _write_test_partition(dest_dir: Path, names: list[str], counts: list[int]) -> None:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    tot = float(sum(counts))
+    pq.write_table(
+        pa.table(
+            {
+                'name': pa.array(names, type=pa.string()),
+                'count': pa.array(counts, type=pa.int64()),
+                'weight': pa.array([c / tot for c in counts], type=pa.float64()),
+            }
+        ),
+        dest_dir / 'part.parquet',
+    )
+
+
+def _write_test_sex_prior(
+    dest_dir: Path,
+    rows: list[tuple[str, str, int, int | None, int | None, int, float, float, str]],
+) -> None:
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    pq.write_table(
+        pa.table(
+            {
+                'name': pa.array([r[0] for r in rows], type=pa.string()),
+                'canonical_key': pa.array([r[1] for r in rows], type=pa.string()),
+                'count_total': pa.array([r[2] for r in rows], type=pa.int64()),
+                'count_male': pa.array([r[3] for r in rows], type=pa.int64()),
+                'count_female': pa.array([r[4] for r in rows], type=pa.int64()),
+                'residual_unassigned': pa.array([r[5] for r in rows], type=pa.int64()),
+                'p_male': pa.array([r[6] for r in rows], type=pa.float64()),
+                'p_female': pa.array([r[7] for r in rows], type=pa.float64()),
+                'censoring_regime': pa.array([r[8] for r in rows], type=pa.string()),
+            }
+        ),
+        dest_dir / 'part.parquet',
+    )
+
+
+def test_legacy_2010_json_validation_ignores_2022_only_time_periods(mock_name_data):
+    """Adding TimePeriod.ALL / UNTIL_2020 / PERIOD_2020_2022 must not break 2010 JSON validation."""
+    assert len(LEGACY_2010_PERIODS) == 9
+    assert len(TimePeriod) == 12
+    sampler = BrazilianNameSampler(mock_name_data)
+    assert sampler.census_year == 2010
+    assert sampler.get_random_name()
+    with pytest.raises(ValueError, match='census_year=2010'):
+        sampler.get_random_name(time_period=TimePeriod.ALL)
+    with pytest.raises(ValueError, match='census_year=2010'):
+        sampler.get_random_name(time_period=TimePeriod.PERIOD_2020_2022)
+
+
+@_SKIP_IF_NO_RUNTIME_DATA
+def test_from_parquet_defaults_to_2022_and_from_bundled_parquet_matches():
+    sampler = BrazilianNameSampler.from_parquet()
+    bundled = BrazilianNameSampler.from_bundled_parquet()
+    assert sampler.census_year == 2022
+    assert bundled.census_year == 2022
+    assert sampler.conditioning_mode == 'strict'
+    assert sampler.parquet_root is not None and sampler.parquet_root.exists()
+    nc = sampler.get_random_name(return_components=True)
+    assert nc.first_name and nc.surname
+
+
+@_SKIP_IF_NO_RUNTIME_DATA
+def test_census_2022_rejects_legacy_ate1930_and_supports_ate1940():
+    sampler = BrazilianNameSampler.from_parquet()
+    with pytest.raises(ValueError, match='ate1930'):
+        sampler.get_random_name(time_period=TimePeriod.UNTIL_1930)
+    assert sampler.get_random_name(time_period=TimePeriod.UNTIL_1940)
+
+
+@_SKIP_IF_NO_RUNTIME_DATA
+def test_census_2022_strict_mode_rejects_unobserved_joints():
+    sampler = BrazilianNameSampler.from_parquet()
+    with pytest.raises(ValueError, match="conditioning_mode='estimated'"):
+        sampler.get_random_name(time_period=TimePeriod.ALL, uf='SP', sex='F')
+    with pytest.raises(ValueError, match="conditioning_mode='estimated'"):
+        sampler.get_random_name(time_period=TimePeriod.PERIOD_2020_2022, sex='M')
+    sampler_est = BrazilianNameSampler.from_parquet(conditioning_mode='estimated')
+    with pytest.raises(ValueError, match='UF x cohort'):
+        sampler_est.get_random_name(time_period=TimePeriod.PERIOD_2020_2022, uf='SP')
+
+
+def test_census_2022_estimated_mode_computes_exact_bayes_weights_and_excludes_suppressed_sex(tmp_path: Path):
+    import math
+
+    root_2022 = tmp_path / 'census_year=2022'
+    _write_test_partition(root_2022 / 'first_names' / 'period=ate2020', ['Maria', 'Joao', 'Rara'], [100, 100, 30])
+    _write_test_partition(root_2022 / 'surnames' / 'scope=national', ['Silva', 'Santos'], [60, 40])
+    _write_test_sex_prior(
+        root_2022 / 'sex_prior' / 'scope=national',
+        rows=[
+            ('Maria', 'maria', 1000, 100, 900, 0, 0.10, 0.90, 'both_observed'),
+            ('Joao', 'joao', 1000, 900, 100, 0, 0.90, 0.10, 'both_observed'),
+            ('Rara', 'rara', 30, None, 25, 5, math.nan, 25.0 / 30.0, 'one_null_suppressed_positive'),
+        ],
+    )
+    sampler = BrazilianNameSampler.from_parquet_root(
+        root_2022,
+        census_year=2022,
+        conditioning_mode='estimated',
+    )
+    table_m = sampler._first_names_table(TimePeriod.UNTIL_2020, sex='M')
+    by_m = dict(zip(table_m.labels.tolist(), table_m.induced_probabilities().tolist(), strict=True))
+    assert 'Rara' not in by_m
+    assert abs(by_m['Joao'] - 0.90) < 1e-12
+    assert abs(by_m['Maria'] - 0.10) < 1e-12
+
+    table_f = sampler._first_names_table(TimePeriod.UNTIL_2020, sex='F')
+    by_f = dict(zip(table_f.labels.tolist(), table_f.induced_probabilities().tolist(), strict=True))
+    assert abs(by_f['Maria'] - (90.0 / 125.0)) < 1e-12
+    assert abs(by_f['Joao'] - (10.0 / 125.0)) < 1e-12
+    assert abs(by_f['Rara'] - (25.0 / 125.0)) < 1e-12
+
+
+def test_census_2022_two_surname_draw_prevents_identical_stems(tmp_path: Path):
+    root_2022 = tmp_path / 'census_year=2022'
+    _write_test_partition(root_2022 / 'first_names' / 'scope=national', ['Maria'], [100])
+    _write_test_partition(root_2022 / 'surnames' / 'scope=national', ['Silva', 'Santos'], [90, 10])
+    sampler = BrazilianNameSampler.from_parquet_root(root_2022, census_year=2022)
+    random.seed(7)
+    batches = sampler.batch_sample_names(500, time_period=TimePeriod.ALL, raw=True)
+    for comp in batches:
+        tokens = [t for t in comp.surname.split() if t not in {'DA', 'DE', 'DO', 'DOS', 'DAS', 'E'}]
+        assert len(tokens) == 2
+        assert tokens[0] != tokens[1]
+
+
+@_SKIP_IF_NO_RUNTIME_DATA
+def test_census_2022_estimated_mode_supports_uf_sex_and_cohort_sex_under_5ms():
+    import time
+
+    sampler = BrazilianNameSampler.from_parquet(conditioning_mode='estimated')
+    t0_cpu = time.process_time()
+    names_uf = sampler.batch_sample_names(
+        50,
+        time_period=TimePeriod.ALL,
+        ufs=['SP'] * 50,
+        sexes=['F'] * 50,
+    )
+    cold_cpu_ms = (time.process_time() - t0_cpu) * 1000.0
+    assert len(names_uf) == 50
+    assert cold_cpu_ms < 250.0
+
+    t0_warm = time.process_time()
+    warm_uf = sampler.batch_sample_names(
+        50,
+        time_period=TimePeriod.ALL,
+        ufs=['SP'] * 50,
+        sexes=['F'] * 50,
+    )
+    warm_cpu_ms = (time.process_time() - t0_warm) * 1000.0
+    assert len(warm_uf) == 50
+    assert warm_cpu_ms < 5.0
+
+    names_cohort = sampler.batch_sample_names(
+        50,
+        time_period=TimePeriod.PERIOD_2020_2022,
+        sexes=['M'] * 50,
+    )
+    assert len(names_cohort) == 50
+
+
+@_SKIP_IF_NO_RUNTIME_DATA
+def test_census_2022_never_emits_duplicate_surname_stems():
+    sampler = BrazilianNameSampler.from_parquet()
+    draws = sampler.batch_sample_names(1000, time_period=TimePeriod.ALL, ufs=['SP'] * 1000)
+    for nc in draws:
+        tokens = [tok.lower() for tok in nc.surname.split() if tok.lower() not in {'da', 'de', 'do', 'dos', 'das', 'e', "d'"}]
+        assert len(tokens) == len(set(tokens))
+
+
+def test_name_sampler_preloaded_data_and_path_traversal_rejection(mock_name_data):
+    sampler = BrazilianNameSampler(None, preloaded_data=mock_name_data)
+    assert sampler.get_random_name()
+
+    with pytest.raises(ValueError, match='traversal|Null byte'):
+        BrazilianNameSampler('../../../etc/passwd')
+    with pytest.raises(ValueError, match='traversal|Null byte'):
+        BrazilianNameSampler('bad\x00path.json')
+    with pytest.raises(ValueError, match='traversal|Null byte'):
+        BrazilianNameSampler(mock_name_data, names_path='../../../etc/passwd')
+    with pytest.raises(ValueError, match='traversal|Null byte'):
+        BrazilianNameSampler(mock_name_data, middle_names_path='../../../etc/passwd')
+
+
+def test_name_sampler_rejects_outside_allowed_roots_and_non_json_paths(mock_name_data):
+    for bad_target in ('/etc/passwd', '/etc/shadow.json', '/var/tmp/../etc/hosts.json'):
+        with pytest.raises(ValueError, match=r'JSON|outside|traversal'):
+            BrazilianNameSampler(bad_target)
+        with pytest.raises(ValueError, match=r'JSON|outside|traversal'):
+            BrazilianNameSampler(mock_name_data, names_path=bad_target)
+        with pytest.raises(ValueError, match=r'JSON|outside|traversal'):
+            BrazilianNameSampler(mock_name_data, middle_names_path=bad_target)
+
+
+def test_from_parquet_rejects_surnames_path_in_2022(tmp_path: Path):
+    custom_surnames = tmp_path / 'surnames.json'
+    custom_surnames.write_text('{"surnames": {"Zephyr": {"percentage": 1.0}}}', encoding='utf-8')
+    with pytest.raises(ValueError, match=r'surnames_path.*census_year=2010'):
+        BrazilianNameSampler.from_parquet(census_year=2022, surnames_path=custom_surnames)
+    with pytest.raises(ValueError, match=r'surnames_path.*census_year=2010'):
+        BrazilianNameSampler.from_bundled_parquet(census_year=2022, surnames_path=custom_surnames)
+
+
+def test_from_parquet_explicit_missing_middle_names_path_raises_file_not_found(tmp_path: Path, monkeypatch):
+    import ptbr_sampler.br_name_class as name_mod
+
+    root_2022 = tmp_path / 'census_year=2022'
+    _write_test_partition(root_2022 / 'first_names' / 'scope=national', ['Maria'], [100])
+    _write_test_partition(root_2022 / 'surnames' / 'scope=national', ['Silva', 'Santos'], [60, 40])
+    monkeypatch.setattr(name_mod, 'ensure_parquet_root', lambda census_year=2022: root_2022)
+
+    missing_middle = tmp_path / 'missing_middle.json'
+    with pytest.raises(FileNotFoundError):
+        BrazilianNameSampler.from_parquet(census_year=2022, middle_names_path=missing_middle)
+

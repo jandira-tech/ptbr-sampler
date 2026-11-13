@@ -330,9 +330,10 @@ def sample(
                 name_data.update(names_data)
 
         name_sampler = BrazilianNameSampler(
-            name_data,  # Pass the combined data
+            None,
             middle_names_path,
             None,  # No need for names_path as we've already loaded it
+            preloaded_data=name_data,
         )
 
         # Initialize results list

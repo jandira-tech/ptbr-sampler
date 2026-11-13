@@ -1,0 +1,15 @@
+{
+  "census_year": 2022,
+  "reference_date": "2022-08-01",
+  "dataset": "olob0/ibge-nomes-no-brasil-2022",
+  "revision": "05efb85c92af43da2ed4ed088d1e0c9f17160e65",
+  "ingester": "scripts/ingest_to_parquet.py",
+  "grain": "national_birth_cohort_survivors",
+  "olob0_decade": 1990,
+  "period": "ate2000",
+  "disclosure_threshold": 20,
+  "rows": 34571,
+  "count_sum": 28181790,
+  "weight_sum": 1.0,
+  "built_at_utc": "2026-11-13T07:37:42.325002+00:00"
+}

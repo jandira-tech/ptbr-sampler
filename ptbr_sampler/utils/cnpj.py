@@ -45,15 +45,15 @@ def validate_cnpj(cnpj, autopad=True):
 def cnpj_check_digits(cnpj):
     """
     Compute the two check digits for a CNPJ using its first 12 digits.
-    
+
     Parameters:
-    	cnpj (str|int): CNPJ value or fragment; non-digit characters will be removed before processing.
-    
+        cnpj (str|int): CNPJ value or fragment; non-digit characters will be removed before processing.
+
     Returns:
-    	(first_check, second_check) (tuple[int, int]): The first and second check digits as integers.
-    
+        (first_check, second_check) (tuple[int, int]): The first and second check digits as integers.
+
     Raises:
-    	ValueError: If the cleaned input contains fewer than 12 digits.
+        ValueError: If the cleaned input contains fewer than 12 digits.
     """
     cnpj = clean_id(cnpj)
     if len(cnpj) < 12:
@@ -110,10 +110,11 @@ def parse_cnpj(cnpj, formatted=True):
     return CNPJ(int(cnpj), int(firm), int(estbl), check, valid)
 
 
-def random_cnpj(formatted=True):
+def random_cnpj(formatted: bool = True, rng: random.Random | None = None) -> str:
     """Create a random, valid CNPJ identifier."""
-    firm = random.randint(10000000, 99999999)
-    establishment = random.choice(['0001', '0002', '0003', '0004', '0005'])
+    r = rng if rng is not None else random
+    firm = r.randint(10000000, 99999999)
+    establishment = r.choice(['0001', '0002', '0003', '0004', '0005'])
     cnpj = cnpj_from_firm_id(firm, establishment)
     if formatted:
         return format_cnpj(cnpj)

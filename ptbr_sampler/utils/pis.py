@@ -1,5 +1,5 @@
+import random
 import re
-from random import randint
 
 from .util import clean_id, pad_id
 
@@ -59,9 +59,10 @@ def pad_pis(pis, validate=False):
     return padded
 
 
-def random_pis(formatted=True):
+def random_pis(formatted: bool = True, rng: random.Random | None = None) -> str:
     """Create a random, valid PIS identifier."""
-    pis = randint(1000000000, 9999999999)
+    r = rng if rng is not None else random
+    pis = r.randint(1000000000, 9999999999)
     pis = str(pis) + str(pis_check_digit(pis))
     if formatted:
         return format_pis(pis)

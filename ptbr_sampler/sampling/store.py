@@ -17,8 +17,9 @@ optionally, ``weight`` (float32). If ``weight`` is absent it is derived from
 
 from __future__ import annotations
 
+import threading
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,11 @@ class PartitionSpec:
         return (str(self.root), self.filters)
 
 
+_PARQUET_FILE_CACHE_MAX = 64
+_PARQUET_FILE_CACHE: OrderedDict[tuple[str, int, int], AliasTable] = OrderedDict()
+_PARQUET_FILE_CACHE_LOCK = threading.RLock()
+
+
 class PartitionStore:
     """Bounded-LRU cache of :class:`AliasTable` instances keyed by partition.
 
@@ -65,11 +71,17 @@ class PartitionStore:
     through DuckDB directly.
     """
 
-    def __init__(self, max_entries: int = 64) -> None:
+    def __init__(
+        self,
+        max_entries: int = 64,
+        path_resolver: Callable[[Path], Path] | None = None,
+    ) -> None:
         if max_entries < 1:
             raise ValueError('max_entries must be >= 1')
         self._max = max_entries
+        self._path_resolver = path_resolver
         self._cache: OrderedDict[tuple, AliasTable] = OrderedDict()
+        self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -78,64 +90,91 @@ class PartitionStore:
     def get(self, spec: PartitionSpec) -> AliasTable:
         """Return the alias table for ``spec``, loading on miss."""
         key = spec.key()
-        hit = self._cache.get(key)
-        if hit is not None:
+        with self._lock:
+            hit = self._cache.get(key)
+            if hit is not None:
+                self._cache.move_to_end(key)
+                return hit
+            table = self._load(spec)
+            self._cache[key] = table
             self._cache.move_to_end(key)
-            return hit
-        table = self._load(spec)
-        self._cache[key] = table
-        self._cache.move_to_end(key)
-        while len(self._cache) > self._max:
-            self._cache.popitem(last=False)
-        return table
+            while len(self._cache) > self._max:
+                self._cache.popitem(last=False)
+            return table
 
     def register(self, spec: PartitionSpec, table: AliasTable) -> None:
         """Pre-seed the cache with an in-memory table (used by tests)."""
         key = spec.key()
-        self._cache[key] = table
-        self._cache.move_to_end(key)
-        while len(self._cache) > self._max:
-            self._cache.popitem(last=False)
+        with self._lock:
+            self._cache[key] = table
+            self._cache.move_to_end(key)
+            while len(self._cache) > self._max:
+                self._cache.popitem(last=False)
 
     def clear(self) -> None:
-        self._cache.clear()
+        with self._lock:
+            self._cache.clear()
 
     def __contains__(self, spec: PartitionSpec) -> bool:
-        return spec.key() in self._cache
+        with self._lock:
+            return spec.key() in self._cache
 
     def __len__(self) -> int:
-        return len(self._cache)
+        with self._lock:
+            return len(self._cache)
 
     # ------------------------------------------------------------------
     # I/O
     # ------------------------------------------------------------------
 
     def _load(self, spec: PartitionSpec) -> AliasTable:
-        path = spec.path()
+        raw_path = spec.path()
+        path = self._path_resolver(raw_path) if self._path_resolver is not None else raw_path
         if not path.exists():
             raise FileNotFoundError(f'partition missing: {path}')
+        resolved = path.resolve()
+        st = resolved.stat()
+        file_key = (str(resolved), st.st_mtime_ns, st.st_size)
+        with _PARQUET_FILE_CACHE_LOCK:
+            cached_file = _PARQUET_FILE_CACHE.get(file_key)
+            if cached_file is not None:
+                _PARQUET_FILE_CACHE.move_to_end(file_key)
+                return cached_file
+
         try:
-            import pyarrow.dataset as ds  # noqa: PLC0415 - keep pyarrow optional until partitions are loaded.
+            import pyarrow.parquet as pq  # noqa: PLC0415 - keep pyarrow optional until partitions are loaded.
         except ImportError as err:  # pragma: no cover - exercised only without pyarrow
             raise RuntimeError('pyarrow is required to load partitions; install pyarrow') from err
 
-        dataset = ds.dataset(path, format='parquet')
-        columns = [f.name for f in dataset.schema]
+        pf = pq.ParquetFile(resolved)
+        columns = set(pf.schema_arrow.names)
         want = ['name'] + [c for c in ('count', 'weight') if c in columns]
-        table = dataset.to_table(columns=want)
-        names = table.column('name').to_pylist()
+        table = pf.read(columns=want, use_threads=False)
+        names = table.column('name').to_numpy(zero_copy_only=False)
         counts = (
-            table.column('count').to_numpy(zero_copy_only=False).astype(np.int64)
+            table.column('count').to_numpy(zero_copy_only=False).astype(np.int64, copy=False)
             if 'count' in columns
             else np.zeros(len(names), dtype=np.int64)
         )
         if int(counts.sum()) > 0:
-            return AliasTable.from_counts(names, counts)
-        # Fall back to stored weights when the source only carries percentages.
-        if 'weight' not in columns:
-            raise ValueError(f'partition at {path} has neither positive counts nor weight column')
-        weights = table.column('weight').to_numpy(zero_copy_only=False).astype(np.float64)
-        return AliasTable.from_weights(names, weights)
+            built = AliasTable.from_counts(names, counts)
+        else:
+            # Fall back to stored weights when the source only carries percentages.
+            if 'weight' not in columns:
+                raise ValueError(f'partition at {path} has neither positive counts nor weight column')
+            weights = table.column('weight').to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
+            built = AliasTable.from_weights(names, weights)
+
+        with _PARQUET_FILE_CACHE_LOCK:
+            existing = _PARQUET_FILE_CACHE.get(file_key)
+            if existing is not None:
+                _PARQUET_FILE_CACHE.move_to_end(file_key)
+                return existing
+            _PARQUET_FILE_CACHE[file_key] = built
+            _PARQUET_FILE_CACHE.move_to_end(file_key)
+            while len(_PARQUET_FILE_CACHE) > _PARQUET_FILE_CACHE_MAX:
+                _PARQUET_FILE_CACHE.popitem(last=False)
+        return built
 
 
 def alias_from_mapping(mapping: Mapping[str, Any]) -> AliasTable:

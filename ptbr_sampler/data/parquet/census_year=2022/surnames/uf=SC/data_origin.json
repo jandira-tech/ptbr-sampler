@@ -1,0 +1,15 @@
+{
+  "census_year": 2022,
+  "reference_date": "2022-08-01",
+  "dataset": "olob0/ibge-nomes-no-brasil-2022",
+  "revision": "05efb85c92af43da2ed4ed088d1e0c9f17160e65",
+  "ingester": "scripts/ingest_to_parquet.py",
+  "grain": "uf_surname_token_slots",
+  "uf": "SC",
+  "uf_population_2022": 7610361,
+  "disclosure_threshold": 15,
+  "rows": 33623,
+  "count_sum": 10127398,
+  "weight_sum": 1.0,
+  "built_at_utc": "2026-11-13T07:37:46.932947+00:00"
+}

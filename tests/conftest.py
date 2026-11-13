@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ptbr_sampler.br_name_class import TimePeriod
+from ptbr_sampler.br_name_class import LEGACY_2010_PERIODS
 
 DATA_DIR = Path(__file__).parent.parent / 'ptbr_sampler' / 'data'
 
@@ -53,7 +53,7 @@ def name_sampler():
     name_data = {'surnames': surnames_data['surnames']}
     name_data.update(names_data)
 
-    return BrazilianNameSampler(name_data, middle_names_path, None)
+    return BrazilianNameSampler(None, middle_names_path, None, preloaded_data=name_data)
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ def mock_name_data() -> dict:
                 },
                 'total': 100,
             }
-            for period in TimePeriod
+            for period in LEGACY_2010_PERIODS
         },
         'surnames': {
             'Silva': {'percentage': 0.3},

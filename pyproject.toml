@@ -1,28 +1,78 @@
 [project]
 name = 'ptbr-sampler'
-version = '0.2.0'
-description = 'Brazilian Name and Location Generator'
-authors = [{name = 'arthrod', email = 'arthrod@gmail.com'}]
+version = '0.3.0'
+description = 'Empirically grounded Brazilian demographic, location, and synthetic document sampler backed by IBGE Census 2022'
+readme = 'README.md'
+license = 'MIT'
+license-files = ['LICENSE', 'THIRD_PARTY_NOTICES.md']
+authors = [
+    {name = 'Jandira Tech'},
+    {name = 'Arthur Souza Rodrigues', email = 'arthrod@gmail.com'},
+]
 requires-python = '>=3.12'
-keywords = ['brazil', 'name', 'location', 'generator']
+keywords = [
+    'brazil',
+    'pt-br',
+    'ibge',
+    'census-2022',
+    'synthetic-data',
+    'faker',
+    'names',
+    'surnames',
+    'cep',
+    'cpf',
+    'cnpj',
+    'data-science',
+]
+classifiers = [
+    'Development Status :: 4 - Beta',
+    'Intended Audience :: Developers',
+    'Intended Audience :: Science/Research',
+    'Natural Language :: Portuguese (Brazilian)',
+    'Natural Language :: English',
+    'Operating System :: OS Independent',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Topic :: Scientific/Engineering :: Information Analysis',
+    'Topic :: Software Development :: Libraries :: Python Modules',
+    'Topic :: Software Development :: Testing',
+    'Typing :: Typed',
+]
 dependencies = [
     'tqdm>=4.67.1',
     'typer>=0.15.0',
     'python-dotenv>=1.0.1',
     'loguru>=0.7.3',
     'rich>=14.0.0',
-    'richer>=0.1.6',
     'aiofiles>=24.1.0',
     # Vectorised sampling primitives (see docs/architecture.md).
     'numpy>=2.0',
-    # Partitioned Parquet store under ptbr_sampler/data/parquet.
+    # Partitioned Parquet store fetched lazily into runtime cache.
     'pyarrow>=17.0',
 ]
+
+[project.urls]
+Homepage = 'https://github.com/jandira-tech/ptbr-sampler'
+Documentation = 'https://ptbr-sampler.readthedocs.io/'
+Repository = 'https://github.com/jandira-tech/ptbr-sampler'
+Dataset = 'https://huggingface.co/datasets/arthrod/ptbr-sampler-data'
+Issues = 'https://github.com/jandira-tech/ptbr-sampler/issues'
+Changelog = 'https://github.com/jandira-tech/ptbr-sampler/blob/main/CHANGELOG.md'
 
 [project.scripts]
 ptbr = 'ptbr_sampler.cli:main'
 
 [project.optional-dependencies]
+faker = [
+    'faker>=30.0',
+]
+
+docs = [
+    'mkdocs>=1.6',
+    'mkdocs-material>=9.5',
+    'pymdown-extensions>=10.12',
+]
 
 test = [
     'pytest>=8.3',
@@ -33,20 +83,54 @@ test = [
     'pytest-xdist>=3.6',
     'coverage[toml]>=7.6',
     'scipy>=1.14',
+    'faker>=30.0',
 ]
 
 dev = [
-    'uv>=0.11.15',
+    'uv>=0.13.7',
     'ruff>=0.8',
+    'huggingface-hub>=0.26',
 ]
 
 [build-system]
-requires = ['uv_build>=0.5']
+requires = ['uv_build>=0.5,<0.14']
 build-backend = 'uv_build'
 
 [tool.uv.build-backend]
 module-name = 'ptbr_sampler'
 module-root = ''
+wheel-exclude = [
+    'ptbr_sampler/data/parquet/**',
+    'ptbr_sampler/data/raw/**',
+    'ptbr_sampler/data/cities_with_ceps.json',
+    'ptbr_sampler/data/locations_data*.json*',
+    'ptbr_sampler/data/names_data.json',
+    'ptbr_sampler/data/surnames_data.json',
+    'ptbr_sampler/data/middle_names.json',
+    'ptbr_sampler/tests/**',
+    'ptbr_sampler/add_city_name.py',
+    'ptbr_sampler/examine_data.py',
+    'ptbr_sampler/merge_city_data.py',
+    'ptbr_sampler/sample1.py',
+    'ptbr_sampler/sample2.py',
+    'ptbr_sampler/teste.py',
+]
+source-exclude = [
+    'ptbr_sampler/data/parquet/**',
+    'ptbr_sampler/data/raw/**',
+    'ptbr_sampler/data/cities_with_ceps.json',
+    'ptbr_sampler/data/locations_data*.json*',
+    'ptbr_sampler/data/names_data.json',
+    'ptbr_sampler/data/surnames_data.json',
+    'ptbr_sampler/data/middle_names.json',
+    'ptbr_sampler/tests/**',
+    'ptbr_sampler/add_city_name.py',
+    'ptbr_sampler/examine_data.py',
+    'ptbr_sampler/merge_city_data.py',
+    'ptbr_sampler/sample1.py',
+    'ptbr_sampler/sample2.py',
+    'ptbr_sampler/teste.py',
+]
 
 [tool.ruff]
 include = [

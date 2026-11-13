@@ -1,0 +1,43 @@
+{
+  "dataset": "olob0/ibge-nomes-no-brasil-2022",
+  "revision": "05efb85c92af43da2ed4ed088d1e0c9f17160e65",
+  "primary_authority": "IBGE Censo Demogr\u00e1fico 2022 \u2014 Nomes no Brasil",
+  "compilation_attribution": "Gabriel Lobo (olob0/ibge-nomes-no-brasil-2022 on Hugging Face)",
+  "files": {
+    "name_ranking.parquet": {
+      "url": "https://huggingface.co/datasets/olob0/ibge-nomes-no-brasil-2022/resolve/05efb85c92af43da2ed4ed088d1e0c9f17160e65/parquet/name_ranking.parquet",
+      "sha256": "635691d3ce52eb59c242ecb886dbaab62b4b42e6bed4b4f1766f8c6725636c64",
+      "size_bytes": 1738567,
+      "rows": 330059,
+      "fetched_at_utc": "2026-11-13T07:34:35.578185+00:00"
+    },
+    "name_detail.parquet": {
+      "url": "https://huggingface.co/datasets/olob0/ibge-nomes-no-brasil-2022/resolve/05efb85c92af43da2ed4ed088d1e0c9f17160e65/parquet/name_detail.parquet",
+      "sha256": "91518f2d0d1da8e438ab9f557127da06633e186914aecb717f1bbf7bfb6b2943",
+      "size_bytes": 2250879,
+      "rows": 330058,
+      "fetched_at_utc": "2026-11-13T07:34:35.886925+00:00"
+    },
+    "name_by_decade.parquet": {
+      "url": "https://huggingface.co/datasets/olob0/ibge-nomes-no-brasil-2022/resolve/05efb85c92af43da2ed4ed088d1e0c9f17160e65/parquet/name_by_decade.parquet",
+      "sha256": "9f852814bf42a47358841c054a70939c763c4fc70c7e38564ad44fb94b7fbdef",
+      "size_bytes": 910784,
+      "rows": 221524,
+      "fetched_at_utc": "2026-11-13T07:34:36.168683+00:00"
+    },
+    "name_by_state.parquet": {
+      "url": "https://huggingface.co/datasets/olob0/ibge-nomes-no-brasil-2022/resolve/05efb85c92af43da2ed4ed088d1e0c9f17160e65/parquet/name_by_state.parquet",
+      "sha256": "5588f012d43bb38b07691044010eb7e96cb2bfc359dd3b53a6c3b0ea46f1504e",
+      "size_bytes": 3729128,
+      "rows": 828567,
+      "fetched_at_utc": "2026-11-13T07:34:36.766071+00:00"
+    },
+    "state.parquet": {
+      "url": "https://huggingface.co/datasets/olob0/ibge-nomes-no-brasil-2022/resolve/05efb85c92af43da2ed4ed088d1e0c9f17160e65/parquet/state.parquet",
+      "sha256": "5d4aa2a4faf4cdef421f2563de63cd8298b58113779774045a29b9e13ddebc55",
+      "size_bytes": 1285,
+      "rows": 27,
+      "fetched_at_utc": "2026-11-13T07:34:36.942135+00:00"
+    }
+  }
+}

@@ -309,3 +309,91 @@ def test_get_random_location_forwards_random_mode(mock_location_data, monkeypatc
         sampler.get_random_location(random_mode=True, **flags)
         assert seen, flags
         assert all(seen), flags
+
+
+def test_duplicate_city_names_across_ufs_use_matching_uf_cep_and_ddd(mock_name_data, tmp_path):
+    import json
+    import random
+    from faker import Faker
+    from ptbr_sampler import sample
+    from ptbr_sampler.faker import install_ptbr
+
+    dup_loc_data = {
+        'states': {
+            'Piauí': {'state_abbr': 'PI', 'population_percentage': 50.0},
+            'Rio Grande do Sul': {'state_abbr': 'RS', 'population_percentage': 50.0},
+        },
+        'cities': {
+            '2201903': {
+                'city_name': 'Bom Jesus',
+                'city_uf': 'PI',
+                'population_percentage_state': 100.0,
+                'ceps': ['64900-000'],
+                'cep_range_begins': '64900-000',
+                'cep_range_ends': '64900-999',
+                'ddd': '89',
+            },
+            '4302303': {
+                'city_name': 'Bom Jesus',
+                'city_uf': 'RS',
+                'population_percentage_state': 100.0,
+                'ceps': ['95290-000'],
+                'cep_range_begins': '95290-000',
+                'cep_range_ends': '95299-999',
+                'ddd': '54',
+            },
+        },
+    }
+    loc_sampler = BrazilianLocationSampler(dup_loc_data)
+    loc_file = tmp_path / 'dup_cities.json'
+    names_file = tmp_path / 'names.json'
+    surnames_file = tmp_path / 'surnames.json'
+    loc_file.write_text(json.dumps(dup_loc_data, ensure_ascii=False), encoding='utf-8')
+    names_file.write_text(json.dumps({'common_names_percentage': mock_name_data['common_names_percentage']}, ensure_ascii=False), encoding='utf-8')
+    surnames_file.write_text(json.dumps({'surnames': mock_name_data['surnames']}, ensure_ascii=False), encoding='utf-8')
+
+    assert '64900-000' in loc_sampler.get_random_location(uf='PI', rng=random.Random(1))
+    assert loc_sampler.get_random_location(uf='PI', only_cep=True, rng=random.Random(1)) == '64900-000'
+
+    rows = sample(
+        qty=3,
+        uf='PI',
+        census_year=2010,
+        always_phone=True,
+        include_address=True,
+        json_path=str(loc_file),
+        names_path=str(names_file),
+        surnames_path=str(surnames_file),
+        middle_names_path=None,
+        locations_path=None,
+        rng=random.Random(2),
+    )
+    for row in rows:
+        assert row['state_abbr'] == 'PI'
+        assert row['cep'] == '64900-000'
+        assert row['phone'].startswith('(89)')
+
+    only_cep_rows = sample(
+        qty=2,
+        uf='PI',
+        census_year=2010,
+        only_cep=True,
+        json_path=str(loc_file),
+        names_path=str(names_file),
+        surnames_path=str(surnames_file),
+        middle_names_path=None,
+        locations_path=None,
+        rng=random.Random(3),
+    )
+    for row in only_cep_rows:
+        assert row['cep'] == '64900-000'
+
+    fake = install_ptbr(Faker('pt_BR'), uf='PI', census_year=2010)
+    fake.seed_instance(4)
+    for provider in fake.providers:
+        if hasattr(provider, '_location_sampler'):
+            provider._location_sampler = lambda: loc_sampler  # type: ignore[method-assign]
+    assert fake.ptbr_cep(uf='PI') == '64900-000'
+    assert '64900-000' in fake.ptbr_address(uf='PI')
+    assert fake.ptbr_phone(uf='PI').startswith('(89)')
+

@@ -96,42 +96,66 @@ class BrazilianRG:
         self.include_state_prefix = include_state_prefix
         self.only_rg = only_rg
 
-    def _generate_from_pattern(self, pattern):
+    def _generate_from_pattern(
+        self,
+        pattern: str,
+        rng: random.Random | None = None,
+    ) -> str:
         """
         Generate a string by replacing each '#' in the pattern with a random digit (0-9).
         """
-        return ''.join(str(random.randint(0, 9)) if char == '#' else char for char in pattern)
+        r = rng if rng is not None else random
+        return ''.join(str(r.randint(0, 9)) if char == '#' else char for char in pattern)
 
-    def generate(self, state: str | None = None, include_issuer: bool = True, include_state_prefix: bool = False, only_rg: bool = False):
+    def generate(
+        self,
+        state: str | None = None,
+        include_issuer: bool | None = None,
+        include_state_prefix: bool | None = None,
+        only_rg: bool | None = None,
+        *,
+        formatted: bool = True,
+        rng: random.Random | None = None,
+    ) -> str:
         """
         Generate a complete, realistic RG number string according to the state-specific pattern.
 
-        For Minas Gerais (MG), a random decision is made whether to include the state prefix.
-        For other states, the include_state_prefix flag controls this behavior.
+        Explicit arguments override the defaults configured in ``__init__`` without
+        mutating ``self``.
 
         Returns:
             A string representing the final RG number, optionally prefixed with the issuer and/or state code.
         """
-        pattern = BrazilianRG.STATE_PATTERNS[self.state]
-        rg_number = self._generate_from_pattern(pattern)
+        r = rng if rng is not None else random
+        eff_state = self.state if state is None else state.upper().strip()
+        if eff_state not in BrazilianRG.STATE_PATTERNS:
+            raise ValueError(f'Unknown or unsupported state code: {eff_state}')
 
-        if self.only_rg:
+        eff_include_issuer = self.include_issuer if include_issuer is None else include_issuer
+        eff_include_state_prefix = self.include_state_prefix if include_state_prefix is None else include_state_prefix
+        eff_only_rg = self.only_rg if only_rg is None else only_rg
+
+        pattern = BrazilianRG.STATE_PATTERNS[eff_state]
+        if not formatted:
+            return ''.join(str(r.randint(0, 9)) for _ in range(pattern.count('#')))
+
+        rg_number = self._generate_from_pattern(pattern, rng=r)
+
+        if eff_only_rg:
             return rg_number
 
         parts = []
         # Include issuer if required.
-        if self.include_issuer:
-            parts.append(BrazilianRG.ISSUERS[self.state])
+        if eff_include_issuer:
+            parts.append(BrazilianRG.ISSUERS[eff_state])
 
         # For MG, randomly decide to include the "MG" prefix (state code).
-        if self.state == 'MG':
-            # Randomly choose True or False
-            mg_prefix = random.choice([True, False])
+        if eff_state == 'MG':
+            mg_prefix = r.choice([True, False])
             if mg_prefix:
                 parts.append('MG')
-        else:
-            if self.include_state_prefix:
-                parts.append(self.state)
+        elif eff_include_state_prefix:
+            parts.append(eff_state)
 
         parts.append(rg_number)
         return ' '.join(parts)

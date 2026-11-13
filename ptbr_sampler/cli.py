@@ -1,4 +1,6 @@
+import json
 import sys
+from collections import Counter
 from datetime import timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -11,11 +13,15 @@ from rich.table import Table
 
 from ptbr_sampler.br_name_class import NameComponents, TimePeriod
 from ptbr_sampler.data_origins import DATA_ORIGINS
+from ptbr_sampler.datasets import (
+    clear_dataset_cache,
+    dataset_cache_status,
+    prefetch_datasets,
+)
 from ptbr_sampler.sampler import sample as sampler_sample
 
-# Default data files ship inside the installed package. Resolve them relative
-# to ``__file__`` so ``ptbr generate`` works regardless of the current working
-# directory.
+# Default data files ship inside the installed package (or resolve lazily from HF).
+# Resolve relative to ``__file__`` so ``ptbr generate`` works from any cwd.
 _PACKAGE_DATA = Path(__file__).resolve().parent / 'data'
 
 # Configure logger
@@ -24,7 +30,7 @@ logger.add(
     sys.stderr,
     colorize=True,
     format='<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}:{line}</cyan> - <level>{message}</level>',
-    filter=lambda record: record['level'].name != 'DEBUG',
+    filter=lambda record: record['level'].name != 'DEBUG' and not record['extra'].get('quiet', False),
     level='INFO',
     backtrace=True,
     diagnose=True,
@@ -34,17 +40,31 @@ logger.add(
 BRASILIA_TZ = timezone(timedelta(hours=-3))
 
 # Configure logger with Brasilia timezone
-logger.configure(extra={'timezone': BRASILIA_TZ})
+logger.configure(extra={'timezone': BRASILIA_TZ, 'quiet': False})
 
 console = Console()
 app = typer.Typer(help='BR data sampler CLI', add_completion=False)
+datasets_app = typer.Typer(help='Inspect, prefetch, or clear cached Hugging Face runtime datasets.', add_completion=False)
+app.add_typer(datasets_app, name='datasets')
 
 # Define options at module level organized by panels
 # Basic options
-DEFAULT_QTY = typer.Option(1, '--qty', '-q', help='Number of samples to generate', rich_help_panel='Basic Options')
+DEFAULT_QTY = typer.Option(1, '--qty', '-q', '-n', help='Number of samples to generate', rich_help_panel='Basic Options')
 ALL_DATA = typer.Option(False, '--all', '-a', help='Include all possible data in the generated samples', rich_help_panel='Basic Options')
 SAVE_TO_JSONL = typer.Option(None, '--save-to-jsonl', '-sj', help='Save generated samples to a JSONL file', rich_help_panel='Basic Options')
-APPEND_TO_JSONL = typer.Option(True, '--append', '-ap', help='Append to JSONL file instead of overwriting', rich_help_panel='Basic Options')
+APPEND_TO_JSONL = typer.Option(True, '--append', help='Append to JSONL file instead of overwriting', rich_help_panel='Basic Options')
+OUTPUT_FORMAT = typer.Option(
+    'table',
+    '--format',
+    help="Output format: 'table' (default), 'json', or 'jsonl'.",
+    rich_help_panel='Basic Options',
+)
+QUIET = typer.Option(
+    False,
+    '--quiet',
+    help='Suppress progress bars and status banners.',
+    rich_help_panel='Basic Options',
+)
 # New convenience options
 BATCH = typer.Option(
     None,
@@ -65,17 +85,30 @@ RANDOM_MODE = typer.Option(
     ),
     rich_help_panel='Basic Options',
 )
+CENSUS_YEAR = typer.Option(
+    2022,
+    '--census-year',
+    help='IBGE Census vintage: 2022 (default) or 2010 (historical).',
+    rich_help_panel='Basic Options',
+)
+CONDITIONING_MODE = typer.Option(
+    'strict',
+    '--conditioning-mode',
+    help="Conditioning mode for 2022 multi-dimensional queries: 'strict' (default) or 'estimated'.",
+    rich_help_panel='Basic Options',
+)
+UF_CONDITIONING = typer.Option(
+    False,
+    '--uf-conditioning',
+    help='Condition name and surname draws on the sampled state (UF).',
+    rich_help_panel='Basic Options',
+)
 EXPERIMENTAL_UF_SEX = typer.Option(
     False,
     '--experimental-uf-sex',
     help=(
         'EXPERIMENTAL: condition first-name draws on the sampled UF and a '
-        '50/50-drawn sex when the parquet/first_names/uf=<UF>/period=<P>/sex=<S>/ '
-        'partitions exist (produced by "python -m scripts.download_datasets '
-        '--fetch-ibge-nomes" + "python -m scripts.ingest_to_parquet"). The IBGE '
-        'Nomes v2 ranking endpoint exposes only the top-20 names per condition, '
-        'so the conditioned pool is much narrower than the unconditioned '
-        'period table; default is OFF.'
+        '50/50-drawn sex. On Census 2022, requires --conditioning-mode estimated.'
     ),
     rich_help_panel='Basic Options',
 )
@@ -83,18 +116,19 @@ SEX_CONDITIONING = typer.Option(
     None,
     '--sex-conditioning',
     help=(
-        'Condition first-name draws on sex using the period x sex national '
-        'partitions (parquet/first_names/period=<P>/sex=<S>/). Built from '
-        'IBGE Nomes period percentages multiplied by the brasil.io/genero-nomes '
-        'sex prior — see docs/data-origins.md. Full long tail preserved. '
-        "Accepts 'M' (male only), 'F' (female only), or 'mixed' (50/50 per row). "
-        'Default off (period-only table). Combine with --experimental-uf-sex '
-        'to add UF on top.'
+        "Condition first-name draws on sex. Accepts 'M', 'F', 'mixed' (50/50), "
+        "or 'population' (observed 2022 national sex share; requires --census-year 2022)."
     ),
     rich_help_panel='Basic Options',
 )
 
 # Location options
+UF_FILTER = typer.Option(
+    None,
+    '--uf',
+    help='Restrict location and name/surname sampling to a two-letter Brazilian UF (e.g. SP, RJ).',
+    rich_help_panel='Location Options',
+)
 CITY_ONLY = typer.Option(False, '--city-only', '-c', help='Return only city names', rich_help_panel='Location Options')
 STATE_ABBR_ONLY = typer.Option(
     False, '--state-abbr-only', '-sa', help='Return only state abbreviations', rich_help_panel='Location Options'
@@ -112,7 +146,11 @@ MAKE_API_CALL = typer.Option(
 
 # Name options
 TIME_PERIOD = typer.Option(
-    TimePeriod.UNTIL_2010, '--time-period', '-t', help='Time period for name sampling', rich_help_panel='Name Options'
+    None,
+    '--time-period',
+    '-t',
+    help='Time period for name sampling (defaults to all for 2022, ate2010 for 2010).',
+    rich_help_panel='Name Options',
 )
 RETURN_ONLY_NAME = typer.Option(
     False, '--return-only-name', '-rn', help='Return only the name without location', rich_help_panel='Name Options'
@@ -350,7 +388,7 @@ def sample(
     only_cep: bool = ONLY_CEP,
     cep_without_dash: bool = CEP_WITHOUT_DASH,
     make_api_call: bool = MAKE_API_CALL,
-    time_period: TimePeriod = TIME_PERIOD,
+    time_period: TimePeriod | None = TIME_PERIOD,
     return_only_name: bool = RETURN_ONLY_NAME,
     name_raw: bool = NAME_RAW,
     json_path: Path = JSON_PATH,
@@ -385,195 +423,269 @@ def sample(
     random: bool = RANDOM_MODE,
     experimental_uf_sex: bool = EXPERIMENTAL_UF_SEX,
     sex_conditioning: str | None = SEX_CONDITIONING,
+    census_year: int = CENSUS_YEAR,
+    conditioning_mode: str = CONDITIONING_MODE,
+    uf_conditioning: bool = UF_CONDITIONING,
+    uf: str | None = UF_FILTER,
+    output_format: str = OUTPUT_FORMAT,
+    quiet: bool = QUIET,
 ) -> None:
-    """Generate random Brazilian samples with comprehensive information.
+    """Generate random Brazilian samples with comprehensive information."""
+    fmt = output_format.strip().lower()
+    if fmt not in {'table', 'json', 'jsonl'}:
+        typer.echo(
+            f"Error: output_format must be 'table', 'json', or 'jsonl'; got {output_format!r}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
 
-    This function generates random Brazilian location, name, and document samples
-    based on the provided parameters. It handles various combinations of output
-    formats and ensures proper state handling for document generation.
+    suppress_ui = quiet or fmt in {'json', 'jsonl'}
 
-    Args:
-        qty: Number of samples to generate
-        city_only: Return only city names
-        state_abbr_only: Return only state abbreviations
-        state_full_only: Return only full state names
-        only_cep: Return only CEP
-        cep_without_dash: Format CEP without dash
-        time_period: Time period for name sampling
-        return_only_name: Return only names without location
-        name_raw: Return names in raw format (all caps)
-        json_path: Path to city/state data JSON file
-        names_path: Path to first names data file
-        middle_names_path: Path to middle names data file
-        only_surname: Return only surnames
-        top_40: Use only top 40 surnames
-        with_only_one_surname: Use single surname
-        always_middle: Always include middle name
-        only_middle: Return only middle names
-        always_cpf: Include CPF in documents
-        always_pis: Include PIS in documents
-        always_cnpj: Include CNPJ in documents
-        always_cei: Include CEI in documents
-        always_rg: Include RG in documents
-        only_cpf: Generate only CPF
-        only_pis: Generate only PIS
-        only_cnpj: Generate only CNPJ
-        only_cei: Generate only CEI
-        only_rg: Generate only RG
-        include_issuer: Include issuing state in RG
-        only_document: Return only documents
-        surnames_path: Path to surnames data file
-        locations_path: Path to locations data JSON file
-        save_to_jsonl: Path to save generated samples as JSONL
-        all_data: Include all possible data in the generated samples
-        batch: Maximum number of samples per batch before saving to file
-        easy: Easy mode with integer qty (enables API calls, all data, and auto-saves)
-        append_to_jsonl: Append to JSONL file instead of overwriting
+    with logger.contextualize(quiet=suppress_ui):
+        try:
+            # Process easy mode if specified
+            if easy is not None:
+                if not suppress_ui:
+                    console.print('[bold green]Easy mode enabled[/bold green]')
+                logger.info(f'Easy mode enabled with quantity: {easy}')
+                qty = easy
+                make_api_call = True
+                all_data = True
+                always_phone = True
+                save_to_jsonl = 'output/output.jsonl'
 
-    Raises:
-        typer.Exit: If an error occurs during execution
-    """
+                # Ensure output directory exists
+                output_dir = Path(save_to_jsonl).parent
+                if output_dir != Path() and not output_dir.exists():
+                    if not suppress_ui:
+                        console.print(f'[yellow]Creating output directory: {output_dir}[/yellow]')
+                    logger.info(f'Creating output directory: {output_dir}')
+                    output_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        # Process easy mode if specified
-        if easy is not None:
-            console.print('[bold green]Easy mode enabled[/bold green]')
-            logger.info(f'Easy mode enabled with quantity: {easy}')
-            qty = easy
-            make_api_call = True
-            all_data = True
-            always_phone = True
-            save_to_jsonl = 'output/output.jsonl'
+            # Set up batch processing if enabled
+            use_batches = False
+            batch_size = 0
 
-            # Ensure output directory exists
-            output_dir = Path(save_to_jsonl).parent
-            if output_dir != Path() and not output_dir.exists():
-                console.print(f'[yellow]Creating output directory: {output_dir}[/yellow]')
-                logger.info(f'Creating output directory: {output_dir}')
-                output_dir.mkdir(parents=True, exist_ok=True)
+            if batch is not None and batch > 0 and save_to_jsonl:
+                batch_size = min(batch, qty)  # Ensure batch size doesn't exceed total quantity
+                use_batches = batch_size < qty  # Only use batches if we have multiple batches
 
-        # Set up batch processing if enabled
-        use_batches = False
-        batch_size = 0
+                if use_batches:
+                    if not suppress_ui:
+                        console.print(f'[bold blue]Processing {qty} samples in batches of {batch_size}[/bold blue]')
+                    logger.info(f'Batch mode enabled: {qty} samples in batches of {batch_size}')
+                else:
+                    if not suppress_ui:
+                        console.print(f'[bold blue]Batch size ({batch_size}) equals or exceeds total quantity ({qty})[/bold blue]')
+                    logger.info(f'Single batch mode: batch size {batch_size} >= quantity {qty}')
 
-        if batch is not None and batch > 0 and save_to_jsonl:
-            batch_size = min(batch, qty)  # Ensure batch size doesn't exceed total quantity
-            use_batches = batch_size < qty  # Only use batches if we have multiple batches
+            # Show configuration summary for batch or easy modes
+            if batch is not None or easy is not None:
+                config_summary = [
+                    f'Quantity: {qty}',
+                    f'Make API call: [{"green" if make_api_call else "red"}]{make_api_call}[/]',
+                    f'All data: [{"green" if all_data else "red"}]{all_data}[/]',
+                    f'Always phone: [{"green" if always_phone else "red"}]{always_phone}[/]',
+                ]
+                if save_to_jsonl:
+                    save_mode = '[green]append[/]' if append_to_jsonl else '[yellow]overwrite[/]'
+                    config_summary.append(f'Save to: [cyan]{save_to_jsonl}[/] ({save_mode})')
+                    if use_batches:
+                        config_summary.append(f'Batch size: [cyan]{batch_size}[/] samples')
+
+                logger.info(
+                    f'Configuration: qty={qty}, api={make_api_call}, all_data={all_data}, file={save_to_jsonl}, append={append_to_jsonl}'
+                )
+                if not suppress_ui:
+                    console.print('[bold]Configuration:[/bold]')
+                    for item in config_summary:
+                        console.print(f'  [cyan]•[/cyan] {item}')
+                    console.print()
+
+            # Process in batches or as a single run
+            all_results: Any = []
 
             if use_batches:
-                console.print(f'[bold blue]Processing {qty} samples in batches of {batch_size}[/bold blue]')
-                logger.info(f'Batch mode enabled: {qty} samples in batches of {batch_size}')
-            else:
-                console.print(f'[bold blue]Batch size ({batch_size}) equals or exceeds total quantity ({qty})[/bold blue]')
-                logger.info(f'Single batch mode: batch size {batch_size} >= quantity {qty}')
+                logger.info(f'Starting batch processing of {qty} samples')
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn('[bold blue]{task.description}'),
+                    BarColumn(complete_style='green', finished_style='green'),
+                    TaskProgressColumn(),
+                    TextColumn('{task.fields[status]}'),
+                    console=console,
+                    disable=suppress_ui,
+                ) as progress:
+                    main_task = progress.add_task('[green]Generating samples...', total=qty, status='')
+                    api_task = None
+                    if make_api_call:
+                        api_task = progress.add_task('[yellow]API calls...', visible=False, total=1.0, status='')
+                    batch_task = progress.add_task('[cyan]Batch progress...', total=batch_size, visible=False, status='')
 
-        # Show configuration summary for batch or easy modes
-        if batch is not None or easy is not None:
-            config_summary = [
-                f'Quantity: {qty}',
-                f'Make API call: [{"green" if make_api_call else "red"}]{make_api_call}[/]',
-                f'All data: [{"green" if all_data else "red"}]{all_data}[/]',
-                f'Always phone: [{"green" if always_phone else "red"}]{always_phone}[/]',
-            ]
-            if save_to_jsonl:
-                save_mode = '[green]append[/]' if append_to_jsonl else '[yellow]overwrite[/]'
-                config_summary.append(f'Save to: [cyan]{save_to_jsonl}[/] ({save_mode})')
-                if use_batches:
-                    config_summary.append(f'Batch size: [cyan]{batch_size}[/] samples')
+                    samples_completed = 0
+                    first_batch = True
+                    while samples_completed < qty:
+                        current_batch_size = min(batch_size, qty - samples_completed)
+                        batch_num = samples_completed // batch_size + 1
+                        total_batches = (qty + batch_size - 1) // batch_size
 
-            logger.info(
-                f'Configuration: qty={qty}, api={make_api_call}, all_data={all_data}, file={save_to_jsonl}, append={append_to_jsonl}'
-            )
-            console.print('[bold]Configuration:[/bold]')
-            for item in config_summary:
-                console.print(f'  [cyan]•[/cyan] {item}')
-            console.print()
+                        logger.info(f'Processing batch {batch_num}/{total_batches} with {current_batch_size} samples')
 
-        # Process in batches or as a single run
-        all_results = []
-
-        if use_batches:
-            # Use batched processing with progress display
-            logger.info(f'Starting batch processing of {qty} samples')
-            with Progress(
-                SpinnerColumn(),
-                TextColumn('[bold blue]{task.description}'),
-                BarColumn(complete_style='green', finished_style='green'),
-                TaskProgressColumn(),
-                TextColumn('{task.fields[status]}'),
-                console=console,
-            ) as progress:
-                main_task = progress.add_task('[green]Generating samples...', total=qty, status='')
-                api_task = None
-                if make_api_call:
-                    api_task = progress.add_task('[yellow]API calls...', visible=False, total=1.0, status='')
-                batch_task = progress.add_task('[cyan]Batch progress...', total=batch_size, visible=False, status='')
-
-                # Keep track of total progress across batches
-                samples_completed = 0
-
-                # Process each batch
-                first_batch = True
-                while samples_completed < qty:
-                    # Calculate batch size for this iteration
-                    current_batch_size = min(batch_size, qty - samples_completed)
-                    batch_num = samples_completed // batch_size + 1
-                    total_batches = (qty + batch_size - 1) // batch_size
-
-                    logger.info(f'Processing batch {batch_num}/{total_batches} with {current_batch_size} samples')
-
-                    # Update progress displays
-                    progress.update(
-                        batch_task,
-                        description=f'[cyan]Batch {batch_num}/{total_batches}...',
-                        total=current_batch_size,
-                        completed=0,
-                        visible=True,
-                    )
-
-                    # Capture the current loop values as defaults so later iterations do not affect this batch's callback.
-                    def progress_callback(
-                        completed: int,
-                        stage: str | None = None,
-                        *,
-                        _samples_completed: int = samples_completed,
-                        _current_batch_size: int = current_batch_size,
-                        _batch_num: int = batch_num,
-                    ) -> None:
-                        # Calculate total progress
-                        total_completed = min(_samples_completed + completed, qty)
-
-                        # Log significant progress stages
-                        if stage and completed % max(1, _current_batch_size // 5) == 0:
-                            logger.debug(f'Batch {_batch_num}: {completed}/{_current_batch_size} samples - {stage}')
-
-                        # Update total progress
                         progress.update(
-                            main_task,
-                            completed=total_completed,
-                            status=f'[dim cyan]{stage or ""} (Batch {_batch_num})[/]',
+                            batch_task,
+                            description=f'[cyan]Batch {batch_num}/{total_batches}...',
+                            total=current_batch_size,
+                            completed=0,
+                            visible=True,
                         )
 
-                        # Update batch progress
-                        progress.update(batch_task, completed=min(completed, _current_batch_size))
+                        def progress_callback(
+                            completed: int,
+                            stage: str | None = None,
+                            *,
+                            _samples_completed: int = samples_completed,
+                            _current_batch_size: int = current_batch_size,
+                            _batch_num: int = batch_num,
+                        ) -> None:
+                            total_completed = min(_samples_completed + completed, qty)
 
-                        # Update API task if relevant
+                            if stage and completed % max(1, _current_batch_size // 5) == 0:
+                                logger.debug(f'Batch {_batch_num}: {completed}/{_current_batch_size} samples - {stage}')
+
+                            progress.update(
+                                main_task,
+                                completed=total_completed,
+                                status=f'[dim cyan]{stage or ""} (Batch {_batch_num})[/]',
+                            )
+                            progress.update(batch_task, completed=min(completed, _current_batch_size))
+
+                            if api_task and stage and 'API' in stage:
+                                progress.update(api_task, visible=True)
+                                if 'starting' in stage.lower():
+                                    logger.info(f'API calls starting for batch {_batch_num}')
+                                    progress.update(api_task, completed=0.2, status='[yellow]Connecting...[/]')
+                                elif 'processing' in stage.lower():
+                                    logger.info(f'Processing API responses for batch {_batch_num}')
+                                    progress.update(api_task, completed=0.6, status='[yellow]Processing...[/]')
+                                elif 'completed' in stage.lower():
+                                    logger.info(f'API calls completed for batch {_batch_num}')
+                                    progress.update(api_task, completed=1.0, status='[green]Done[/]')
+
+                        try:
+                            batch_results = sampler_sample(
+                                qty=current_batch_size,
+                                q=None,
+                                city_only=city_only,
+                                state_abbr_only=state_abbr_only,
+                                state_full_only=state_full_only,
+                                only_cep=only_cep,
+                                cep_without_dash=cep_without_dash,
+                                make_api_call=make_api_call,
+                                time_period=time_period,
+                                return_only_name=return_only_name,
+                                name_raw=name_raw,
+                                json_path=json_path,
+                                names_path=names_path,
+                                middle_names_path=middle_names_path,
+                                only_surname=only_surname,
+                                top_40=top_40,
+                                with_only_one_surname=with_only_one_surname,
+                                always_middle=always_middle,
+                                only_middle=only_middle,
+                                always_cpf=always_cpf,
+                                always_pis=always_pis,
+                                always_cnpj=always_cnpj,
+                                always_cei=always_cei,
+                                always_rg=always_rg,
+                                always_phone=always_phone,
+                                only_cpf=only_cpf,
+                                only_pis=only_pis,
+                                only_cnpj=only_cnpj,
+                                only_cei=only_cei,
+                                only_rg=only_rg,
+                                only_fone=only_fone,
+                                include_issuer=include_issuer,
+                                only_document=only_document,
+                                surnames_path=surnames_path,
+                                locations_path=locations_path,
+                                save_to_jsonl=save_to_jsonl,
+                                all_data=all_data,
+                                progress_callback=progress_callback,
+                                append_to_jsonl=(append_to_jsonl or not first_batch),
+                                random=random,
+                                experimental_uf_sex_conditioning=experimental_uf_sex,
+                                sex_conditioning=sex_conditioning,
+                                census_year=census_year,
+                                conditioning_mode=conditioning_mode,
+                                uf_conditioning=uf_conditioning,
+                                uf=uf,
+                            )
+                            logger.info(f'Batch {batch_num} processed successfully')
+                        except Exception as e:
+                            logger.error(f'Error processing batch {batch_num}: {e}')
+                            raise
+
+                        first_batch = False
+
+                        if isinstance(batch_results, list):
+                            all_results.extend(batch_results)
+                        else:
+                            all_results.append(batch_results)
+
+                        samples_completed += current_batch_size
+                        progress.update(batch_task, completed=current_batch_size, status=f'[green]Completed - Saved to {save_to_jsonl}[/]')
+                        logger.info(f'Batch {batch_num} saved to {save_to_jsonl}')
+
+                    progress.update(main_task, completed=qty, status='[bold green]All batches completed![/]')
+                    progress.update(batch_task, visible=False)
+                    if api_task:
+                        progress.update(api_task, visible=False)
+
+                    total_batches = (qty + batch_size - 1) // batch_size
+                    logger.info(f'All {total_batches} batches completed successfully. Total samples: {qty}')
+                    if not suppress_ui:
+                        console.print(f'\n[bold green]✓[/] {qty} samples generated successfully in {total_batches} batches!')
+                        if save_to_jsonl:
+                            console.print(f'[bold green]✓[/] All results saved to [cyan]{save_to_jsonl}[/]')
+
+            else:
+                logger.info(f'Starting standard (non-batched) processing of {qty} samples')
+                with Progress(
+                    SpinnerColumn(),
+                    TextColumn('[bold blue]{task.description}'),
+                    BarColumn(complete_style='green', finished_style='green'),
+                    TaskProgressColumn(),
+                    TextColumn('{task.fields[status]}'),
+                    console=console,
+                    disable=suppress_ui,
+                ) as progress:
+                    main_task = progress.add_task('[green]Generating samples...', total=qty, status='')
+
+                    api_task = None
+                    if make_api_call:
+                        api_task = progress.add_task('[yellow]API calls...', visible=False, total=1.0, status='')
+
+                    def progress_callback(completed: int, stage: str | None = None) -> None:
+                        if stage and completed % max(1, qty // 10) == 0:
+                            logger.debug(f'Progress: {completed}/{qty} samples - {stage}')
+
+                        progress.update(main_task, completed=completed, status=f'[dim cyan]{stage or ""}[/]')
+
                         if api_task and stage and 'API' in stage:
                             progress.update(api_task, visible=True)
                             if 'starting' in stage.lower():
-                                logger.info(f'API calls starting for batch {_batch_num}')
+                                logger.info('API calls starting')
                                 progress.update(api_task, completed=0.2, status='[yellow]Connecting...[/]')
                             elif 'processing' in stage.lower():
-                                logger.info(f'Processing API responses for batch {_batch_num}')
+                                logger.info('Processing API responses')
                                 progress.update(api_task, completed=0.6, status='[yellow]Processing...[/]')
                             elif 'completed' in stage.lower():
-                                logger.info(f'API calls completed for batch {_batch_num}')
+                                logger.info('API calls completed')
                                 progress.update(api_task, completed=1.0, status='[green]Done[/]')
 
-                    # Process the current batch
                     try:
-                        batch_results = sampler_sample(
-                            qty=current_batch_size,
+                        all_results = sampler_sample(
+                            qty=qty,
                             q=None,
                             city_only=city_only,
                             state_abbr_only=state_abbr_only,
@@ -611,152 +723,86 @@ def sample(
                             save_to_jsonl=save_to_jsonl,
                             all_data=all_data,
                             progress_callback=progress_callback,
-                            append_to_jsonl=(append_to_jsonl or not first_batch),  # Force append for all batches after the first
+                            append_to_jsonl=append_to_jsonl,
                             random=random,
                             experimental_uf_sex_conditioning=experimental_uf_sex,
                             sex_conditioning=sex_conditioning,
+                            census_year=census_year,
+                            conditioning_mode=conditioning_mode,
+                            uf_conditioning=uf_conditioning,
+                            uf=uf,
                         )
-                        logger.info(f'Batch {batch_num} processed successfully')
+                        logger.info(f'All {qty} samples processed successfully')
                     except Exception as e:
-                        logger.error(f'Error processing batch {batch_num}: {e}')
+                        logger.error(f'Error processing samples: {e}')
                         raise
 
-                    # Force append mode after the first batch
-                    first_batch = False
+                    progress.update(main_task, completed=qty, status='[bold green]Completed![/]')
+                    if api_task:
+                        progress.update(api_task, visible=False)
 
-                    # Save this batch's results
-                    if isinstance(batch_results, list):
-                        all_results.extend(batch_results)
+                    logger.info(f'Sample generation completed. Total samples: {qty}')
+                    if not suppress_ui:
+                        console.print('\n[bold green]✓[/] Sample generation completed successfully!')
+                        if save_to_jsonl:
+                            console.print(f'[bold green]✓[/] Results saved to [cyan]{save_to_jsonl}[/]')
+                            logger.info(f'Results saved to {save_to_jsonl}')
+
+            records = all_results if isinstance(all_results, list) else [all_results]
+            if fmt == 'json':
+                typer.echo(json.dumps(all_results, ensure_ascii=False))
+            elif fmt == 'jsonl':
+                for record in records:
+                    typer.echo(json.dumps(record, ensure_ascii=False))
+            elif not suppress_ui and records and not use_batches:
+                only_loc = any([city_only, state_abbr_only, state_full_only, only_cep])
+                only_doc = only_document or any([only_cpf, only_pis, only_cnpj, only_cei, only_rg, only_fone])
+                only_nm = return_only_name or only_surname or only_middle
+                table_rows: list[tuple[str | None, NameComponents, dict[str, Any], dict[str, Any]]] = []
+                for rec in records:
+                    if not isinstance(rec, dict):
+                        continue
+                    if state_full_only and rec.get('state'):
+                        loc_display = str(rec['state'])
+                    elif city_only and rec.get('city'):
+                        loc_display = str(rec['city'])
+                    elif state_abbr_only and rec.get('state_abbr'):
+                        loc_display = str(rec['state_abbr'])
+                    elif only_cep and rec.get('cep'):
+                        loc_display = str(rec['cep'])
                     else:
-                        all_results.append(batch_results)
-
-                    # Update completed count
-                    samples_completed += current_batch_size
-
-                    # Mark the batch as completed
-                    progress.update(batch_task, completed=current_batch_size, status=f'[green]Completed - Saved to {save_to_jsonl}[/]')
-
-                    logger.info(f'Batch {batch_num} saved to {save_to_jsonl}')
-
-                # All batches are complete
-                progress.update(main_task, completed=qty, status='[bold green]All batches completed![/]')
-                progress.update(batch_task, visible=False)
-                if api_task:
-                    progress.update(api_task, visible=False)
-
-                # Show completion message
-                total_batches = (qty + batch_size - 1) // batch_size
-                logger.info(f'All {total_batches} batches completed successfully. Total samples: {qty}')
-                console.print(f'\n[bold green]✓[/] {qty} samples generated successfully in {total_batches} batches!')
-                if save_to_jsonl:
-                    console.print(f'[bold green]✓[/] All results saved to [cyan]{save_to_jsonl}[/]')
-
-        else:
-            # Standard processing (non-batched) with progress display for larger quantities
-            logger.info(f'Starting standard (non-batched) processing of {qty} samples')
-            with Progress(
-                SpinnerColumn(),
-                TextColumn('[bold blue]{task.description}'),
-                BarColumn(complete_style='green', finished_style='green'),
-                TaskProgressColumn(),
-                TextColumn('{task.fields[status]}'),
-                console=console,
-            ) as progress:
-                main_task = progress.add_task('[green]Generating samples...', total=qty, status='')
-
-                # Create a task for API calls if make_api_call is true
-                api_task = None
-                if make_api_call:
-                    api_task = progress.add_task('[yellow]API calls...', visible=False, total=1.0, status='')
-
-                # Call the sample function with progress updates
-                def progress_callback(completed: int, stage: str | None = None) -> None:
-                    # Log significant progress stages
-                    if stage and completed % max(1, qty // 10) == 0:
-                        logger.debug(f'Progress: {completed}/{qty} samples - {stage}')
-
-                    # Update the main task
-                    progress.update(main_task, completed=completed, status=f'[dim cyan]{stage or ""}[/]')
-
-                    # Update API task if relevant
-                    if api_task and stage and 'API' in stage:
-                        progress.update(api_task, visible=True)
-                        if 'starting' in stage.lower():
-                            logger.info('API calls starting')
-                            progress.update(api_task, completed=0.2, status='[yellow]Connecting...[/]')
-                        elif 'processing' in stage.lower():
-                            logger.info('Processing API responses')
-                            progress.update(api_task, completed=0.6, status='[yellow]Processing...[/]')
-                        elif 'completed' in stage.lower():
-                            logger.info('API calls completed')
-                            progress.update(api_task, completed=1.0, status='[green]Done[/]')
-
-                # Call the sample function from the sampler module with all parameters
-                try:
-                    all_results = sampler_sample(
-                        qty=qty,
-                        q=None,  # We don't use this alias in the CLI
-                        city_only=city_only,
-                        state_abbr_only=state_abbr_only,
-                        state_full_only=state_full_only,
-                        only_cep=only_cep,
-                        cep_without_dash=cep_without_dash,
-                        make_api_call=make_api_call,
-                        time_period=time_period,
-                        return_only_name=return_only_name,
-                        name_raw=name_raw,
-                        json_path=json_path,
-                        names_path=names_path,
-                        middle_names_path=middle_names_path,
-                        only_surname=only_surname,
-                        top_40=top_40,
-                        with_only_one_surname=with_only_one_surname,
-                        always_middle=always_middle,
-                        only_middle=only_middle,
-                        always_cpf=always_cpf,
-                        always_pis=always_pis,
-                        always_cnpj=always_cnpj,
-                        always_cei=always_cei,
-                        always_rg=always_rg,
-                        always_phone=always_phone,
-                        only_cpf=only_cpf,
-                        only_pis=only_pis,
-                        only_cnpj=only_cnpj,
-                        only_cei=only_cei,
-                        only_rg=only_rg,
-                        only_fone=only_fone,
-                        include_issuer=include_issuer,
-                        only_document=only_document,
-                        surnames_path=surnames_path,
-                        locations_path=locations_path,
-                        save_to_jsonl=save_to_jsonl,
-                        all_data=all_data,
-                        progress_callback=progress_callback,
-                        append_to_jsonl=append_to_jsonl,
-                        random=random,
-                        experimental_uf_sex_conditioning=experimental_uf_sex,
-                        sex_conditioning=sex_conditioning,
+                        loc_parts = [p for p in (rec.get('city'), rec.get('state_abbr')) if p]
+                        if not loc_parts and rec.get('state'):
+                            loc_parts = [str(rec['state'])]
+                        loc_display = ' / '.join(loc_parts)
+                        if rec.get('cep'):
+                            loc_display = f'{loc_display} ({rec["cep"]})' if loc_display else str(rec['cep'])
+                    nc = NameComponents(
+                        rec.get('name', ''),
+                        rec.get('middle_name') or None,
+                        rec.get('surnames', ''),
                     )
-                    logger.info(f'All {qty} samples processed successfully')
-                except Exception as e:
-                    logger.error(f'Error processing samples: {e}')
-                    raise
-
-                # Ensure progress is complete
-                progress.update(main_task, completed=qty, status='[bold green]Completed![/]')
-                if api_task:
-                    progress.update(api_task, visible=False)
-
-                # Show completion message
-                logger.info(f'Sample generation completed. Total samples: {qty}')
-                console.print('\n[bold green]✓[/] Sample generation completed successfully!')
-                if save_to_jsonl:
-                    console.print(f'[bold green]✓[/] Results saved to [cyan]{save_to_jsonl}[/]')
-                    logger.info(f'Results saved to {save_to_jsonl}')
-    except Exception as e:
-        logger.error(f'Error in sample generation: {e}')
-        console.print(f'[red]Error: {e!s}[/red]')
-        raise typer.Exit(code=1) from e
+                    docs = {k: rec[k] for k in ('cpf', 'rg', 'pis', 'cnpj', 'cei', 'phone') if rec.get(k)}
+                    addr = {
+                        'street': rec.get('street', ''),
+                        'neighborhood': rec.get('neighborhood', ''),
+                        'building_number': rec.get('building_number', ''),
+                    }
+                    table_rows.append((loc_display, nc, docs, addr))
+                if table_rows:
+                    console.print(
+                        create_results_table(
+                            table_rows,
+                            f'ptbr-sampler (Censo {census_year})',
+                            return_only_name=only_nm,
+                            only_location=only_loc,
+                            only_document=only_doc,
+                        )
+                    )
+        except Exception as e:
+            logger.error(f'Error in sample generation: {e}')
+            typer.echo(f'Error: {e!s}', err=True)
+            raise typer.Exit(code=1) from e
 
 
 # Expose the same command under the friendlier ``generate`` name so that
@@ -764,34 +810,121 @@ def sample(
 app.command(name='generate', help='Alias for ``sample``: generate Brazilian profiles.')(sample)
 
 
-@app.command(name='sources', help='Show the origin of each bundled dataset.')
+@app.command(name='sources', help='Show the origin of each bundled or runtime dataset.')
 def sources(
     kind: str | None = typer.Option(None, '--kind', '-k', help='Filter by data kind (substring match).'),
+    census_year: int | None = typer.Option(None, '--census-year', help='Filter by Census vintage (2022 or 2010).'),
 ) -> None:
     """Print the data-origin catalogue defined in ``ptbr_sampler/data_origins.py``.
 
-    Mirrors ``docs/data-origins.md``. Use ``--kind`` to filter by type.
+    Mirrors ``docs/data-origins.md``. Use ``--kind`` or ``--census-year`` to filter.
     """
-    console.print('[bold]ptbr-sampler — data origins[/bold]\n')
+    if census_year is not None and census_year not in (2010, 2022):
+        typer.echo(f'Error: census_year must be 2010 or 2022; got {census_year!r}', err=True)
+        raise typer.Exit(code=1)
+    console.print('[bold]ptbr-sampler — data origins[/bold]\n', soft_wrap=True)
     for origin in DATA_ORIGINS:
         if kind and kind.casefold() not in origin.kind.casefold():
             continue
-        console.print(f'[bold cyan]{origin.kind}[/bold cyan]')
-        console.print(f'  {origin.summary}')
+        if census_year is not None and census_year not in origin.census_years:
+            continue
+        console.print(f'[bold cyan]{origin.kind}[/bold cyan]', soft_wrap=True)
+        console.print(f'  {origin.summary}', soft_wrap=True)
+        if origin.census_years:
+            years_str = ', '.join(str(y) for y in origin.census_years)
+            console.print(f'  [dim]Census vintages:[/dim] {years_str}', soft_wrap=True)
         if origin.dimensions:
-            console.print(f'  [dim]Dimensions:[/dim] {", ".join(origin.dimensions)}')
+            console.print(f'  [dim]Dimensions:[/dim] {", ".join(origin.dimensions)}', soft_wrap=True)
+        if origin.remote_artifacts:
+            states = origin.artifact_states()
+            state_counts = Counter(state for _, state in states)
+            summary_parts = [f'{state}={count}' for state, count in sorted(state_counts.items())]
+            console.print(
+                f'  [dim]Runtime artifacts ({len(states)}):[/dim] {", ".join(summary_parts)}',
+                soft_wrap=True,
+            )
+            for rel_path, state in states[:5]:
+                console.print(f'    [{state}] {rel_path}', soft_wrap=True)
+            if len(states) > 5:
+                console.print(f'    ... ({len(states) - 5} more)', soft_wrap=True)
         if origin.files:
-            console.print('  [dim]Files:[/dim]')
+            console.print('  [dim]Files:[/dim]', soft_wrap=True)
             for path, exists in origin.file_status():
                 mark = '[green]✓[/green]' if exists else '[yellow]missing[/yellow]'
-                console.print(f'    {mark} {path}')
+                console.print(f'    {mark} {path}', soft_wrap=True)
         if origin.primary_url:
-            console.print(f'  [dim]Primary source:[/dim] {origin.primary_url}')
+            console.print(f'  [dim]Primary source:[/dim] {origin.primary_url}', soft_wrap=True)
         if origin.notes:
-            console.print(f'  [dim]Notes:[/dim] {origin.notes}')
+            console.print(f'  [dim]Notes:[/dim] {origin.notes}', soft_wrap=True)
         console.print()
 
-    console.print('[dim]Full write-up: docs/data-origins.md  ·  external bibliography: docs/sources/bibliography.md[/dim]')
+    console.print(
+        '[dim]Full write-up: docs/data-origins.md  ·  external bibliography: docs/sources/bibliography.md[/dim]',
+        soft_wrap=True,
+    )
+
+
+@datasets_app.command(name='status', help='Inspect runtime dataset cache and resolution state.')
+def datasets_status(
+    census_year: int | None = typer.Option(None, '--census-year', help='Filter by Census vintage (2022 or 2010).'),
+    verify: bool = typer.Option(False, '--verify', help='Recompute SHA-256 checksums for local/cached artifacts.'),
+) -> None:
+    """Report resolution state and optional SHA-256 validity of runtime datasets."""
+    try:
+        status = dataset_cache_status(census_year=census_year, verify_sha256=verify)
+    except Exception as e:
+        typer.echo(f'Error: {e!s}', err=True)
+        raise typer.Exit(code=1) from e
+
+    artifacts: list[dict[str, Any]] = status['artifacts']
+    state_counts = Counter(str(row['state']) for row in artifacts)
+    invalid = [row for row in artifacts if row['valid'] is False]
+
+    typer.echo(f'HF repo: {status["hf_repo_id"]}')
+    typer.echo(f'HF revision: {status["hf_revision"]}')
+    typer.echo(f'Cache dir: {status["cache_dir"]}')
+    typer.echo(f'Artifacts: {len(artifacts)}')
+    for state, count in sorted(state_counts.items()):
+        typer.echo(f'  {state}: {count}')
+
+    if invalid:
+        for row in invalid:
+            typer.echo(f'INVALID: {row["relpath"]} ({row.get("resolved_path") or row["state"]})', err=True)
+        raise typer.Exit(code=1)
+
+
+@datasets_app.command(name='prefetch', help='Download and verify runtime datasets into the local cache.')
+def datasets_prefetch(
+    census_year: int = typer.Option(2022, '--census-year', help='Census vintage to prefetch (default: 2022).'),
+    all_vintages: bool = typer.Option(False, '--all-vintages', help='Prefetch both 2022 and 2010 vintages.'),
+) -> None:
+    """Eagerly resolve and verify runtime dataset files."""
+    try:
+        target_year = None if all_vintages else census_year
+        resolved = prefetch_datasets(census_year=target_year, verify_sha256=True)
+    except Exception as e:
+        typer.echo(f'Error: {e!s}', err=True)
+        raise typer.Exit(code=1) from e
+
+    typer.echo(f'Prefetched {len(resolved)} verified dataset artifact(s).')
+
+
+@datasets_app.command(name='clear-cache', help='Delete cached runtime dataset files downloaded from Hugging Face.')
+def datasets_clear_cache(
+    all_revisions: bool = typer.Option(
+        False,
+        '--all-revisions',
+        help='Clear all cached dataset revisions instead of only the pinned revision.',
+    ),
+) -> None:
+    """Remove cached runtime dataset artifacts from the user cache directory."""
+    try:
+        removed = clear_dataset_cache(all_revisions=all_revisions)
+    except Exception as e:
+        typer.echo(f'Error: {e!s}', err=True)
+        raise typer.Exit(code=1) from e
+
+    typer.echo(f'Removed {removed} cached file(s).')
 
 
 def main() -> None:

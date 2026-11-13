@@ -13,19 +13,15 @@ These rows are **LLM-derived, not empirical IBGE data**. Every parquet
 partition that pulls them in carries a `source` column distinguishing them
 from genero-nomes rows so reviewers can audit the provenance.
 
-## Why we use it
+## Why we use it (legacy `census_year=2010` gap-fill only)
 
-We confirmed the IBGE Nomes API ranking endpoint (the only source of
-empirical UF × sex × decade rankings) is globally unreachable and has no
-public mirror — see `todo.md` §3 for the full diagnosis. We therefore
-derive sex conditioning from the period-only IBGE percentages multiplied
-by a per-name sex prior. genero-nomes covers ~92 % of the names in
-`names_data.json`; the remaining ~8 % are mostly civil-registry typos and
-spelling variants of common names (`AARECIDA` for *Aparecida*, `ABRUNA`
-for *Abriana*, `AERIQUE` for *Henrique*…). Without this gap-fill those
-names would be silently dropped from the sex-conditioned sampler, which
-would slightly narrow the long tail. We chose to fill the gap with a
-rigorously **labelled** LLM call rather than leave it open.
+> **Scope note (`0.3.0`):** Gemini gender classifications are **never** used in the default `census_year=2022` pipeline (`0.0%` LLM-assigned mass in 2022, where empirical IBGE `male_count` / `female_count` already cover `99.8207%` of national given-name occurrences; see [`ibge-nomes-no-brasil-2022.md`](ibge-nomes-no-brasil-2022.md)). This gap-fill applies strictly to explicit `census_year=2010` historical mode.
+
+For the 2010 Census vintage, the legacy IBGE Nomes API v2 ranking endpoint (`servicodados.ibge.gov.br/api/v2/censos/nomes/ranking`) exposes only top-20 rankings per `(UF, sex, decade)` and has been intermittently unreachable. In `census_year=2010`, sex conditioning is therefore derived from period-only 2010 percentages multiplied by a per-name sex prior. `brasil.io/genero-nomes` empirically matches **91.9%** (`203,314 / 221,346`) of `(name, period)` cells in `names_data.json`; the remaining ~8.1% are mostly civil-registry typos and spelling variants (`AARECIDA` for *Aparecida*, `ABRUNA` for *Abriana*, `AERIQUE` for *Henrique*…).
+
+To distinguish empirical census counts from uncalibrated LLM labels across the five sex-coverage metrics:
+1. **Vocabulary lookup coverage (`2010`):** reaches `100.0%` of `names_data.json` types only after combining `genero-nomes` (`91.9%` of `(name, period)` cells) with Gemini (`8.1%` of cells, `< 1%` probability mass).
+2. **Zero fabricated empirical counts:** `scripts/ingest_to_parquet.py` records `count_male = 0`, `count_female = 0`, `count_total = 0` on every `source = 'gemini-3.1-flash-lite-preview'` row (`p_male` / `p_female` carry only the prior direction `1.0/0.0` or `0.5/0.5` for `U`), so synthetic LLM classifications are never mistaken for 1-person IBGE observations.
 
 ## Methodology
 

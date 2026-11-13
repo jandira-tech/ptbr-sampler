@@ -7,20 +7,11 @@ from sample import TimePeriod, sample
 
 @pytest.fixture(autouse=True)
 def _skip_if_no_data():
-    """Skip if data files are missing."""
-    from pathlib import Path
+    """Skip if runtime data files are unavailable."""
+    from ptbr_sampler.datasets import has_runtime_data_available
 
-    data_dir = Path(__file__).parent.parent / 'ptbr_sampler' / 'data'
-    required = [
-        data_dir / 'cities_with_ceps.json',
-        data_dir / 'names_data.json',
-        data_dir / 'surnames_data.json',
-        data_dir / 'middle_names.json',
-        data_dir / 'locations_data.json',
-    ]
-    for p in required:
-        if not p.exists():
-            pytest.skip(f'Test data not found: {p}')
+    if not has_runtime_data_available():
+        pytest.skip('Runtime dataset artifacts not available locally')
 
 
 class TestBasicAPI:
@@ -79,3 +70,27 @@ class TestTypeAnnotation:
         # This test just verifies the function can be called with save_to_jsonl=None
         result = sample(q=1, save_to_jsonl=None)
         assert isinstance(result, dict)
+
+
+def test_sample_defaults_to_census_2022():
+    res = sample(q=3)
+    assert len(res) == 3
+    with pytest.raises(ValueError, match='ate1930'):
+        sample(q=1, time_period=TimePeriod.UNTIL_1930)
+
+
+def test_sample_census_2010_opt_in_preserves_ate1930():
+    res = sample(q=2, census_year=2010, time_period=TimePeriod.UNTIL_1930)
+    assert len(res) == 2
+
+
+def test_sample_census_2022_modes():
+    res = sample(
+        q=10,
+        time_period=TimePeriod.PERIOD_2020_2022,
+        sex_conditioning='POPULATION',
+        conditioning_mode='estimated',
+    )
+    assert len(res) == 10
+    res_uf = sample(q=10, uf_conditioning=True)
+    assert len(res_uf) == 10

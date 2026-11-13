@@ -108,9 +108,9 @@ def sample(
 ) -> dict | list[dict]:
     """
     Generate randomized Brazilian samples containing location, name, and document fields.
-    
+
     Generates one or more samples combining location (city, state, CEP), name components (given, middle, surnames) and issued documents (CPF, PIS, CNPJ, CEI, RG) according to the provided flags. The `q` parameter, when given, takes precedence over `qty`. If `all_data` is True, the function forces inclusion of all data types and clears mutually exclusive "only" flags. If `save_to_jsonl` is provided, the generated samples are written to that file in JSONL format.
-    
+
     Parameters:
         qty (int): Default number of samples to generate.
         q (int | None): Alias for `qty` that takes precedence when not None.
@@ -119,7 +119,7 @@ def sample(
         include_issuer (bool): When True, include RG issuing-state information in generated RG values.
         save_to_jsonl (str | None): Path to write results as JSONL; if None, results are not saved.
         all_data (bool): When True, include all possible fields and disable mutually exclusive "only" flags.
-    
+
     Returns:
         dict: A single sample when the effective quantity is 1.
         list[dict]: A list of samples when the effective quantity is greater than 1.
@@ -180,9 +180,10 @@ def sample(
                 name_data.update(names_data)
 
         name_sampler = BrazilianNameSampler(
-            name_data,  # Pass the combined data
+            None,
             middle_names_path,
             None,  # No need for names_path as we've already loaded it
+            preloaded_data=name_data,
         )
 
         # Initialize results list
