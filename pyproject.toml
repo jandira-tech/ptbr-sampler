@@ -83,6 +83,7 @@ test = [
     'pytest-xdist>=3.6',
     'coverage[toml]>=7.6',
     'scipy>=1.14',
+    'faker>=30.0',
 ]
 
 dev = [

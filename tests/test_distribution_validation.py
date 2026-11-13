@@ -178,8 +178,10 @@ class TestLayerCMonteCarloAndNegativeControls:
         for idx, (key, (smp, table, draw_kw)) in enumerate(cases.items()):
             random.seed(10_000 + idx)
             comps = smp.batch_sample_names(n, include_surname=False, **draw_kw)
+            assert len(comps) == n
             tally = Counter(c.first_name for c in comps)
             obs = np.array([tally.get(str(lbl), 0) for lbl in table.labels], dtype=np.int64)
+            assert int(obs.sum()) == n
             res = exhaustive_multinomial_gof(obs, table.weights, min_expected=5.0)
             p_values[key] = res.p_value
             # Note: with M up to 128,458 discrete names and n = 50,000 draws (M > n),

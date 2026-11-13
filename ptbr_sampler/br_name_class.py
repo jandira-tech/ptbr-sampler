@@ -238,6 +238,11 @@ class BrazilianNameSampler:
         lru_size: int = 64,
     ) -> 'BrazilianNameSampler':
         """Construct a sampler backed by runtime-resolved Parquet partitions."""
+        if census_year not in {2010, 2022}:
+            raise ValueError(f'census_year must be 2022 or 2010; got {census_year!r}')
+        if census_year == 2022 and surnames_path is not None:
+            raise ValueError('surnames_path is supported only with census_year=2010; pass census_year=2010 to use a custom surname file')
+
         resolved_middle: Path | None
         if middle_names_path is not None:
             resolved_middle = _validate_local_json_path(middle_names_path)
@@ -247,10 +252,6 @@ class BrazilianNameSampler:
             resolved_middle = None
 
         if census_year == 2022:
-            if surnames_path is not None:
-                raise ValueError(
-                    'surnames_path is supported only with census_year=2010; pass census_year=2010 to use a custom surname file'
-                )
             root_2022 = ensure_parquet_root(census_year=2022)
             return cls.from_parquet_root(
                 root_2022,
@@ -260,8 +261,6 @@ class BrazilianNameSampler:
                 lru_size=lru_size,
                 path_resolver=resolve_partition_path,
             )
-        if census_year != 2010:
-            raise ValueError(f'census_year must be 2022 or 2010; got {census_year!r}')
         surnames_file = _validate_local_json_path(surnames_path) if surnames_path else ensure_data_file('surnames_data.json')
         surnames_payload = json.loads(surnames_file.read_text(encoding='utf-8'))
         root_2010 = ensure_parquet_root(census_year=2010)

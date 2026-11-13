@@ -133,13 +133,14 @@ def test_ensure_data_file_downloads_lazily_verifies_sha256_and_reuses_cache_conc
         assert all(p == results[0] and p.is_file() for p in results)
         assert request_count == 1
 
-        # PartitionStore with resolve_partition_path loads lazily from the cache root:
+        # Evict the downloaded file so PartitionStore.get proves cache-miss resolution via path_resolver:
+        results[0].unlink()
         store = PartitionStore(path_resolver=ds_mod.resolve_partition_path)
         p_root = ds_mod.ensure_parquet_root(census_year=2022)
         table = store.get(PartitionSpec.of(p_root / 'first_names', scope='national'))
         assert list(table.labels) == ['Maria', 'Ana']
         assert table.counts is not None and list(table.counts) == [70, 30]
-        assert request_count == 1
+        assert request_count == 2
     finally:
         server.shutdown()
         ds_mod.load_dataset_manifest.cache_clear()

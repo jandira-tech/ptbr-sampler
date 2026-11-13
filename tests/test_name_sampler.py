@@ -12,6 +12,12 @@ from ptbr_sampler.br_name_class import (
     NameComponents,
     TimePeriod,
 )
+from ptbr_sampler.datasets import has_runtime_data_available
+
+_SKIP_IF_NO_RUNTIME_DATA = pytest.mark.skipif(
+    not has_runtime_data_available(),
+    reason='Runtime dataset artifacts not available locally',
+)
 
 
 def _minimal_middle_names_payload() -> dict:
@@ -508,6 +514,7 @@ def test_legacy_2010_json_validation_ignores_2022_only_time_periods(mock_name_da
         sampler.get_random_name(time_period=TimePeriod.PERIOD_2020_2022)
 
 
+@_SKIP_IF_NO_RUNTIME_DATA
 def test_from_parquet_defaults_to_2022_and_from_bundled_parquet_matches():
     sampler = BrazilianNameSampler.from_parquet()
     bundled = BrazilianNameSampler.from_bundled_parquet()
@@ -519,6 +526,7 @@ def test_from_parquet_defaults_to_2022_and_from_bundled_parquet_matches():
     assert nc.first_name and nc.surname
 
 
+@_SKIP_IF_NO_RUNTIME_DATA
 def test_census_2022_rejects_legacy_ate1930_and_supports_ate1940():
     sampler = BrazilianNameSampler.from_parquet()
     with pytest.raises(ValueError, match='ate1930'):
@@ -526,6 +534,7 @@ def test_census_2022_rejects_legacy_ate1930_and_supports_ate1940():
     assert sampler.get_random_name(time_period=TimePeriod.UNTIL_1940)
 
 
+@_SKIP_IF_NO_RUNTIME_DATA
 def test_census_2022_strict_mode_rejects_unobserved_joints():
     sampler = BrazilianNameSampler.from_parquet()
     with pytest.raises(ValueError, match="conditioning_mode='estimated'"):
@@ -582,6 +591,7 @@ def test_census_2022_two_surname_draw_prevents_identical_stems(tmp_path: Path):
         assert tokens[0] != tokens[1]
 
 
+@_SKIP_IF_NO_RUNTIME_DATA
 def test_census_2022_estimated_mode_supports_uf_sex_and_cohort_sex_under_5ms():
     import time
 
@@ -616,6 +626,7 @@ def test_census_2022_estimated_mode_supports_uf_sex_and_cohort_sex_under_5ms():
     assert len(names_cohort) == 50
 
 
+@_SKIP_IF_NO_RUNTIME_DATA
 def test_census_2022_never_emits_duplicate_surname_stems():
     sampler = BrazilianNameSampler.from_parquet()
     draws = sampler.batch_sample_names(1000, time_period=TimePeriod.ALL, ufs=['SP'] * 1000)
