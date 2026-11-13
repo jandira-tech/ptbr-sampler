@@ -6,6 +6,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+site/
 .venv/
 node_modules/
 .worktrees/

@@ -4,7 +4,7 @@
 **Package Version:** `0.3.0`  
 **Repository:** <https://github.com/jandira-tech/ptbr-sampler>  
 **Runtime Dataset Hub:** <https://huggingface.co/datasets/arthrod/ptbr-sampler-data> (`c30ef6ac3dbf2d1508e41dce7b6a6e47d8e6dbde`)  
-**Software License:** MIT License (`Copyright (c) 2026 Jandira Tech`; third-party data terms in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md))
+**Software License:** MIT License (`Copyright (c) 2026 Jandira Tech`; third-party data terms in [`THIRD_PARTY_NOTICES.md`](https://github.com/jandira-tech/ptbr-sampler/blob/main/THIRD_PARTY_NOTICES.md))
 
 ---
 
@@ -24,13 +24,14 @@ This technical report documents the complete scientific, numerical, and software
 
 ## Contents
 
-1. [Historical Evolution (`0.1.0` → `0.2.0` → Exploratory `PR #45` → `0.3.0`)](#1-historical-evolution-010--020--exploratory-pr-45--030)
-2. [IBGE Census 2022 Foundations & `Liv102228` Censoring Theory](#2-ibge-census-2022-foundations--liv102228-censoring-theory)
-3. [Conditional Estimation, Surname Slot Mechanics, Geography, & Check-Digit Algebra](#3-conditional-estimation-surname-slot-mechanics-geography--check-digit-algebra)
+1. [Historical Evolution (`0.1.0` → `0.2.0` → Exploratory `PR #45` → `0.3.0`)](#1-historical-evolution-010-020-exploratory-pr-45-030)
+   - [1.5 Release Provenance and Verification](#15-release-provenance-and-verification)
+2. [IBGE Census 2022 Foundations & `Liv102228` Censoring Theory](#2-ibge-census-2022-foundations-liv102228-censoring-theory)
+3. [Conditional Estimation, Surname Slot Mechanics, Geography, & Check-Digit Algebra](#3-conditional-estimation-surname-slot-mechanics-geography-check-digit-algebra)
 4. [Numerical Analysis of $O(1)$ Kahan-Compensated Walker–Vose Sampling](#4-numerical-analysis-of-o1-kahan-compensated-walkervose-sampling)
-5. [Ultra-Slim Packaging, Cryptographic Runtime Cache, Stream Isolation, & `Faker`](#5-ultra-slim-packaging-cryptographic-runtime-cache-stream-isolation--faker)
-6. [Four-Layer Goodness-of-Fit Validation & Empirical Audit Results](#6-four-layer-goodness-of-fit-validation--empirical-audit-results)
-7. [Methodological Limitations, Ethical Safeguards, & Licensing Boundaries](#7-methodological-limitations-ethical-safeguards--licensing-boundaries)
+5. [Ultra-Slim Packaging, Cryptographic Runtime Cache, Stream Isolation, & `Faker`](#5-ultra-slim-packaging-cryptographic-runtime-cache-stream-isolation-faker)
+6. [Four-Layer Goodness-of-Fit Validation & Empirical Audit Results](#6-four-layer-goodness-of-fit-validation-empirical-audit-results)
+7. [Methodological Limitations, Ethical Safeguards, & Licensing Boundaries](#7-methodological-limitations-ethical-safeguards-licensing-boundaries)
 8. [References](#8-references)
 
 ---
@@ -82,10 +83,19 @@ An architectural and statistical review separated those two tracks:
 | **Sex Conditioning Provenance** | Unsupported | `genero-nomes` (`91.9%`) + Gemini LLM (`8.1%`) | 2022 empirical counts | **`99.8207%` observed IBGE 2022 mass (`0.0%` LLM in 2022)** |
 | **Unobserved Joint Queries** | N/A | Silent fallback or 2010 prior product | Implicit UF × sex × blend product | **Explicit `strict` (observed only) vs. `estimated` (Bayes opt-in)** |
 | **Weight Precision & Alias Error** | Python `float` (`random.choices`) | `float32` Parquet ($\sim 10^{-7}$ drift) | `float64` Vose | **`float64` + `math.fsum` + Kahan Vose ($L_\infty = 1.39 \times 10^{-17}$)** |
-| **Published Wheel Size** | Multi-MB source JSONs | Multi-MB JSON + Parquet | `~80 MiB` (867 bundled files) | **`~100 KiB` (`< 150 KiB`, manifest-only + HF SHA-256 cache)** |
+| **Published Wheel Size** | Multi-MB source JSONs | Multi-MB JSON + Parquet | `~80 MiB` (867 bundled files) | **`102.8 KiB` (105,225 bytes, `< 150 KiB`, manifest-only + HF SHA-256 cache)** |
 | **Determinism & Concurrency** | Module-global `random` | Module-global `random` + NumPy | `random.Random` injection | **Isolated `rng=random.Random`, `RLock` stores, `asyncio`-safe** |
 | **Faker Integration** | None | None | `ptbr_sampler.faker` | **`ptbr_sampler.faker` (`PTBRProvider`, `install_ptbr`)** |
 | **Statistical GoF Suite** | Invalid nominal KS + top-50 $\chi^2$ | Partial audit checks | Unit assertions | **4-Layer exact + tail-pooled $\chi^2$/$G^2$ + Holm–Bonferroni ($\alpha=0.001$)** |
+
+### 1.5 Release Provenance and Verification
+
+`0.3.0` was developed on branch `feat/v030-census-2022-hf` and landed on `main` as squash-merge commit [`5362c94`](https://github.com/jandira-tech/ptbr-sampler/commit/5362c94) via [PR #46](https://github.com/jandira-tech/ptbr-sampler/pull/46) on 2026-11-13. Release verification evidence:
+
+- **Quality gates on the PR head (`b6adabc`):** SonarCloud Quality Gate **PASS** (0 new issues, 0 accepted issues, 0 security hotspots, 0.6% duplication) and Socket Security checks **PASS**. The quota-limited Jules review job (Google Jules API `HTTP 400 FAILED_PRECONDITION`, daily task quota exhaustion) is environmental and was documented in the PR thread; it posted 0 review comments.
+- **Automated review reconciliation:** all **25 CodeRabbit findings** resolved and individually replied (21 Round-1 + 4 Round-2), including the `PTBR_SAMPLER_DATA_DIR` JSON-root containment fix in `_allowed_json_roots()`, the `huggingface_hub` test-extra import guard (`pytest.importorskip`), the exact `.tmp_census_year=2022` staging-cleanup assertion, and the `genero-nomes` `population` / `census_year=2010` documentation correction. Dependabot critical alert **#7** (`uv` < `0.13.4`) auto-closed on merge because `uv.lock` pins `uv 0.13.8`.
+- **Local gates on `5362c94`:** `ruff format` and `ruff check` clean, `uv lock --check` OK, `uv run pytest -n auto -q` → **554 passed, 90% coverage**, and `uv build` → `ptbr_sampler-0.3.0-py3-none-any.whl` = **105,225 bytes (102.8 KiB)** containing only `ptbr_sampler/data/dataset_manifest.json` under `ptbr_sampler/data/`, plus a 97,193-byte sdist.
+- **Distribution & documentation:** release published to PyPI as `ptbr-sampler==0.3.0`; this documentation is built with MkDocs Material and hosted on Read the Docs at <https://ptbr-sampler.readthedocs.io/> (`.readthedocs.yaml` + `mkdocs.yml`, `mkdocs build --strict` clean).
 
 ---
 
@@ -262,7 +272,7 @@ confirming exact IEEE-754 `float64` fidelity with zero Monte Carlo sampling unce
 
 ### 5.1 `< 150 KiB` Wheel & Cryptographic Hugging Face Runtime Resolution
 
-Shipping `195` Parquet and JSON files directly inside a PyPI wheel penalizes every CI job, serverless function, and microservice with tens of megabytes of unused regional and historical partitions. In `0.3.0`, `[tool.uv.build-backend]` excludes all `parquet/**` and bulk JSON payloads from both wheel and sdist builds, shipping **only `ptbr_sampler/data/dataset_manifest.json`** (`~16 KiB`) inside an **`~100 KiB` (`< 150 KiB`) wheel**.
+Shipping `195` Parquet and JSON files directly inside a PyPI wheel penalizes every CI job, serverless function, and microservice with tens of megabytes of unused regional and historical partitions. In `0.3.0`, `[tool.uv.build-backend]` excludes all `parquet/**` and bulk JSON payloads from both wheel and sdist builds, shipping **only `ptbr_sampler/data/dataset_manifest.json`** (`~16 KiB`) inside a **`102.8 KiB` (105,225 bytes, `< 150 KiB`) wheel**.
 
 ```mermaid
 sequenceDiagram
@@ -348,7 +358,7 @@ $$X^2 = \sum_{j=1}^K \frac{(O_j - E_j)^2}{E_j}, \qquad G^2 = 2 \sum_{j:\,O_j > 0
 3. **Upstream Orthographic Diacritic Folding:** Official IBGE 2022 tables strip diacritical marks (`Joao`, `Jose`, `Goncalves`, `Conceicao`) while preserving distinct letter spellings (`Ana` vs. `Anna`, `Luis` vs. `Luiz`, `Vitor` vs. `Victor`). `ptbr-sampler` converts tokens to Title Case without applying heuristic accent restoration that could distort orthographic equivalence classes.
 4. **Authorial Second Given Names & Connectives:** Because IBGE disseminates only the first recorded given name and bare surname roots, second-name incidence (`percentage_with_second = 30.99%` in `middle_names.json`, sanitized via `vocabulary.py`) and surname prepositions (`da`, `de`, `dos`, `das`, `do`) reflect civil-registry/authorial conventions documented in [`docs/data-origins.md`](data-origins.md).
 5. **Privacy & Zero Real-Person Linkage:** Every profile generated by `ptbr-sampler` samples aggregate marginal name frequencies (`>= 20` nationally, `>= 15` per UF) independently of purely algorithmic check-digit stems. No individual microdata record exists anywhere in the build pipeline, runtime cache, or source repository.
-6. **Software vs. Data Licensing:** All software code in `ptbr-sampler` is released under the **MIT License** (`Copyright (c) 2026 Jandira Tech`). Public-sector IBGE/Anatel/Correios disseminations and third-party open compilations (`olob0/ibge-nomes-no-brasil-2022`; `brasil.io/genero-nomes` under `CC-BY-SA-4.0` for legacy `census_year=2010`) retain their respective attribution terms documented in [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
+6. **Software vs. Data Licensing:** All software code in `ptbr-sampler` is released under the **MIT License** (`Copyright (c) 2026 Jandira Tech`). Public-sector IBGE/Anatel/Correios disseminations and third-party open compilations (`olob0/ibge-nomes-no-brasil-2022`; `brasil.io/genero-nomes` under `CC-BY-SA-4.0` for legacy `census_year=2010`) retain their respective attribution terms documented in [`THIRD_PARTY_NOTICES.md`](https://github.com/jandira-tech/ptbr-sampler/blob/main/THIRD_PARTY_NOTICES.md).
 
 ---
 

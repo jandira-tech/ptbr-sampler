@@ -1,0 +1,92 @@
+site_name: ptbr-sampler
+site_description: >-
+  Realistic Brazilian synthetic data from IBGE Census 2022: names, surnames,
+  locations, and check-digit-valid documents (CPF, CNPJ, RG, PIS, CEI) in an
+  ultra-slim < 150 KiB wheel backed by SHA-256-pinned Hugging Face datasets.
+site_url: https://ptbr-sampler.readthedocs.io/
+repo_url: https://github.com/jandira-tech/ptbr-sampler
+repo_name: jandira-tech/ptbr-sampler
+docs_dir: docs
+
+# Internal planning documents are not part of the public documentation site.
+exclude_docs: |
+  superpowers/**
+
+theme:
+  name: material
+  language: en
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - toc.integrate
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+  palette:
+    - scheme: default
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: deep purple
+      accent: purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: math
+          class: arithmatex
+          format: !!python/name:pymdownx.arithmatex.arithmatex_fenced_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.min.js
+
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Technical Report: technical-report.md
+  - Architecture: architecture.md
+  - Data Origins & Provenance: data-origins.md
+  - Handoffs:
+      - Fetch & Ingest Pipeline: handoff-fetch-and-ingest.md
+      - Resume with Claude: handoff-resume-with-claude.md
+  - Data Sources:
+      - Bibliography: sources/bibliography.md
+      - IBGE Nomes no Brasil 2022 (compilation): sources/ibge-nomes-no-brasil-2022.md
+      - IBGE Nomes 2022 Availability: sources/ibge-nomes-2022-availability.md
+      - IBGE Population Estimates 2024: sources/ibge-estimativas-populacao-2024.md
+      - Genero-Nomes (2010 sex priors): sources/genero-nomes.md
+      - Gemini Gender Classifications: sources/gemini-gender-classifications.md
+      - Arpen-Brasil 2024 Rankings: sources/arpen-2024-rankings.md
