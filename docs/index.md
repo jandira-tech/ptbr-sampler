@@ -48,6 +48,8 @@ are derived in the [Technical Report](technical-report.md).
 
 ## Site contents
 
+- [Usage](usage.md) / [Uso (PT-BR)](uso.md) — install, Python API, CLI, Faker, runtime env
+  vars, with examples executed against the published `0.3.0` wheel
 - [Technical Report](technical-report.md) — statistical methodology, numerical analysis,
   and runtime architecture across `0.1.0` → `0.3.0`
 - [Architecture](architecture.md) — package layout, runtime dataset resolution, and CI gates

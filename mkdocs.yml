@@ -8,9 +8,11 @@ repo_url: https://github.com/jandira-tech/ptbr-sampler
 repo_name: jandira-tech/ptbr-sampler
 docs_dir: docs
 
-# Internal planning documents are not part of the public documentation site.
+# Internal planning documents and session handoffs are not part of the public
+# documentation site (they remain in the repository for maintainers).
 exclude_docs: |
   superpowers/**
+  handoff-*.md
 
 theme:
   name: material
@@ -76,12 +78,11 @@ plugins:
 
 nav:
   - Home: index.md
+  - Usage: usage.md
+  - Uso (PT-BR): uso.md
   - Technical Report: technical-report.md
   - Architecture: architecture.md
   - Data Origins & Provenance: data-origins.md
-  - Handoffs:
-      - Fetch & Ingest Pipeline: handoff-fetch-and-ingest.md
-      - Resume with Claude: handoff-resume-with-claude.md
   - Data Sources:
       - Bibliography: sources/bibliography.md
       - IBGE Nomes no Brasil 2022 (compilation): sources/ibge-nomes-no-brasil-2022.md
