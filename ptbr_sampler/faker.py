@@ -423,12 +423,12 @@ class PTBRProvider(BaseProvider):
         rng = self._rng()
         uf_eff = self._resolve_uf(uf, rng=rng, draw_if_conditioned=False)
         loc_sampler = self._location_sampler()
-        _, _, city_name = loc_sampler.get_state_and_city(
+        _, state_abbr, city_name = loc_sampler.get_state_and_city(
             random_mode=self._random_mode,
             uf=uf_eff,
             rng=rng,
         )
-        raw_cep = loc_sampler._get_random_cep_for_city(city_name, rng=rng)
+        raw_cep = loc_sampler._get_random_cep_for_city(city_name, state_abbr=state_abbr, rng=rng)
         if cep_without_dash is not None:
             include_dash = not cep_without_dash
         elif formatted is not None:
@@ -471,7 +471,7 @@ class PTBRProvider(BaseProvider):
             uf=uf_eff,
             rng=rng,
         )
-        raw_cep = loc_sampler._get_random_cep_for_city(city_name, rng=rng)
+        raw_cep = loc_sampler._get_random_cep_for_city(city_name, state_abbr=state_abbr, rng=rng)
         cep_str = loc_sampler._format_cep(raw_cep, with_dash=not self._cep_without_dash)
         ap = AddressProvider_for_offline(rng=rng)
         street = f'{ap.street_prefix()} {ap.last_name()}'
@@ -527,12 +527,12 @@ class PTBRProvider(BaseProvider):
         if ddd is None:
             uf_eff = self._resolve_uf(uf, rng=rng, draw_if_conditioned=False)
             loc_sampler = self._location_sampler()
-            _, _, city_name = loc_sampler.get_state_and_city(
+            _, state_abbr, city_name = loc_sampler.get_state_and_city(
                 random_mode=self._random_mode,
                 uf=uf_eff,
                 rng=rng,
             )
-            city_meta = loc_sampler.city_data_by_name.get(city_name, {})
+            city_meta = loc_sampler.get_city_data(city_name, state_abbr)
             ddd = str(city_meta.get('ddd', '11'))
         return generate_phone_number(ddd, rng=rng)
 
@@ -677,6 +677,7 @@ def install_ptbr(
         for method_name in dir(_AliasedPTBRProvider):
             if not method_name.startswith('_'):
                 proxy.__dict__.pop(method_name, None)
+                proxy.__dict__.pop(f'_cached_{method_name}_mapping', None)
                 if isinstance(factory_map, dict):
                     factory_map.pop(method_name, None)
 

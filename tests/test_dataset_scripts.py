@@ -324,3 +324,104 @@ def test_publish_hf_dataset_rejects_malformed_repo_id_and_revision(tmp_path: Pat
     for bad_rev in ('../evil', 'rev/slash', 'bad\x00rev', ''):
         with pytest.raises(ValueError, match='revision'):
             publish_hf_dataset.main(['--data-dir', str(tmp_path), '--revision', bad_rev, '--manifest-only'])
+
+
+def test_assert_allowed_https_url_rejects_lookalike_host_suffix():
+    for bad_url in (
+        'https://attackerhuggingface.co/datasets/x',
+        'https://evilhf.co/x',
+        'http://huggingface.co/x',
+    ):
+        with pytest.raises(RuntimeError, match='Blocked redirect or fetch'):
+            download_datasets._assert_allowed_https_url(bad_url)
+
+    for ok_url in (
+        'https://huggingface.co/datasets/x',
+        'https://cdn-lfs.huggingface.co/x',
+        'https://hf.co/x',
+        'https://cas-bridge.xethub.hf.co/x',
+    ):
+        download_datasets._assert_allowed_https_url(ok_url)
+
+
+def test_ingest_ibge_2022_restores_backup_when_staging_swap_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    from scripts import ingest_to_parquet
+
+    raw_dir = tmp_path / 'raw_2022'
+    raw_dir.mkdir()
+    _write_minimal_2022_fixture(raw_dir)
+    out_root = tmp_path / 'parquet'
+    existing = out_root / 'census_year=2022'
+    existing.mkdir(parents=True)
+    sentinel = existing / 'sentinel.txt'
+    sentinel.write_text('keep-me', encoding='utf-8')
+
+    orig_replace = Path.replace
+
+    def flaky_replace(self: Path, target: Path) -> Path:
+        if self.name.startswith('.tmp_census_year=2022') and target.name == 'census_year=2022':
+            raise OSError('simulated swap failure')
+        return orig_replace(self, target)
+
+    monkeypatch.setattr(Path, 'replace', flaky_replace)
+
+    with pytest.raises(OSError, match='simulated swap failure'):
+        ingest_to_parquet.ingest_ibge_2022(raw_dir, out_root)
+
+    assert sentinel.is_file() and sentinel.read_text(encoding='utf-8') == 'keep-me'
+    assert not (out_root / '.bak_census_year=2022').exists()
+    assert not list(out_root.glob('.tmp_census_year=2022_*'))
+
+
+def test_collect_runtime_artifacts_ignores_backup_and_hidden_ancestor_dirs(tmp_path: Path):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+    from scripts import publish_hf_dataset
+
+    data_dir = tmp_path / 'data'
+    valid_part = data_dir / 'parquet' / 'census_year=2022' / 'first_names' / 'scope=national' / 'part.parquet'
+    bak_part = data_dir / 'parquet' / '.bak_census_year=2022' / 'first_names' / 'scope=national' / 'part.parquet'
+    tmp_part = data_dir / 'parquet' / '.tmp_census_year=2022_xyz' / 'first_names' / 'scope=national' / 'part.parquet'
+    for part in (valid_part, bak_part, tmp_part):
+        part.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(pa.table({'name': ['Maria'], 'count': [10], 'weight': [1.0]}), part)
+
+    artifacts = publish_hf_dataset.collect_runtime_artifacts(data_dir)
+    assert list(artifacts) == ['parquet/census_year=2022/first_names/scope=national/part.parquet']
+
+
+def test_publish_to_huggingface_hashes_staged_files_for_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    import hashlib
+    import os
+    from types import SimpleNamespace
+    import huggingface_hub
+    from scripts import publish_hf_dataset
+
+    data_dir = tmp_path / 'data'
+    data_dir.mkdir(parents=True)
+    middle = data_dir / 'middle_names.json'
+    original_bytes = b'{"second_names": {"MARIA": {}}, "percentage_with_second": 30.0}\n'
+    expected_sha = hashlib.sha256(original_bytes).hexdigest()
+    middle.write_bytes(original_bytes)
+
+    # Force copy into staging so mutating source during upload does not mutate staged copy
+    monkeypatch.setattr(os, 'link', lambda *_a, **_kw: (_ for _ in ()).throw(OSError('cross-device')))
+
+    class FakeHfApi:
+        def __init__(self, token=None):
+            self.token = token
+
+        def create_repo(self, **_kwargs):
+            return None
+
+        def upload_folder(self, **_kwargs):
+            # Concurrent writer mutates live data_dir after staging snapshot was prepared
+            middle.write_bytes(b'{"second_names": {"MUTATED": {}}, "percentage_with_second": 99.0}\n')
+            return SimpleNamespace(oid='a' * 40)
+
+    monkeypatch.setattr(huggingface_hub, 'HfApi', FakeHfApi)
+
+    manifest_path = publish_hf_dataset.publish_to_huggingface(data_dir, repo_id='org/test-data')
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    assert manifest['artifacts']['middle_names.json']['sha256'] == expected_sha
+

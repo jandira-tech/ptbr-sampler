@@ -82,3 +82,10 @@ def test_cli_sources_and_datasets_status_and_clear_cache(monkeypatch, tmp_path: 
 
     cleared = runner.invoke(app, ['datasets', 'clear-cache'])
     assert cleared.exit_code == 0, cleared.output
+
+
+def test_cli_state_full_only_table_displays_state_name() -> None:
+    res = runner.invoke(app, ['generate', '--qty', '2', '--state-full-only', '--uf', 'SP'])
+    assert res.exit_code == 0, res.output
+    assert 'São Paulo' in res.output
+

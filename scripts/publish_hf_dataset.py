@@ -60,7 +60,8 @@ def collect_runtime_artifacts(data_dir: Path) -> dict[str, dict[str, Any]]:
     parquet_root = data_dir / 'parquet'
     if parquet_root.is_dir():
         for file_path in sorted(parquet_root.rglob('*')):
-            if not file_path.is_file() or file_path.name.startswith('.') or '.bak' in file_path.name:
+            rel_parts = file_path.relative_to(parquet_root).parts
+            if not file_path.is_file() or any(part.startswith('.') or '.bak' in part for part in rel_parts):
                 continue
             if file_path.suffix == '.parquet':
                 meta = pq.read_metadata(file_path)
@@ -124,19 +125,20 @@ def write_dataset_manifest(
     *,
     repo_id: str = DEFAULT_REPO_ID,
     revision: str = 'main',
+    artifacts: dict[str, dict[str, Any]] | None = None,
 ) -> Path:
     from scripts._cli_paths import resolve_cli_path  # noqa: PLC0415
 
     safe_data_dir = resolve_cli_path(data_dir)
     safe_repo_id = _validate_hf_repo_id(repo_id)
     safe_revision = _validate_hf_revision(revision)
-    artifacts = collect_runtime_artifacts(safe_data_dir)
+    manifest_artifacts = collect_runtime_artifacts(safe_data_dir) if artifacts is None else artifacts
     manifest = {
         'schema_version': 1,
         'package_version': ptbr_sampler.__version__,
         'hf_repo_id': safe_repo_id,
         'hf_revision': safe_revision,
-        'artifacts': artifacts,
+        'artifacts': manifest_artifacts,
     }
     out_path = safe_data_dir / 'dataset_manifest.json'
     out_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8')
@@ -156,13 +158,13 @@ def publish_to_huggingface(
 
     safe_data_dir = resolve_cli_path(data_dir)
     safe_repo_id = _validate_hf_repo_id(repo_id)
-    artifacts = collect_runtime_artifacts(safe_data_dir)
+    source_artifacts = collect_runtime_artifacts(safe_data_dir)
     api = HfApi(token=token or os.environ.get('HF_TOKEN'))
     api.create_repo(repo_id=safe_repo_id, repo_type='dataset', private=private, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix='ptbr_hf_stage_') as tmp:
         stage = resolve_cli_path(tmp)
-        for rel in artifacts:
+        for rel in source_artifacts:
             if '..' in Path(rel).parts:
                 raise ValueError(f'Invalid artifact relative path: {rel!r}')
             src = safe_data_dir / rel
@@ -174,24 +176,30 @@ def publish_to_huggingface(
                 os.link(src, dst)
             except OSError:
                 shutil.copy2(src, dst)
+        staged_artifacts = collect_runtime_artifacts(stage)
         readme_path = resolve_cli_path(stage / 'README.md')
         if os.path.commonpath([str(stage), str(readme_path)]) != str(stage):
             raise ValueError('Staging README path escaped staging directory')
         with readme_path.open('w', encoding='utf-8') as fh:
-            fh.write(build_dataset_card(safe_repo_id, artifacts))
+            fh.write(build_dataset_card(safe_repo_id, staged_artifacts))
 
         commit_info = api.upload_folder(
             repo_id=safe_repo_id,
             repo_type='dataset',
             folder_path=str(stage),
-            commit_message=f'Publish ptbr-sampler v{ptbr_sampler.__version__} runtime datasets ({len(artifacts)} files)',
+            commit_message=f'Publish ptbr-sampler v{ptbr_sampler.__version__} runtime datasets ({len(staged_artifacts)} files)',
         )
 
     commit_oid = str(commit_info.oid)
     if len(commit_oid) != 40:
         info = api.repo_info(repo_id=safe_repo_id, repo_type='dataset')
         commit_oid = str(info.sha)
-    return write_dataset_manifest(safe_data_dir, repo_id=safe_repo_id, revision=_validate_hf_revision(commit_oid))
+    return write_dataset_manifest(
+        safe_data_dir,
+        repo_id=safe_repo_id,
+        revision=_validate_hf_revision(commit_oid),
+        artifacts=staged_artifacts,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

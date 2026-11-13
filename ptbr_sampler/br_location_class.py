@@ -3,6 +3,7 @@ import logging
 import random
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,7 @@ class BrazilianLocationSampler:
         self.city_weights_by_state = {}
         self.city_names_by_state = {}
         self.city_data_by_name = {}
+        self.city_data_by_uf_and_name: dict[tuple[str, str], dict[str, Any]] = {}
 
         for city_data in self.data['cities'].values():
             state = city_data['city_uf']
@@ -140,6 +142,7 @@ class BrazilianLocationSampler:
             self.city_names_by_state[state].append(city_name)
             self.city_weights_by_state[state].append(city_data['population_percentage_state'])
             self.city_data_by_name[city_name] = city_data
+            self.city_data_by_uf_and_name[(str(state).strip().upper(), city_name)] = city_data
 
         # Normalize city weights within each state
         for state in self.city_weights_by_state:
@@ -327,18 +330,28 @@ class BrazilianLocationSampler:
 
         return results
 
+    def get_city_data(self, city_name: str, state_abbr: str | None = None) -> dict[str, Any]:
+        """Resolve city metadata by ``(state_abbr, city_name)`` when UF is known, else by ``city_name``."""
+        if state_abbr is not None:
+            uf_key = state_abbr.strip().upper()
+            if (uf_key, city_name) in self.city_data_by_uf_and_name:
+                return self.city_data_by_uf_and_name[(uf_key, city_name)]
+            return {}
+        return self.city_data_by_name.get(city_name, {})
+
     def _get_random_cep_for_city(
         self,
         city_name: str,
         *,
+        state_abbr: str | None = None,
         rng: random.Random | None = None,
     ) -> str:
         """Generate random CEP from city's available CEPs or CEP range."""
-        if city_name not in self.city_data_by_name:
+        city_data = self.get_city_data(city_name, state_abbr)
+        if not city_data:
             raise ValueError(f'City not found: {city_name}')
 
         r = rng if rng is not None else random
-        city_data = self.city_data_by_name[city_name]
 
         # Try using specific CEPs first
         if city_data.get('ceps'):
@@ -376,7 +389,7 @@ class BrazilianLocationSampler:
         parts = [base]
 
         if include_cep:
-            cep = self._get_random_cep_for_city(city, rng=rng)
+            cep = self._get_random_cep_for_city(city, state_abbr=state_abbr, rng=rng)
             formatted_cep = self._format_cep(cep, not cep_without_dash)
             parts.append(formatted_cep)
 
@@ -407,8 +420,8 @@ class BrazilianLocationSampler:
             city_kwargs['rng'] = rng
 
         if only_cep:
-            city_name, _ = self.get_city(uf_norm, **city_kwargs)  # type: ignore[arg-type]
-            cep = self._get_random_cep_for_city(city_name, rng=rng)
+            city_name, city_uf = self.get_city(uf_norm, **city_kwargs)  # type: ignore[arg-type]
+            cep = self._get_random_cep_for_city(city_name, state_abbr=city_uf, rng=rng)
             return self._format_cep(cep, not cep_without_dash)
 
         if state_abbr_only:

@@ -247,12 +247,16 @@ class BrazilianNameSampler:
             resolved_middle = None
 
         if census_year == 2022:
+            if surnames_path is not None:
+                raise ValueError(
+                    'surnames_path is supported only with census_year=2010; pass census_year=2010 to use a custom surname file'
+                )
             root_2022 = ensure_parquet_root(census_year=2022)
             return cls.from_parquet_root(
                 root_2022,
                 census_year=2022,
                 conditioning_mode=conditioning_mode,
-                middle_names_path=resolved_middle if resolved_middle and resolved_middle.exists() else None,
+                middle_names_path=resolved_middle,
                 lru_size=lru_size,
                 path_resolver=resolve_partition_path,
             )
@@ -263,7 +267,7 @@ class BrazilianNameSampler:
         root_2010 = ensure_parquet_root(census_year=2010)
         return cls(
             None,
-            middle_names_path=resolved_middle if resolved_middle and resolved_middle.exists() else None,
+            middle_names_path=resolved_middle,
             names_path=None,
             parquet_root=root_2010,
             lru_size=lru_size,

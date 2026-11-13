@@ -298,3 +298,14 @@ async def test_faker_provider_methods_run_inside_active_asyncio_loop() -> None:
     assert n and c and validate_cpf(doc)
     assert [w for w in caught if 'never awaited' in str(w.message)] == []
     assert importlib.import_module('ptbr_sampler.faker').PTBRProvider is PTBRProvider
+
+
+def test_install_ptbr_invalidates_multilocale_cached_method_mapping() -> None:
+    fake = Faker(['pt_BR', 'en_US'])
+    assert not hasattr(fake, 'ptbr_cpf')
+    assert '_cached_ptbr_cpf_mapping' in fake.__dict__
+
+    install_ptbr(fake)
+    assert hasattr(fake, 'ptbr_cpf')
+    assert validate_cpf(fake.ptbr_cpf())
+

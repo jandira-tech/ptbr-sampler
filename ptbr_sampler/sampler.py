@@ -398,9 +398,13 @@ async def get_address_data_batch(
 
     # Process each CEP result
     for i, cep_data in enumerate(cep_data_list):
-        cep_val = cep_data.get('cep', '')
-        if cep_without_dash and cep_val:
-            cep_val = cep_val.replace('-', '')
+        cep_val = str(cep_data.get('cep', '') or '')
+        if cep_val:
+            digits = cep_val.replace('-', '')
+            if cep_without_dash:
+                cep_val = digits
+            elif len(digits) == 8:
+                cep_val = f'{digits[:5]}-{digits[5:]}'
         address_data = {
             'street': '',
             'neighborhood': '',
@@ -683,7 +687,7 @@ def sample(
                 if always_rg or only_rg:
                     documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer, formatted=formatted, rng=rng)}'
                 if always_phone or only_fone:
-                    city_data = location_sampler.city_data_by_name.get(city_name, {})
+                    city_data = location_sampler.get_city_data(city_name, state_abbr)
                     ddd = city_data.get('ddd', None)
                     documents['phone'] = generate_phone_number(ddd, rng=rng)
 
@@ -712,7 +716,7 @@ def sample(
                 if only_rg:
                     documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer, formatted=formatted, rng=rng)}'
                 if only_fone:
-                    city_data = location_sampler.city_data_by_name.get(city_name, {})
+                    city_data = location_sampler.get_city_data(city_name, state_abbr)
                     ddd = city_data.get('ddd', None)
                     documents['phone'] = generate_phone_number(ddd, rng=rng)
 
@@ -783,7 +787,7 @@ def sample(
                     if always_rg:
                         documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer, formatted=formatted, rng=rng)}'
                     if always_phone:
-                        city_data = location_sampler.city_data_by_name.get(city_name, {})
+                        city_data = location_sampler.get_city_data(city_name, state_abbr)
                         ddd = city_data.get('ddd', None)
                         documents['phone'] = generate_phone_number(ddd, rng=rng)
 
@@ -835,7 +839,7 @@ def sample(
                 elif state_full_only:
                     location = state_name
                 elif only_cep:
-                    raw_cep = location_sampler._get_random_cep_for_city(city_name, rng=rng)
+                    raw_cep = location_sampler._get_random_cep_for_city(city_name, state_abbr=state_abbr, rng=rng)
                     location = location_sampler._format_cep(raw_cep, not cep_without_dash)
                     if pre_sampled_ceps is not None:
                         pre_sampled_ceps.append(location)
@@ -860,7 +864,7 @@ def sample(
                 if always_rg or only_rg:
                     documents['rg'] = f'{doc_sampler.generate_rg(state_abbr, include_issuer, formatted=formatted, rng=rng)}'
                 if always_phone or only_fone:
-                    city_data = location_sampler.city_data_by_name.get(city_name, {})
+                    city_data = location_sampler.get_city_data(city_name, state_abbr)
                     ddd = city_data.get('ddd', None)
                     documents['phone'] = generate_phone_number(ddd, rng=rng)
 
@@ -884,7 +888,7 @@ def sample(
             else:
                 for i in range(actual_qty):
                     state_name, state_abbr, city_name = all_state_city_info[i]
-                    cep = location_sampler._get_random_cep_for_city(city_name, rng=rng)
+                    cep = location_sampler._get_random_cep_for_city(city_name, state_abbr=state_abbr, rng=rng)
                     formatted_cep = location_sampler._format_cep(cep, not cep_without_dash)
                     all_ceps.append(formatted_cep)
 

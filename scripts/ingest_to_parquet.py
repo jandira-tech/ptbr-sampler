@@ -722,6 +722,8 @@ def ingest_ibge_2022(raw_dir: Path, out_root: Path) -> dict[str, Any]:
     manifest = json.loads(manifest_path.read_text(encoding='utf-8')) if manifest_path.exists() else {}
 
     out_root.mkdir(parents=True, exist_ok=True)
+    final_dest = out_root / 'census_year=2022'
+    backup_dest = out_root / '.bak_census_year=2022'
     staging = out_root / '.tmp_census_year=2022'
     if staging.exists():
         shutil.rmtree(staging)
@@ -958,8 +960,6 @@ def ingest_ibge_2022(raw_dir: Path, out_root: Path) -> dict[str, Any]:
             encoding='utf-8',
         )
 
-        final_dest = out_root / 'census_year=2022'
-        backup_dest = out_root / '.bak_census_year=2022'
         if backup_dest.exists():
             shutil.rmtree(backup_dest)
         if final_dest.exists():
@@ -969,6 +969,8 @@ def ingest_ibge_2022(raw_dir: Path, out_root: Path) -> dict[str, Any]:
             shutil.rmtree(backup_dest)
         return audit
     except BaseException:
+        if backup_dest.exists() and not final_dest.exists():
+            backup_dest.replace(final_dest)
         if staging.exists():
             shutil.rmtree(staging)
         raise

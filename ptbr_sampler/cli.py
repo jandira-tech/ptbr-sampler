@@ -762,10 +762,21 @@ def sample(
                 for rec in records:
                     if not isinstance(rec, dict):
                         continue
-                    loc_parts = [p for p in (rec.get('city'), rec.get('state_abbr')) if p]
-                    loc_display = ' / '.join(loc_parts)
-                    if rec.get('cep'):
-                        loc_display = f'{loc_display} ({rec["cep"]})' if loc_display else str(rec['cep'])
+                    if state_full_only and rec.get('state'):
+                        loc_display = str(rec['state'])
+                    elif city_only and rec.get('city'):
+                        loc_display = str(rec['city'])
+                    elif state_abbr_only and rec.get('state_abbr'):
+                        loc_display = str(rec['state_abbr'])
+                    elif only_cep and rec.get('cep'):
+                        loc_display = str(rec['cep'])
+                    else:
+                        loc_parts = [p for p in (rec.get('city'), rec.get('state_abbr')) if p]
+                        if not loc_parts and rec.get('state'):
+                            loc_parts = [str(rec['state'])]
+                        loc_display = ' / '.join(loc_parts)
+                        if rec.get('cep'):
+                            loc_display = f'{loc_display} ({rec["cep"]})' if loc_display else str(rec['cep'])
                     nc = NameComponents(
                         rec.get('name', ''),
                         rec.get('middle_name') or None,

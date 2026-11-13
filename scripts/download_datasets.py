@@ -65,7 +65,7 @@ _GENERO_NOMES_URL = 'https://data.brasil.io/dataset/genero-nomes/nomes.csv.gz'
 
 IBGE_2022_REPO = 'olob0/ibge-nomes-no-brasil-2022'
 IBGE_2022_REVISION = '05efb85c92af43da2ed4ed088d1e0c9f17160e65'
-_ALLOWED_HF_HOST_SUFFIXES = ('huggingface.co', '.huggingface.co', '.hf.co')
+_ALLOWED_HF_HOST_SUFFIXES = ('.huggingface.co', '.hf.co')
 
 
 @dataclass(slots=True, frozen=True)

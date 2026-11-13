@@ -306,3 +306,29 @@ def test_top_level_package_exports_ergonomic_sample_wrapper():
     assert isinstance(row, dict)
     assert 'name' in row
     assert 'cpf' in row
+
+
+@pytest.mark.asyncio
+async def test_get_address_data_batch_api_normalizes_cep_dash_format(monkeypatch):
+    import ptbr_sampler.sampler as sampler_mod
+    import ptbr_sampler.utils.cep_wrapper as cep_wrapper_mod
+
+    async def fake_batch_cep(ceps):
+        return [
+            {
+                'cep': '01001000',
+                'state': 'SP',
+                'city': 'São Paulo',
+                'street': 'Praça da Sé',
+                'neighborhood': 'Sé',
+            }
+            for _ in ceps
+        ]
+
+    monkeypatch.setattr(cep_wrapper_mod, 'workers_for_multiple_cep', fake_batch_cep)
+
+    with_dash = await sampler_mod.get_address_data_batch(['01001-000'], make_api_call=True, cep_without_dash=False)
+    without_dash = await sampler_mod.get_address_data_batch(['01001-000'], make_api_call=True, cep_without_dash=True)
+    assert with_dash[0]['cep'] == '01001-000'
+    assert without_dash[0]['cep'] == '01001000'
+
