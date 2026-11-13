@@ -519,7 +519,7 @@ class TestGetRandomMiddleName:
     def test_table_none_returns_empty(self):
         """
         Verify _get_random_middle_name yields no middle name when the middle-name alias table cannot be built.
-        
+
         Asserts that when configured second names have no positive weights, calling _get_random_middle_name() produces an empty result.
         """
         data = _minimal_name_data()
@@ -544,7 +544,7 @@ class TestGetRandomMiddleName:
         def boom(self):  # noqa: ARG001 - signature must match the bound method
             """
             Always raises a TypeError with the message 'oops'.
-            
+
             Raises:
                 TypeError: Always raised with message 'oops'.
             """
@@ -853,7 +853,7 @@ class TestPackageInit:
 def cli_help_run() -> subprocess.CompletedProcess[str]:
     """
     Run the package's CLI help command and return the completed process result.
-    
+
     Returns:
         subprocess.CompletedProcess[str]: Completed process containing captured `stdout`, `stderr`, and `returncode`.
     """
@@ -927,6 +927,7 @@ class TestCliPackagePaths:
 class TestTimePeriodEnum:
     def test_all_period_values(self):
         expected_values = {
+            'all',
             'ate1930',
             'ate1940',
             'ate1950',
@@ -936,6 +937,8 @@ class TestTimePeriodEnum:
             'ate1990',
             'ate2000',
             'ate2010',
+            'ate2020',
+            '2020_2022',
         }
         actual = {p.value for p in TimePeriod}
         assert actual == expected_values
@@ -946,7 +949,7 @@ class TestTimePeriodEnum:
         assert TimePeriod.UNTIL_2010 == 'ate2010'
 
     def test_time_period_count(self):
-        assert len(TimePeriod) == 9
+        assert len(TimePeriod) == 12
 
 
 # ---------------------------------------------------------------------------

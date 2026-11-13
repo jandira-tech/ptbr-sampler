@@ -19,7 +19,7 @@ DEFAULT_KWARGS = {
     'only_cep': False,
     'cep_without_dash': False,
     'make_api_call': False,
-    'time_period': TimePeriod.UNTIL_2010,
+    'time_period': None,
     'return_only_name': False,
     'name_raw': False,
     'json_path': DATA_DIR / 'cities_with_ceps.json',
@@ -59,16 +59,11 @@ def _sample(**overrides):
 
 @pytest.fixture(autouse=True)
 def _skip_if_no_data():
-    """Skip all tests in this module if data files are missing."""
-    required = [
-        DATA_DIR / 'cities_with_ceps.json',
-        DATA_DIR / 'names_data.json',
-        DATA_DIR / 'surnames_data.json',
-        DATA_DIR / 'middle_names.json',
-    ]
-    for p in required:
-        if not p.exists():
-            pytest.skip(f'Test data not found: {p}')
+    """Skip all tests in this module if runtime data files are unavailable."""
+    from ptbr_sampler.datasets import has_runtime_data_available
+
+    if not has_runtime_data_available():
+        pytest.skip('Runtime dataset artifacts not available locally')
 
 
 class TestSingleSample:
@@ -209,9 +204,31 @@ class TestUfSexConditioningNameOnly:
 
     def test_name_only_draw_receives_the_row_uf_and_a_sex(self, monkeypatch):
         calls = self._spy(monkeypatch)
-        results = _sample(qty=3, return_only_name=True, experimental_uf_sex_conditioning=True)
+        results = _sample(
+            qty=3,
+            return_only_name=True,
+            experimental_uf_sex_conditioning=True,
+            conditioning_mode='estimated',
+        )
 
         assert len(calls) == 3
+        for call, row in zip(calls, results, strict=True):
+            assert call['uf'] == row['state_abbr']
+            assert call['sex'] in ('M', 'F')
+
+    def test_name_only_strict_default_rejects_unobserved_2022_joint(self):
+        with pytest.raises(ValueError, match="conditioning_mode='estimated'"):
+            _sample(qty=2, return_only_name=True, experimental_uf_sex_conditioning=True)
+
+    def test_name_only_2010_joint_works_without_estimated_flag(self, monkeypatch):
+        calls = self._spy(monkeypatch)
+        results = _sample(
+            qty=2,
+            return_only_name=True,
+            experimental_uf_sex_conditioning=True,
+            census_year=2010,
+        )
+        assert len(calls) == 2
         for call, row in zip(calls, results, strict=True):
             assert call['uf'] == row['state_abbr']
             assert call['sex'] in ('M', 'F')

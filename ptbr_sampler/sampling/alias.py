@@ -14,7 +14,6 @@ whole batch of uniforms without Python-level loops.
 from __future__ import annotations
 
 import math
-from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -40,29 +39,36 @@ def build_alias(weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         raise ValueError('weights must be non-empty')
     if np.any(w < 0) or not np.all(np.isfinite(w)):
         raise ValueError('weights must be non-negative and finite')
-    total = math.fsum(w.tolist())
+    w_list = w.tolist()
+    total = math.fsum(w_list)
     if total <= 0.0:
         raise ValueError('weights must sum to a positive value')
 
     n = w.size
-    q = n * (w / total)
-    prob = np.ones(n, dtype=np.float64)
-    alias = np.arange(n, dtype=np.int64)
+    q_arr = n * (w / total)
+    q = q_arr.tolist()
+    prob = [1.0] * n
+    alias = list(range(n))
 
-    # Deque ops are O(1); list.pop(0) would be O(m) which matters for 50k+.
-    small: deque[int] = deque(int(i) for i in np.flatnonzero(q < 1.0))
-    large: deque[int] = deque(int(i) for i in np.flatnonzero(q >= 1.0))
+    # Plain Python list stacks avoid per-iteration NumPy scalar boxing overhead.
+    small: list[int] = np.flatnonzero(q_arr < 1.0).tolist()
+    large: list[int] = np.flatnonzero(q_arr >= 1.0).tolist()
+    small_pop = small.pop
+    large_pop = large.pop
+    small_append = small.append
+    large_append = large.append
 
     while small and large:
-        small_idx = small.pop()
-        large_idx = large.pop()
+        small_idx = small_pop()
+        large_idx = large_pop()
         prob[small_idx] = q[small_idx]
         alias[small_idx] = large_idx
-        q[large_idx] = q[large_idx] + q[small_idx] - 1.0
-        if q[large_idx] < 1.0:
-            small.append(large_idx)
+        ql = q[large_idx] + q[small_idx] - 1.0
+        q[large_idx] = ql
+        if ql < 1.0:
+            small_append(large_idx)
         else:
-            large.append(large_idx)
+            large_append(large_idx)
 
     # Remaining indices should have q ≈ 1; pin them to avoid f.p. drift.
     for i in large:
@@ -70,7 +76,7 @@ def build_alias(weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     for i in small:
         prob[i] = 1.0
 
-    return prob, alias
+    return np.asarray(prob, dtype=np.float64), np.asarray(alias, dtype=np.int64)
 
 
 def draw(
@@ -110,8 +116,16 @@ class AliasTable:
 
     @classmethod
     def from_counts(cls, labels: Iterable[str], counts: Iterable[int]) -> AliasTable:
-        labels_arr = np.asarray(list(labels), dtype=object)
-        counts_arr = np.asarray(list(counts), dtype=np.int64)
+        labels_arr = (
+            labels
+            if isinstance(labels, np.ndarray) and labels.dtype == object and labels.ndim == 1
+            else np.asarray(list(labels), dtype=object)
+        )
+        counts_arr = (
+            counts.astype(np.int64, copy=False)
+            if isinstance(counts, np.ndarray) and counts.ndim == 1
+            else np.asarray(list(counts), dtype=np.int64)
+        )
         if labels_arr.shape != counts_arr.shape:
             raise ValueError('labels and counts must have the same length')
         if labels_arr.size == 0:
@@ -119,14 +133,23 @@ class AliasTable:
         total = int(counts_arr.sum())
         if total <= 0:
             raise ValueError('counts must sum to a positive value')
-        weights = counts_arr.astype(np.float64) / float(total)
-        prob, alias = build_alias(counts_arr.astype(np.float64))
+        counts_f = counts_arr.astype(np.float64)
+        weights = counts_f / float(total)
+        prob, alias = build_alias(counts_f)
         return cls(labels=labels_arr, counts=counts_arr, weights=weights, prob=prob, alias=alias)
 
     @classmethod
     def from_weights(cls, labels: Iterable[str], weights: Iterable[float]) -> AliasTable:
-        labels_arr = np.asarray(list(labels), dtype=object)
-        weights_arr = np.asarray(list(weights), dtype=np.float64)
+        labels_arr = (
+            labels
+            if isinstance(labels, np.ndarray) and labels.dtype == object and labels.ndim == 1
+            else np.asarray(list(labels), dtype=object)
+        )
+        weights_arr = (
+            weights.astype(np.float64, copy=False)
+            if isinstance(weights, np.ndarray) and weights.ndim == 1
+            else np.asarray(list(weights), dtype=np.float64)
+        )
         if labels_arr.shape != weights_arr.shape:
             raise ValueError('labels and weights must have the same length')
         if labels_arr.size == 0:

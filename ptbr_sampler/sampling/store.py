@@ -56,6 +56,10 @@ class PartitionSpec:
         return (str(self.root), self.filters)
 
 
+_PARQUET_FILE_CACHE_MAX = 64
+_PARQUET_FILE_CACHE: OrderedDict[tuple[str, int, int], AliasTable] = OrderedDict()
+
+
 class PartitionStore:
     """Bounded-LRU cache of :class:`AliasTable` instances keyed by partition.
 
@@ -120,28 +124,43 @@ class PartitionStore:
         path = self._path_resolver(raw_path) if self._path_resolver is not None else raw_path
         if not path.exists():
             raise FileNotFoundError(f'partition missing: {path}')
+        resolved = path.resolve()
+        st = resolved.stat()
+        file_key = (str(resolved), st.st_mtime_ns, st.st_size)
+        cached_file = _PARQUET_FILE_CACHE.get(file_key)
+        if cached_file is not None:
+            _PARQUET_FILE_CACHE.move_to_end(file_key)
+            return cached_file
+
         try:
-            import pyarrow.dataset as ds  # noqa: PLC0415 - keep pyarrow optional until partitions are loaded.
+            import pyarrow.parquet as pq  # noqa: PLC0415 - keep pyarrow optional until partitions are loaded.
         except ImportError as err:  # pragma: no cover - exercised only without pyarrow
             raise RuntimeError('pyarrow is required to load partitions; install pyarrow') from err
 
-        dataset = ds.dataset(path, format='parquet')
-        columns = [f.name for f in dataset.schema]
+        pf = pq.ParquetFile(resolved)
+        columns = set(pf.schema_arrow.names)
         want = ['name'] + [c for c in ('count', 'weight') if c in columns]
-        table = dataset.to_table(columns=want)
-        names = table.column('name').to_pylist()
+        table = pf.read(columns=want, use_threads=False)
+        names = table.column('name').to_numpy(zero_copy_only=False)
         counts = (
-            table.column('count').to_numpy(zero_copy_only=False).astype(np.int64)
+            table.column('count').to_numpy(zero_copy_only=False).astype(np.int64, copy=False)
             if 'count' in columns
             else np.zeros(len(names), dtype=np.int64)
         )
         if int(counts.sum()) > 0:
-            return AliasTable.from_counts(names, counts)
-        # Fall back to stored weights when the source only carries percentages.
-        if 'weight' not in columns:
-            raise ValueError(f'partition at {path} has neither positive counts nor weight column')
-        weights = table.column('weight').to_numpy(zero_copy_only=False).astype(np.float64)
-        return AliasTable.from_weights(names, weights)
+            built = AliasTable.from_counts(names, counts)
+        else:
+            # Fall back to stored weights when the source only carries percentages.
+            if 'weight' not in columns:
+                raise ValueError(f'partition at {path} has neither positive counts nor weight column')
+            weights = table.column('weight').to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
+            built = AliasTable.from_weights(names, weights)
+
+        _PARQUET_FILE_CACHE[file_key] = built
+        _PARQUET_FILE_CACHE.move_to_end(file_key)
+        while len(_PARQUET_FILE_CACHE) > _PARQUET_FILE_CACHE_MAX:
+            _PARQUET_FILE_CACHE.popitem(last=False)
+        return built
 
 
 def alias_from_mapping(mapping: Mapping[str, Any]) -> AliasTable:

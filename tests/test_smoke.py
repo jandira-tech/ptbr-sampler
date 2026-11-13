@@ -29,26 +29,26 @@ def test_imports():
 
 
 def test_time_period_enum():
-    """Verify TimePeriod enum has expected members."""
+    """Verify TimePeriod enum has expected members across 2022 and 2010."""
+    import ptbr_sampler
     from ptbr_sampler.br_name_class import TimePeriod
 
-    assert len(TimePeriod) == 9
+    assert ptbr_sampler.__version__ == '0.3.0'
+    assert len(TimePeriod) == 12
+    assert TimePeriod.ALL.value == 'all'
+    assert TimePeriod.UNTIL_2020.value == 'ate2020'
+    assert TimePeriod.PERIOD_2020_2022.value == '2020_2022'
     assert TimePeriod.UNTIL_2010.value == 'ate2010'
     assert TimePeriod.UNTIL_1930.value == 'ate1930'
 
 
 @pytest.fixture
 def _skip_if_no_data():
-    """Skip if data files are missing."""
-    required = [
-        DATA_DIR / 'cities_with_ceps.json',
-        DATA_DIR / 'names_data.json',
-        DATA_DIR / 'surnames_data.json',
-        DATA_DIR / 'middle_names.json',
-    ]
-    for p in required:
-        if not p.exists():
-            pytest.skip(f'Test data not found: {p}')
+    """Skip if runtime data files are unavailable."""
+    from ptbr_sampler.datasets import has_runtime_data_available
+
+    if not has_runtime_data_available():
+        pytest.skip('Runtime dataset artifacts not available locally')
 
 
 @pytest.mark.usefixtures('_skip_if_no_data')
