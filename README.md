@@ -1,357 +1,140 @@
-# 🇧🇷 Gerador de Dados Brasileiros Realistas
+# 🇧🇷 `ptbr-sampler` `0.3.0` — Gerador Estatístico de Dados Brasileiros
 
-Gere nomes, endereços, CPFs, CNPJs e outros documentos brasileiros que são **proporcionais à distribuição populacional real** e baseados **exclusivamente em dados existentes e verificados**. Cada nome gerado existe nos registros históricos brasileiros, e as localizações são amostradas proporcionalmente à população de cada região. Ao mesmo tempo, como a alocação das entidades é distrbuída aleatoreamente e a formação dos nomes, nomes do meio e sobrenomes foi feita independentemente, é **impossível** que haja qualquer possibilidade de identificar uma pessoa específica.
+Gere nomes, endereços, CPFs, CNPJs, RGs, PIS e CEIs brasileiros **proporcionais à distribuição populacional real** e fundamentados em dados públicos auditáveis. A partir da versão **`0.3.0`**, o padrão primário é o **Censo Demográfico 2022 do IBGE** (`census_year=2022`, `TimePeriod.ALL`), e os datasets de execução são hospedados no Hugging Face Hub ([`arthrod/ptbr-sampler-data`](https://huggingface.co/datasets/arthrod/ptbr-sampler-data)) com verificação `SHA-256` sob demanda — mantendo o pacote `.whl` **abaixo de `150 KiB`**.
 
-As referências completas estão em [`docs/sources/bibliography.md`](docs/sources/bibliography.md); a arquitetura de amostragem (Parquet particionado, método de alias Walker/Vose, cache LRU por condição) está em [`docs/architecture.md`](docs/architecture.md). A auditoria estatística que motivou esta versão está em [`deep-research-report(4).md`](deep-research-report(4).md).
+As referências completas estão em [`docs/sources/bibliography.md`](docs/sources/bibliography.md) e [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md); a arquitetura de dados e validação estatística está em [`docs/architecture.md`](docs/architecture.md) e [`docs/data-origins.md`](docs/data-origins.md).
 
-*Read it in English: [English](README.en.md)*
+*Read in English: [README.en.md](README.en.md)*
 
-[![Python Version](https://img.shields.io/badge/python-3.9%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python Version](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
+[![Version](https://img.shields.io/badge/version-0.3.0-green.svg)](pyproject.toml)
 
-## ✨ Características Principais
+---
 
-- 📍 **Geração de Localizações**: Endereços brasileiros realistas com amostragem ponderada por população
-- 👤 **Geração de Nomes**: Nomes brasileiros historicamente precisos com amostragem específica por período
-- 📄 **Geração de Documentos**: Documentos brasileiros válidos (CPF, RG, PIS, CNPJ, CEI)
-- 🎯 **Precisão Estatística**: Baseado em dados demográficos reais e estatísticas históricas
-- 🔧 **Saída Flexível**: Dados estruturados em vários formatos (CLI, dicionários Python, pronto para API)
-- ⚡ **Alto Desempenho**: Amostragem eficiente com pesos pré-calculados
-- 🧪 **Completamente Testado**: Conjunto abrangente de testes para confiabilidade
+## ✨ Destaques da Versão `0.3.0`
 
-## 🚀 Perfeito Para
+- 👤 **Censo 2022 por Padrão (`census_year=2022`, `TimePeriod.ALL`)**: `128.458` prenomes (`99,8207%` de massa com sexo observado diretamente) e `201.601` sobrenomes nacionais e por UF (`Santos` em Sergipe, `Silva` em Alagoas/Pernambuco), compilados a partir de [`olob0/ibge-nomes-no-brasil-2022`](https://huggingface.co/datasets/olob0/ibge-nomes-no-brasil-2022) (`05efb85c92af43da2ed4ed088d1e0c9f17160e65`). O Censo 2010 permanece disponível via `--census-year 2010` / `census_year=2010`.
+- 📦 **Wheel Ultraleve (`< 150 KiB`) + Cache Runtime no Hugging Face**: O `.whl` embarca apenas `ptbr_sampler/data/dataset_manifest.json` (`~16 KiB`). As partições Parquet tocadas são baixadas sob demanda de `arthrod/ptbr-sampler-data` (fixadas por commit SHA imutável de 40 caracteres + `SHA-256` por arquivo) para `~/.cache/ptbr-sampler/<hf_revision>/`, com suporte total a pré-aquecimento offline (`ptbr datasets prefetch`).
+- 🧭 **Separação Estrita entre Marginais Observadas e Estimativas de Bayes**: `conditioning_mode='strict'` (padrão) serve apenas distribuições observadas diretamente pelo IBGE (`nacional`, `nacional × sexo`, `nacional × coorte`, `UF`); `conditioning_mode='estimated'` habilita `UF × sexo` e `coorte × sexo` em memória via regra de Bayes sem explosão de arquivos em disco.
+- 📍 **Geografia Ponderada por População e Documentos Sintéticos Válidos**: UFs e municípios ponderados pelas Estimativas da População IBGE 2024 (`212,6M`), além de CPF, RG estadual, PIS, CNPJ e CEI sintéticos.
 
-- 🏢 **Aplicações Empresariais**: Gere dados de teste realistas para aplicações no mercado brasileiro
-- 🧪 **Testes**: Crie conjuntos de dados diversos para testes abrangentes de aplicações
-- 📊 **Ciência de Dados**: Gere amostras estatisticamente precisas para análise e modelagem
-- 🎓 **Educação**: Aprenda sobre formatos de documentos brasileiros e regras de validação
-- 🔄 **Desenvolvimento de APIs**: Dados estruturados prontos para uso em respostas de API
+---
 
-## 📦 Instalação
+## 📦 Instalação e Pré-Aquecimento de Datasets (Docker / Offline)
 
 ```bash
-# Clone o repositório
-git clone https://github.com/seu-usuario/ptbr-sampler.git
-cd ptbr-sampler
-
-# Instale as dependências (recomenda-se usar um ambiente virtual)
-uv sync
-
-# Consulta de CEPs reais (Node.js): instala o pacote cep-promise
-npm install
+# Instalação rápida (< 150 KiB wheel)
+uv add ptbr-sampler
+# ou em um checkout local de desenvolvimento:
+uv sync --extra test --extra dev
 ```
+
+Na primeira chamada fora do repositório git, `ptbr-sampler` baixa apenas as partições necessárias (`~3,1 MiB` no caminho nacional padrão). Para ambientes **Docker, CI ou air-gapped**:
+
+```bash
+# Pré-baixa e valida SHA-256 de todos os artefatos do Censo 2022
+ptbr datasets prefetch --census-year 2022
+
+# Audita o status do cache e integridade SHA-256
+ptbr datasets status --verify
+
+# Execução 100% offline (falha deterministicamente se faltar algum artefato no cache)
+PTBR_SAMPLER_OFFLINE=1 ptbr generate --qty 5 --uf-conditioning
+```
+
+Variáveis de ambiente suportadas:
+- `PTBR_SAMPLER_CACHE_DIR`: diretório raiz do cache de usuário (padrão: `$XDG_CACHE_HOME/ptbr-sampler` ou `~/.cache/ptbr-sampler`).
+- `PTBR_SAMPLER_DATA_DIR`: diretório pré-populado com os artefatos de runtime (containers imutáveis).
+- `PTBR_SAMPLER_HF_REPO`: repositório espelho no Hugging Face Hub (padrão: `arthrod/ptbr-sampler-data`).
+- `PTBR_SAMPLER_OFFLINE`: quando `1`/`true`, bloqueia qualquer chamada de rede em tempo de execução.
+
+---
 
 ## 🎯 Início Rápido
 
-### Interface de Linha de Comando
+### Interface de Linha de Comando (`ptbr`)
 
 ```bash
-# Gere um perfil completo (nome, localização, documentos)
-uv run ptbr sample --qty 1
+# Padrão 0.3.0: Censo 2022 (estoque completo TimePeriod.ALL) + geografia ponderada
+ptbr generate --qty 5
 
-# Gere apenas documentos específicos
-uv run ptbr sample --only-cpf --only-rg --qty 3
+# Condicionamento empírico por UF (prenomes e sobrenomes regionais do Censo 2022)
+ptbr generate --qty 5 --uf-conditioning
 
-# Modo "realismo desativado" (saída intencionalmente menos realista):
-# localização uniforme entre estados/cidades, nomes uniformes nas tabelas,
-# meio nome com 50/50 em vez do 30,99% empírico.
-uv run ptbr sample --qty 5 --random
+# Condicionamento por sexo observado ('M', 'F', 'mixed' 50/50 ou 'population' empírico)
+ptbr generate --qty 5 --sex-conditioning population
+
+# Condicionamento conjunto UF × sexo via independência condicional de Bayes (opt-in explícito)
+ptbr generate --qty 5 --uf-conditioning --sex-conditioning F --conditioning-mode estimated
+
+# Opt-in histórico para o Censo 2010 (padrão TimePeriod.UNTIL_2010)
+ptbr generate --qty 5 --census-year 2010
+
+# Modo uniforme ("realismo desativado") e inspeção de fontes
+ptbr generate --qty 5 --random
+ptbr sources --census-year 2022
 ```
 
 ### API Python
 
 ```python
-from ptbr_sampler.br_location_class import BrazilianLocationSampler
 from ptbr_sampler.br_name_class import BrazilianNameSampler, TimePeriod
-from ptbr_sampler.document_sampler import DocumentSampler
+from sample import sample
 
-# Inicialize os amostradores
-location_sampler = BrazilianLocationSampler("data/cities_with_ceps.json")
-name_sampler = BrazilianNameSampler("data/names_data.json", 
-                                   middle_names_path="data/middle_names.json")
-doc_sampler = DocumentSampler()
+# Amostragem completa (padrão: census_year=2022, time_period=TimePeriod.ALL, conditioning_mode='strict')
+records = sample(q=5, uf_conditioning=True)
 
-# Gere os dados
-state_name, state_abbr, city_name = location_sampler.get_state_and_city()
-name_components = name_sampler.get_random_name(
-    time_period=TimePeriod.UNTIL_2010,
-    return_components=True
+# Condicionamento conjunto coorte × sexo (opt-in 'estimated')
+cohort_f = sample(
+    q=5,
+    time_period=TimePeriod.UNTIL_2020,  # nascidos em 2010–2019 no Censo 2022
+    sex_conditioning='F',
+    conditioning_mode='estimated',
 )
 
-# Obtenha a saída formatada
-result = {
-    "name": name_components.first_name,
-    "middle_name": name_components.middle_name,
-    "surnames": name_components.surname,
-    "city": city_name,
-    "state": state_name,
-    "state_abbr": state_abbr,
-    "cep": location_sampler.format_full_location(
-        city_name, state_name, state_abbr
-    ).split(',')[-1].strip(),
-    "cpf": doc_sampler.generate_cpf(),
-    "rg": doc_sampler.generate_rg(state_abbr)
-}
+# Uso direto do amostrador de nomes em Parquet (baixa sob demanda se instalado via wheel)
+name_sampler = BrazilianNameSampler.from_parquet(census_year=2022)
+person = name_sampler.get_random_name(uf='SE', return_components=True)
+
+# Compatibilidade histórica com o Censo 2010
+legacy_records = sample(q=5, census_year=2010)
 ```
 
-## 🎛️ Funcionalidades em Detalhes
+---
 
-### Geração de Localização
-- Seleção de estados e cidades ponderada por população
-- Geração realista de CEPs
-- Formatação flexível da saída
-- Suporte para filtragem por região específica
+## 📐 Metodologia Estatística, Limiares Liv102228 e Cobertura
 
-### Geração de Nomes
-- Amostragem baseada em períodos históricos
-- Suporte para nomes completos, nomes do meio e sobrenomes
-- Opções de formatação (título, maiúsculas)
-- Opção de lista dos 40 sobrenomes mais comuns
+Conforme a Nota Técnica [IBGE Liv102228](https://biblioteca.ibge.gov.br/visualizacao/livros/liv102228.pdf), o Censo 2022 suprime células com frequência **`< 20` no nível Brasil e Brasil × década**, **`< 15` por UF** e **`< 10` por município** (os limiares regionais são *menores*, não maiores, que o nacional).
 
-### Geração de Documentos
-- CPF (Cadastro de Pessoas Físicas)
-- RG (Registro Geral) com formatos específicos por estado
-- PIS (Programa de Integração Social)
-- CNPJ (Cadastro Nacional da Pessoa Jurídica)
-- CEI (Cadastro Específico do INSS)
+### Cinco métricas distintas de cobertura de sexo (Censo 2022)
+1. **Cobertura de vocabulário (tipos distintos):** `123.733 / 128.458` (`96,32%`) prenomes possuem ao menos uma contagem de sexo observada.
+2. **Massa empírica observada diretamente:** **`99,8207%`** (`190.041.904 / 190.383.184` ocorrências; `60.954` linhas masculinas e `73.361` femininas).
+3. **Massa deduzida como zero exato (`R = 0`):** **`55.210`** prenomes com um sexo `NULL` satisfazem $N - N_{\text{obs}} = 0$ identicamente (`one_null_exact_zero`).
+4. **Massa atribuída por LLM não calibrado:** **`0,0%`** no Censo 2022 (o preenchimento via Gemini restringe-se ao modo histórico `census_year=2010`, com `count_* = 0`).
+5. **Massa suprimida / excluída de condicionais de sexo:** **`341.280`** ocorrências (**`0,1793%`**, somando `232.758` residuais em `57.941` nomes `one_null_suppressed_positive` e `108.522` em `4.725` nomes `both_null_suppressed`).
 
-### Saída de Dados
-- Formato de dicionário estruturado
-- CLI com formatação rica
-- Suporte para geração em lote
-- Campos de saída personalizáveis
+### Coortes decenais, sobrenomes por slot vs. presença e datas de referência
+- **Alinhamento de coortes (evitando deslocamento de 10 anos):** No legado 2010 (`names_data.json`), `ate2010` representa nascidos em `2000–2009`; no Censo 2022 (`olob0` `name_by_decade`), `decade=2000` representa `2000–2009` (`TimePeriod.UNTIL_2010`), `decade=2010` representa `2010–2019` (`TimePeriod.UNTIL_2020`), `decade=2020` representa `2020–01/08/2022` (`TimePeriod.PERIOD_2020_2022`), e `decade=1930` agrega `<= 1939` (`TimePeriod.UNTIL_1940`).
+- **Probabilidade por slot vs. presença populacional de sobrenomes:** O número divulgado pelo IBGE para `Silva` (`16,76%` = `34.030.104 / 203.080.756`) mede **presença por pessoa** considerando todos os sobrenomes registrados (`~1,6422` tokens/pessoa). A fração normalizada por slot é $q_{\text{Silva}} = 10,2040\%$ ($q_{\text{Santos}} = 6,4071\%$). No modo padrão de dois sobrenomes em `2022`, o segundo slot é reamostrado condicionado a $s_2 \neq s_1$ para evitar sobrenomes duplicados (`"Silva Silva"`).
+- **Datas de referência mistas e componentes autorais:** Nomes padrão refletem o estoque residente em **1º de agosto de 2022** (`203,08M`), enquanto a geografia (`locations_data.json` / `cities_with_ceps.json`) usa as Estimativas IBGE de **1º de julho de 2024** (`212,6M`). Já `middle_names.json` (`percentage_with_second = 30,99%`) e conectivos (`da`, `de`, `dos`) provêm de corpus autoral/cartorário, pois o IBGE divulga apenas o primeiro nome e sobrenomes sem preposições.
 
-## 🏗️ Estrutura do Projeto
+---
 
-```plaintext
-src
-├── br_location_class.py         # Amostragem de localização
-├── br_name_class.py             # Amostragem de nomes
-├── br_rg_class.py              # Geração de RG
-├── cli.py                      # Interface de linha de comando
-├── document_sampler.py         # Geração de documentos
-├── __init__.py                 # Inicialização do pacote
-└── utils/                      # Funções utilitárias
-    ├── cpf.py                  # Manipulação de CPF
-    ├── pis.py                  # Manipulação de PIS
-    ├── cnpj.py                 # Manipulação de CNPJ
-    ├── cei.py                  # Manipulação de CEI
-    ├── util.py                 # Funções auxiliares
-    └── __init__.py
-```
-
-## 🧪 Testes
-
-Conjunto abrangente de testes cobrindo todos os componentes:
+## 🛠️ Fluxo para Mantenedores e Testes
 
 ```bash
-uv run pytest
-```
-
-## 📚 Requisitos
-
-- Python 3.9+
-- Dependências:
-  - Typer (framework CLI)
-  - Rich (formatação de terminal)
-  - pytest (testes)
-- Node.js e `npm install` (só para a consulta de CEPs reais via `cep-promise`)
-
-## 📖 Documentação
-
-Documentação detalhada para todas as funcionalidades e componentes:
-
-- [Visão Geral](#visão-geral)
-- [Estrutura do Projeto](#estrutura-do-projeto)
-- [Funcionalidades Principais](#funcionalidades-principais)
-- [Interface de Linha de Comando](#interface-de-linha-de-comando-cli)
-- [Retorno de Dados](#retorno-de-dados-em-dicionários)
-- [Testes e Validação](#testes-e-validação)
-- [Instalação e Dependências](#instalação-e-dependências)
-- [Exemplos de Uso](#exemplos-de-uso)
-
-## 📊 Fontes e Citações
-
-Todas as distribuições estatísticas do repositório foram construídas a partir de fontes primárias oficiais brasileiras. As principais são:
-
-| Fonte | Escopo | URL |
-|---|---|---|
-| IBGE — *Nomes no Brasil*, Censo 2022 (relançamento 2025) | Nomes e sobrenomes por sexo, período de nascimento, UF e município | <https://www.ibge.gov.br/apps/nomes/> |
-| IBGE — Agência de Notícias (PT) | Release do Censo 2022 *Nomes no Brasil* | <https://agenciadenoticias.ibge.gov.br/agencia-noticias/2012-agencia-de-noticias/noticias/44929-um-pais-de-marias-joses-silvas-e-santos-ibge-lanca-nova-edicao-do-nomes-no-brasil> |
-| IBGE — Destaques (EN) | Release do Censo 2022 *Nomes no Brasil* | <https://www.ibge.gov.br/en/highlights/44662-on-november-4-2025-ibge-will-release-2022-population-census-names-in-brazil.html> |
-| IBGE — API Nomes v2 | Frequências por década e localidade (Censo 2010) | <https://servicodados.ibge.gov.br/api/docs/nomes?versao=2> |
-| IBGE — Estimativas da População 2024 | Totais por UF e município em 1º de julho de 2024 | <https://agenciadenoticias.ibge.gov.br/agencia-noticias/2012-agencia-de-noticias/noticias/41111-populacao-estimada-do-pais-chega-a-212-6-milhoes-de-habitantes-em-2024> |
-| IBGE — FTP DOU 2024 | Tabela canônica por município (PDF) | <https://ftp.ibge.gov.br/Estimativas_de_Populacao/Estimativas_2024/estimativa_dou_2024.pdf> |
-| Arpen-Brasil | Ranking nacional de nascimentos 2024 | <https://arpenbrasil.org.br/press_releases/ranking-nacional-apos-sete-anos-nome-feminino-lidera-preferencia-no-brasil/> |
-| IPEA — `censobr` | Microdados do Censo 2022 em Parquet | <https://ipeagit.github.io/censobr/> |
-| IPEA — `geobr` | Geometrias oficiais dos municípios | <https://ipeagit.github.io/geobr/> |
-
-As fichas detalhadas de cada fonte (percentuais por UF, metodologia, datas de referência) estão em:
-
-- [`docs/sources/bibliography.md`](docs/sources/bibliography.md) — índice geral.
-- [`docs/sources/ibge-nomes-no-brasil-2022.md`](docs/sources/ibge-nomes-no-brasil-2022.md) — sobrenomes por UF (`Silva` 16,76% Brasil; `Santos` 43,38% Sergipe; `Silva` 35,75% Alagoas; `Silva` 34,23% Pernambuco; >200 mil sobrenomes).
-- [`docs/sources/ibge-estimativas-populacao-2024.md`](docs/sources/ibge-estimativas-populacao-2024.md) — 212,6 milhões de habitantes em 01/07/2024.
-- [`docs/sources/arpen-2024-rankings.md`](docs/sources/arpen-2024-rankings.md) — top 10 nacional de 2024: Helena, Miguel, Gael, Ravi, Theo, Heitor, Cecília, Arthur, Noah, Maitê.
-
-## 🏛️ Arquitetura de Dados e Amostragem
-
-A versão atual substitui `dict` Python aninhado por três decisões que escalam até IBGE 2022 condicionado por `(UF × década × sexo)`:
-
-1. **Armazenamento** — Parquet particionado em `ptbr_sampler/data/parquet/` (`first_names/period=<x>/`, `surnames/scope=national/`, `middle_names/`, `states/`). Leituras via `pyarrow.dataset` com *filter pushdown* — apenas as partições efetivamente usadas são materializadas. A camada de ingestão está em [`scripts/ingest_to_parquet.py`](scripts/ingest_to_parquet.py).
-2. **Primitiva de amostragem** — método de *alias* de Walker/Vose em [`ptbr_sampler/sampling/alias.py`](ptbr_sampler/sampling/alias.py): O(m) para construir, **O(1) por amostra**, totalmente vetorizado em NumPy. `k=1` e `k=100.000` têm a mesma estrutura de custo por amostra.
-3. **Carregamento preguiçoso com LRU** — [`ptbr_sampler/sampling/store.py`](ptbr_sampler/sampling/store.py) encapsula partições atrás de um cache LRU limitado; condições quentes (SP/MG/RJ) permanecem residentes, condições frias paginam do disco.
-
-O arquivo `middle_names.json` é filtrado contra uma *whitelist* de nomes próprios mantida em [`ptbr_sampler/sampling/vocabulary.py`](ptbr_sampler/sampling/vocabulary.py), descartando vazamento de sobrenomes (`Araújo`, `Borges`, `Bezerra`, …), o marcador `Cancelado` e tokens não-nominais (`-`). A validação estatística por `scipy.stats.chisquare` e `ks_2samp` vive em [`tests/test_distribution_validation.py`](tests/test_distribution_validation.py).
-
-Para gerar a camada Parquet a partir dos JSONs legados:
-
-```bash
+# Baixar snapshot fixado do Censo 2022, ingerir Parquets float64 e auditar
+python -m scripts.download_datasets --fetch-ibge-2022
 python -m scripts.ingest_to_parquet
+python -m scripts.audit_datasets --raw-dir ptbr_sampler/data/raw/ibge_nomes_2022 --parquet-dir ptbr_sampler/data/parquet/census_year=2022
+
+# Rodar suíte rápida (inclui reconstrução exata O(M) das tabelas de alias) e suíte Monte Carlo completa
+uv run pytest -n auto -q
+uv run pytest -m slow tests/test_distribution_validation.py -v
 ```
 
-## 🧭 Realismo por padrão (e modo aleatório explícito)
+---
 
-O caminho padrão é **realismo por padrão**:
+## 📄 Licença e Atribuições de Terceiros
 
-1. a geografia é amostrada primeiro, com pesos proporcionais à população
-   (estado e cidade);
-2. os nomes são amostrados a partir das tabelas de alias derivadas das
-   distribuições empíricas (IBGE, registros civis), conforme as
-   dimensões realmente disponíveis nos dados.
-
-Quem quiser saída intencionalmente menos realista pode optar por
-`random=True` (Python) ou `--random` (CLI):
-
-```python
-from sample import sample
-sample(q=5)                # realismo por padrão (recomendado)
-sample(q=5, random=True)   # modo aleatório explícito
-```
-
-No modo aleatório o amostrador **ignora** os pesos populacionais para a
-localização, **ignora** os pesos de frequência para nomes/sobrenomes, e
-substitui a taxa empírica de meio-nome (30,99%) por um sorteio
-uniforme 50/50. Isto é por desenho — o objetivo do projeto continua
-sendo realismo, e o flag deixa essa escolha explícita.
-
-Importante: o modo realista **só** condiciona em dimensões que
-realmente existem nos dados disponíveis. Hoje isso significa: período
-para nomes, escopo nacional para sobrenomes, e participação populacional
-para geografia. Não há condicionamento por UF nem por sexo no payload
-distribuído — ver "Lacunas de realismo conhecidas" abaixo.
-
-## 📥 Baixar dados e reconstruir os Parquets
-
-Se quiser reconstruir os artefatos do zero (`todo.md` itens 1 e 11):
-
-```bash
-# 1. Inventário: o que está presente localmente, e o que cada dataset alimenta?
-python -m scripts.download_datasets
-
-# 2a. (Opcional, EXPERIMENTAL) Baixar os rankings UF × sexo × década do
-#     IBGE Nomes v2 (~540 chamadas, top-20 por condição). Isso destrava o
-#     condicionamento por UF/sexo para nomes; ver caveat abaixo.
-python -m scripts.download_datasets --fetch-ibge-nomes
-
-# 2b. Para qualquer linha [MISS] do passo 1, baixe a fonte e coloque em
-#    ptbr_sampler/data/raw/<nome>/. Datasets distribuídos só como webapp
-#    (IBGE Nomes 2022, Arpen 2024) ficam manuais por design.
-
-# 3. Reconstrua o layout Parquet a partir dos JSONs e dos rankings raw:
-python -m scripts.ingest_to_parquet
-
-# 4. Re-rode os testes:
-uv run --extra test pytest -q
-```
-
-Cada dataset, a URL canônica, o caminho local e o que ele alimenta
-estão tabelados em [`docs/data-origins.md`](docs/data-origins.md) na
-seção "Download-and-rebuild walkthrough".
-
-**Requisitos de rede:** o fetch chama `servicodados.ibge.gov.br` via
-HTTPS; sandboxes que restringem egress (este repositório é desenvolvido
-em um deles) falham com "Host not in allowlist" / 403. Rode em uma
-máquina com saída de internet liberada.
-
-> **Handoff entre máquinas.** Se você está rodando o fetch em outra
-> máquina e voltando para o Claude Code depois, siga o roteiro em
-> [`docs/handoff-fetch-and-ingest.md`](docs/handoff-fetch-and-ingest.md)
-> e o template de retorno em
-> [`docs/handoff-resume-with-claude.md`](docs/handoff-resume-with-claude.md).
-
-### Condicionamento UF × sexo (experimental)
-
-Quando os rankings do passo 2a são ingeridos, o amostrador pode
-condicionar nomes em `(UF, período, sexo)` — mas isso é **opt-in**:
-
-```python
-from sample import sample
-sample(q=5, experimental_uf_sex_conditioning=True)
-```
-
-```bash
-uv run ptbr sample --qty 5 --experimental-uf-sex
-```
-
-**Caveat (importante):** o endpoint de ranking do IBGE Nomes v2 retorna
-apenas os **top 20** nomes por condição. A pool condicionada é portanto
-muito mais estreita do que a tabela period-only (~milhares de nomes por
-período), então ligar o flag troca diversidade distribucional por
-realismo regional/sexo. Por isso o default segue period-only.
-
-Quando uma partição `(UF, período, sexo)` específica está ausente, o
-amostrador cai silenciosamente para a tabela period-only para aquela
-linha — então o flag é seguro mesmo após um fetch parcial.
-
-## ⚠️ Lacunas de realismo conhecidas
-
-Resumo operacional dos pontos onde os dados disponíveis hoje **limitam**
-o realismo da amostragem. Os detalhes completos estão em
-`docs/data-origins.md`, `docs/architecture.md` e `deep-research-report(4).md`.
-
-- **Condicionamento por UF/sexo para *nomes* — experimental, top-20.**
-  O endpoint IBGE Nomes v2 expõe top-20 nomes por
-  `(UF, sexo, década)`. A ingesta gravar partições
-  `parquet/first_names/uf=<UF>/period=<P>/sex=<S>/` quando rodada e o
-  amostrador as usa via `experimental_uf_sex_conditioning=True`. Default
-  fica em period-only porque ~20 nomes/condição é muito menos do que
-  ~milhares/período no caminho não-condicionado.
-- **Sem condicionamento por UF para *sobrenomes*.** A release IBGE Nomes
-  no Brasil 2022 publica sobrenomes por UF apenas no webapp (sem API /
-  endpoint de download). Hoje sobrenomes seguem distribuição pooled
-  nacional — `Santos` 43,38% em Sergipe e `Silva` 35,75% em Alagoas
-  ficam subestimados. Bloqueado por dado, não por código.
-- **Sem condicionamento por sexo no caminho default.** Pelo mesmo
-  motivo do item anterior: o `names_data.json` agrupa M/F. O sampler
-  só usa sexo quando o flag experimental está ligado E os partições
-  ingeridas existem.
-- **Horizonte de tempo limitado a `UNTIL_2010`.** O último bucket
-  cobre nascimentos até 2010 (estoque IBGE). Coortes recentes (2011–2024)
-  ficam fora; o ranking Arpen 2024 serve como benchmark de fluxo de
-  recém-nascidos, mas não substitui o estoque populacional.
-- **`top_40` é modo histórico.** Ele existe porque, no extrato legado,
-  só os 40 maiores sobrenomes estavam consolidadamente disponíveis. A
-  tabela completa (~86 mil entradas) é mais realista. `top_40` permanece
-  como conveniência; não o use esperando que seja o caminho preservador
-  de realismo.
-- **Convenção de dois sobrenomes.** A convenção brasileira
-  predominante é ter pelo menos dois sobrenomes (um por linhagem
-  parental). O default mantém isso. `with_only_one_surname=True` é
-  modo de compatibilidade/conveniência, **não** o realista.
-- **Provenance de `middle_names.json`.** Extrato de cartórios civis
-  filtrado por whitelist de nomes próprios e blocklist de sobrenomes
-  (ver `ptbr_sampler/sampling/vocabulary.py`); pipeline reproduzível por
-  `python -m scripts.ingest_to_parquet`. IBGE *Nomes no Brasil* só
-  dissemina primeiro nome, então essa fonte é autoral por necessidade.
-  Documentação detalhada em `docs/data-origins.md`.
-- **`percentage_with_second = 30,99%`.** Calculado diretamente do
-  extrato (`1.640.514 / 5.293.204`). Transparente para esse corpus,
-  mas o corpus é autoral. Leia como estimativa explícita, não como
-  fato IBGE.
-- **`random=True` afrouxa todas as dimensões.** Ele é o complemento
-  honesto do realismo: quem quiser saída uniforme tem como pedir.
-
-## 📄 Licença
-
-Este projeto está licenciado sob a Licença MIT - consulte o arquivo [LICENSE](LICENSE) para obter detalhes.
-
+O código-fonte deste repositório é regido pelo arquivo [`LICENSE`](LICENSE). As atribuições das fontes estatísticas públicas e compilações de terceiros (IBGE, `olob0/ibge-nomes-no-brasil-2022`, `brasil.io/genero-nomes`, Arpen-Brasil e `arthrod/ptbr-sampler-data`) estão documentadas em [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

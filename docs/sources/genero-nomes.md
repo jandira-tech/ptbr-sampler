@@ -8,13 +8,17 @@ under the dataset slug **`genero-nomes`**. It contains 100,787 unique first
 names with `frequency_male`, `frequency_female`, `frequency_total`,
 classification (`F`/`M`), and grouped alternative spellings.
 
-## Why it's bundled
+## Why it's supported (legacy `census_year=2010` vintage)
+
+> **Scope note (`0.3.0`):** Default `census_year=2022` sampling does **not** use `brasil.io/genero-nomes`; it uses directly published 2022 Census `male_count` / `female_count` observations (`99.8207%` empirical mass coverage; see [`ibge-nomes-no-brasil-2022.md`](ibge-nomes-no-brasil-2022.md)). `genero-nomes` powers sex conditioning when callers explicitly opt into `--census-year 2010` / `census_year=2010`.
 
 The IBGE Nomes API v2 ranking endpoint exposes per-name counts conditioned on
 `(localidade, sexo, decada)` — but only as **top-20** results per condition.
-To condition our period-only sampler on sex *while preserving the long tail*,
-we need a per-name sex prior that covers the full ~40k-name distribution
-already in `names_data.json`.
+To condition the historical 2010 period-only sampler on sex *while preserving the long tail*,
+we need a per-name sex prior that covers the ~64k-name distribution
+in legacy `names_data.json`.
+
+**Important CSV parsing distinction:** In `brasil.io/genero-nomes`, blank `frequency_male` / `frequency_female` CSV fields arise from Brasil.IO's scraper joining single-sex API responses and are parsed as `0` within the 2010 scrape's schema. That convention applies **only** to `genero-nomes` CSV parsing — never to IBGE Census 2022 `name_detail.parquet`, where `NULL` denotes confidentiality-censored cells `< 20` (`one_null_exact_zero` when $N - N_{\text{obs}} = 0$ vs. `one_null_suppressed_positive` when $1 \le N - N_{\text{obs}} \le 19$).
 
 Brasil.IO's `genero-nomes` is the only public dataset that meets this
 requirement: it was built by hitting the same IBGE Nomes API per-name endpoint

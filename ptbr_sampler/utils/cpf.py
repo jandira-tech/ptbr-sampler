@@ -69,10 +69,10 @@ def pad_cpf(cpf, validate=False):
 def random_cpf(formatted=True):
     """
     Generate a random, valid Brazilian CPF identifier.
-    
+
     Parameters:
         formatted (bool): If True, return the CPF in the "000.000.000-00" formatted form; if False, return an 11-digit numeric string.
-    
+
     Returns:
         str: A valid CPF as a formatted string when `formatted` is True, otherwise an 11-digit numeric string.
     """

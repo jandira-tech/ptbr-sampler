@@ -23,20 +23,28 @@ from the 2022 Census full-population name register.
   <https://agenciadenoticias.ibge.gov.br/agencia-noticias/2012-agencia-de-noticias/noticias/44929-um-pais-de-marias-joses-silvas-e-santos-ibge-lanca-nova-edicao-do-nomes-no-brasil>
 - News release (EN):
   <https://agenciadenoticias.ibge.gov.br/en/agencia-news/2184-news-agency/news/44956-um-pais-de-marias-joses-silvas-e-santos-ibge-lanca-nova-edicao-do-nomes-no-brasil-2>
-- Interactive site: <https://www.ibge.gov.br/apps/nomes/>
+- Interactive site: <https://www.ibge.gov.br/apps/nomes/> / <https://censo2022.ibge.gov.br/nomes/>
+- Technical Note Liv102228 (confidentiality thresholds `< 20` national/decade, `< 15` UF, `< 10` municipality):
+  <https://biblioteca.ibge.gov.br/visualizacao/livros/liv102228.pdf>
+- Pinned public Parquet compilation (`olob0/ibge-nomes-no-brasil-2022`, commit `05efb85c92af43da2ed4ed088d1e0c9f17160e65`):
+  <https://huggingface.co/datasets/olob0/ibge-nomes-no-brasil-2022>
+- Pre-ingested runtime dataset mirror for `ptbr-sampler` `0.3.0`:
+  <https://huggingface.co/datasets/arthrod/ptbr-sampler-data>
 - Census landing page: <https://censo2022.ibge.gov.br/>
 
 Headline statistics quoted in this repository:
 
 | Statistic | Value | Scope |
 |---|---:|---|
-| `Silva` presence in full population | 16.76% | Brazil |
-| `Santos` presence | 43.38% | Sergipe |
-| `Silva` presence | 35.75% | Alagoas |
-| `Silva` presence | 34.23% | Pernambuco |
-| Distinct surnames surveyed | > 200,000 | Brazil |
+| Resident population (`state.parquet`) | 203,080,756 | Brazil (1 Aug 2022) |
+| `Silva` person-level presence (`q_Silva = 10.20%` token-slot share) | 16.76% | Brazil |
+| `Santos` person-level presence (`q_Santos = 6.41%` token-slot share) | 43.38% | Sergipe |
+| `Silva` person-level presence | 35.75% | Alagoas |
+| `Silva` person-level presence | 34.23% | Pernambuco |
+| Distinct given names (`>= 20` nationally) | 128,458 | Brazil (`99.8207%` sex-observed mass) |
+| Distinct surnames (`>= 20` nationally) | 201,601 | Brazil |
 
-See `docs/sources/ibge-nomes-no-brasil-2022.md` for the full extraction.
+See `docs/sources/ibge-nomes-no-brasil-2022.md` and `docs/sources/ibge-nomes-2022-availability.md` for the full extraction, censoring decomposition, and SHA-256 manifest.
 
 ### 2. IBGE Nomes API (v2, based on 2010 Census)
 
