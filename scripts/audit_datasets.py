@@ -261,23 +261,29 @@ def audit_cross_table_coherence(raw_dir: Path, parquet_dir: Path) -> dict[str, f
 
 
 def main(argv: list[str] | None = None) -> int:
+    from scripts._cli_paths import resolve_cli_path  # noqa: PLC0415
+
     parser = argparse.ArgumentParser(description='Audit Census 2022 Parquet tables.')
     parser.add_argument('--raw-dir', type=Path, required=True)
     parser.add_argument('--parquet-dir', type=Path, default=None)
     parser.add_argument('--json-out', type=Path, default=None)
     args = parser.parse_args(argv)
 
-    report = audit_ibge_2022_tables(args.raw_dir)
+    raw_dir = resolve_cli_path(args.raw_dir)
+    parquet_dir = resolve_cli_path(args.parquet_dir) if args.parquet_dir is not None else None
+    json_out = resolve_cli_path(args.json_out) if args.json_out is not None else None
+
+    report = audit_ibge_2022_tables(raw_dir)
     serializable: dict[str, Any] = {
         **report,
         'missing_detail_keys': [list(k) for k in report['missing_detail_keys']],
         'censoring': asdict(report['censoring']),
     }
-    if args.parquet_dir is not None:
-        serializable['cross_table_coherence'] = audit_cross_table_coherence(args.raw_dir, args.parquet_dir)
-    if args.json_out is not None:
-        args.json_out.parent.mkdir(parents=True, exist_ok=True)
-        args.json_out.write_text(json.dumps(serializable, indent=2) + '\n', encoding='utf-8')
+    if parquet_dir is not None:
+        serializable['cross_table_coherence'] = audit_cross_table_coherence(raw_dir, parquet_dir)
+    if json_out is not None:
+        json_out.parent.mkdir(parents=True, exist_ok=True)
+        json_out.write_text(json.dumps(serializable, indent=2) + '\n', encoding='utf-8')
     print(json.dumps(serializable, indent=2))
     return 0
 

@@ -143,6 +143,16 @@ def _rng_from_python_random(py_rng: random.Random | None = None) -> np.random.Ge
     return np.random.default_rng(source.getrandbits(64))
 
 
+def _validate_local_json_path(raw: str | Path) -> Path:
+    """Reject null bytes and parent-directory traversal segments before opening a local JSON file."""
+    raw_str = os.fspath(raw)
+    if '\x00' in raw_str:
+        raise ValueError('Null byte in JSON file path is not allowed')
+    if '..' in Path(raw_str).parts:
+        raise ValueError(f'Parent-directory traversal ("..") is not allowed in JSON file path: {raw_str}')
+    return Path(os.path.realpath(raw_str))
+
+
 class BrazilianNameSampler:
     # Dictionary mapping surnames to their prefixes and weights.
     SURNAME_PREFIXES: ClassVar[dict[str, list[tuple[str, float]]]] = {
@@ -177,7 +187,7 @@ class BrazilianNameSampler:
         if not root.exists():
             raise FileNotFoundError(f'Parquet root not found: {root}')
         return cls(
-            {'surnames': {'top_40': {}}, 'common_names_percentage': {}},
+            None,
             middle_names_path=middle_names_path,
             names_path=None,
             parquet_root=root,
@@ -185,6 +195,7 @@ class BrazilianNameSampler:
             census_year=census_year,
             conditioning_mode=conditioning_mode,
             path_resolver=path_resolver,
+            preloaded_data={'surnames': {'top_40': {}}, 'common_names_percentage': {}},
         )
 
     @classmethod
@@ -201,7 +212,7 @@ class BrazilianNameSampler:
         """Construct a sampler backed by runtime-resolved Parquet partitions."""
         resolved_middle: Path | None
         if middle_names_path is not None:
-            resolved_middle = Path(middle_names_path)
+            resolved_middle = _validate_local_json_path(middle_names_path)
         elif include_middle_names:
             resolved_middle = ensure_data_file('middle_names.json')
         else:
@@ -219,11 +230,11 @@ class BrazilianNameSampler:
             )
         if census_year != 2010:
             raise ValueError(f'census_year must be 2022 or 2010; got {census_year!r}')
-        surnames_file = Path(surnames_path) if surnames_path else ensure_data_file('surnames_data.json')
+        surnames_file = _validate_local_json_path(surnames_path) if surnames_path else ensure_data_file('surnames_data.json')
         surnames_payload = json.loads(surnames_file.read_text(encoding='utf-8'))
         root_2010 = ensure_parquet_root(census_year=2010)
         return cls(
-            {'surnames': surnames_payload['surnames'], 'common_names_percentage': {}},
+            None,
             middle_names_path=resolved_middle if resolved_middle and resolved_middle.exists() else None,
             names_path=None,
             parquet_root=root_2010,
@@ -231,6 +242,7 @@ class BrazilianNameSampler:
             census_year=2010,
             conditioning_mode=conditioning_mode,
             path_resolver=resolve_partition_path,
+            preloaded_data={'surnames': surnames_payload['surnames'], 'common_names_percentage': {}},
         )
 
     @classmethod
@@ -258,7 +270,7 @@ class BrazilianNameSampler:
 
     def __init__(
         self,
-        json_file_path: str | Path | dict,
+        json_file_path: str | Path | dict[str, Any] | None = None,
         middle_names_path: str | Path | None = None,
         names_path: str | Path | None = None,
         parquet_root: str | Path | None = None,
@@ -267,6 +279,7 @@ class BrazilianNameSampler:
         census_year: int = 2010,
         conditioning_mode: Literal['strict', 'estimated'] = 'strict',
         path_resolver: Callable[[Path], Path] | None = resolve_partition_path,
+        preloaded_data: dict[str, Any] | None = None,
     ):
         """Initialize the name sampler with population data."""
         if census_year not in {2010, 2022}:
@@ -278,14 +291,20 @@ class BrazilianNameSampler:
         self.conditioning_mode: Literal['strict', 'estimated'] = conditioning_mode
         self._path_resolver: Callable[[Path], Path] | None = path_resolver
 
-        if isinstance(json_file_path, (str, Path)):
-            with Path(json_file_path).open(encoding='utf-8') as file:
+        if preloaded_data is not None:
+            data = preloaded_data
+        elif isinstance(json_file_path, dict):
+            data = json_file_path
+        elif isinstance(json_file_path, (str, Path)):
+            validated_json_path = _validate_local_json_path(json_file_path)
+            with validated_json_path.open(encoding='utf-8') as file:
                 data = json.load(file)
         else:
-            data = json_file_path
+            raise TypeError('json_file_path must be a path or dict when preloaded_data is not supplied')
 
         if names_path:
-            with Path(names_path).open(encoding='utf-8') as file:
+            validated_names_path = _validate_local_json_path(names_path)
+            with validated_names_path.open(encoding='utf-8') as file:
                 names_data = json.load(file)
                 self.name_data = names_data['common_names_percentage']
         else:
@@ -309,17 +328,18 @@ class BrazilianNameSampler:
                 )
 
         self._use_shared_middle_parquet = False
+        validated_middle_path: Path | None = None
         if middle_names_path is not None:
-            resolved_mp = Path(middle_names_path).resolve()
+            validated_middle_path = _validate_local_json_path(middle_names_path)
             default_candidates = {(PACKAGE_DATA_DIR / 'middle_names.json').resolve()}
             env_data_dir = os.environ.get('PTBR_SAMPLER_DATA_DIR')
             if env_data_dir:
                 default_candidates.add((Path(env_data_dir).expanduser() / 'middle_names.json').resolve())
             with contextlib.suppress(FileNotFoundError, ValueError):
                 default_candidates.add((get_revision_cache_dir() / 'middle_names.json').resolve())
-            self._use_shared_middle_parquet = resolved_mp in default_candidates
+            self._use_shared_middle_parquet = validated_middle_path in default_candidates
 
-        self.middle_names_data = self._load_middle_names(middle_names_path) if middle_names_path else None
+        self.middle_names_data = self._load_middle_names(validated_middle_path) if validated_middle_path else None
         self._validate_data()
 
         # Lazy alias-table caches.

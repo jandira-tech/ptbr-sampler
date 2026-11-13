@@ -108,13 +108,14 @@ def _get_cached_name_sampler_unlocked(
     name_data.update(copy.deepcopy(_load_json_cached(names_file)))
     use_parquet = custom_names_path is None and custom_surnames_path is None and parquet_root_str is not None
     return BrazilianNameSampler(
-        name_data,
+        None,
         resolved_middle_path,
         None,
         parquet_root=Path(parquet_root_str) if use_parquet else None,
         census_year=census_year,
         conditioning_mode=conditioning_mode,  # type: ignore[arg-type]
         path_resolver=resolve_partition_path if use_parquet else None,
+        preloaded_data=name_data,
     )
 
 
@@ -634,12 +635,13 @@ def sample(
             name_data = {'surnames': surnames_data['surnames']}
             name_data.update(copy.deepcopy(_load_json_cached(names_file)))
             name_sampler = BrazilianNameSampler(
-                name_data,
+                None,
                 resolved_middle_path,
                 None,
                 parquet_root=None,
                 census_year=effective_census_year,
                 conditioning_mode=conditioning_mode,  # type: ignore[arg-type]
+                preloaded_data=name_data,
             )
 
         results: list[tuple[str | None, NameComponents | None, dict[str, str]]] = []

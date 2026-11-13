@@ -209,7 +209,9 @@ def test_seeding_reproduces_profiles_and_scalars_across_fresh_instances(seed_mod
             [f.ptbr_cpf() for _ in range(4)],
         )
 
-    assert run_once() == run_once()
+    first_run = run_once()
+    second_run = run_once()
+    assert first_run == second_run
 
 
 def test_global_random_seed_does_not_affect_seeded_provider() -> None:

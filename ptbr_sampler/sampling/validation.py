@@ -37,7 +37,7 @@ def reconstruct_alias_probabilities(prob: np.ndarray, alias: np.ndarray) -> np.n
         raise ValueError('prob and alias must be non-empty 1D arrays of equal length')
     m = p.size
     donors = 1.0 - p
-    nonzero_mask = donors != 0.0
+    nonzero_mask = np.abs(donors) > 0.0
     if not np.any(nonzero_mask):
         return p / float(m)
     targets = a[nonzero_mask]
@@ -108,7 +108,7 @@ def exhaustive_multinomial_gof(
     tvd = total_variation_distance(emp_probs, probs)
     linf = linf_distance(emp_probs, probs)
 
-    has_impossible_obs = bool(np.any((probs == 0.0) & (obs > 0)))
+    has_impossible_obs = bool(np.any((probs <= 0.0) & (obs > 0)))
 
     order = np.argsort(-probs, kind='mergesort')
     pooled_obs: list[float] = []
@@ -117,7 +117,7 @@ def exhaustive_multinomial_gof(
     acc_exp = 0.0
     for idx in order:
         p_i = float(probs[idx])
-        if p_i == 0.0:
+        if p_i <= 0.0:
             continue
         acc_obs += float(obs[idx])
         acc_exp += p_i * n

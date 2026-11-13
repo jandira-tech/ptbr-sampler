@@ -151,25 +151,14 @@ def generate_phone_number(
     is_cellphone = r.choice([True, False])
 
     if is_cellphone:
-        # Cellphone: 9 digits starting with 9
+        # Cellphone: 9 digits starting with 9 -> (XX) 9XXXX-XXXX
         first_digit = '9'
-        # Generate the next 4 digits of the first part (total 5 digits for cellphone)
         rest_first_part = ''.join(r.choices('0123456789', k=4))
-        first_part = f'{first_digit}{rest_first_part}'
+    else:
+        # Landline: 8 digits, first digit is never 0 -> (XX) XXXX-XXXX
+        first_digit = r.choice('123456789')
+        rest_first_part = ''.join(r.choices('0123456789', k=3))
 
-        # Generate the second part (4 digits)
-        second_part = ''.join(r.choices('0123456789', k=4))
-
-        # Format the cellphone number: (XX) 9XXXX-XXXX
-        return f'({area_code}) {first_part}-{second_part}'
-    # Landline: 8 digits, first digit is never 0
-    # Generate the first part (4 digits), first digit is never 0
-    first_digit = r.choice('123456789')
-    rest_first_part = ''.join(r.choices('0123456789', k=3))
     first_part = f'{first_digit}{rest_first_part}'
-
-    # Generate the second part (4 digits)
     second_part = ''.join(r.choices('0123456789', k=4))
-
-    # Format the landline number: (XX) XXXX-XXXX
     return f'({area_code}) {first_part}-{second_part}'

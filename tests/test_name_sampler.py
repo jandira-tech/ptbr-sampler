@@ -622,3 +622,18 @@ def test_census_2022_never_emits_duplicate_surname_stems():
     for nc in draws:
         tokens = [tok.lower() for tok in nc.surname.split() if tok.lower() not in {'da', 'de', 'do', 'dos', 'das', 'e', "d'"}]
         assert len(tokens) == len(set(tokens))
+
+
+def test_name_sampler_preloaded_data_and_path_traversal_rejection(mock_name_data):
+    sampler = BrazilianNameSampler(None, preloaded_data=mock_name_data)
+    assert sampler.get_random_name()
+
+    with pytest.raises(ValueError, match='traversal|Null byte'):
+        BrazilianNameSampler('../../../etc/passwd')
+    with pytest.raises(ValueError, match='traversal|Null byte'):
+        BrazilianNameSampler('bad\x00path.json')
+    with pytest.raises(ValueError, match='traversal|Null byte'):
+        BrazilianNameSampler(mock_name_data, names_path='../../../etc/passwd')
+    with pytest.raises(ValueError, match='traversal|Null byte'):
+        BrazilianNameSampler(mock_name_data, middle_names_path='../../../etc/passwd')
+

@@ -291,3 +291,23 @@ def test_ingest_ibge_2022_writes_float64_partitions_and_nullable_sex_prior(tmp_p
 
     assert not (out_root / '.tmp_census_year=2022').exists()
     assert not (out_root / '.bak_census_year=2022').exists()
+
+
+def test_cli_scripts_reject_path_traversal_and_outside_workspace_paths(tmp_path: Path):
+    from scripts import audit_datasets, ingest_to_parquet, publish_hf_dataset
+
+    traversal = str(tmp_path / '..' / 'escape')
+    outside = '/etc'
+
+    for bad_path in (traversal, outside, 'bad\x00path'):
+        with pytest.raises(ValueError, match='CLI path|Parent-directory|repository or temp'):
+            audit_datasets.main(['--raw-dir', bad_path])
+        with pytest.raises(ValueError, match='CLI path|Parent-directory|repository or temp'):
+            ingest_to_parquet.main(['--data-dir', bad_path, '--out', str(tmp_path / 'out')])
+        with pytest.raises(ValueError, match='CLI path|Parent-directory|repository or temp'):
+            ingest_to_parquet.ingest_ibge_2022(Path(bad_path), tmp_path / 'out')
+        with pytest.raises(ValueError, match='CLI path|Parent-directory|repository or temp'):
+            publish_hf_dataset.main(['--data-dir', bad_path, '--manifest-only'])
+        with pytest.raises(ValueError, match='CLI path|Parent-directory|repository or temp'):
+            publish_hf_dataset.write_dataset_manifest(Path(bad_path))
+

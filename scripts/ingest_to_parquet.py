@@ -708,12 +708,15 @@ def _write_count_partition_2022(
 
 def ingest_ibge_2022(raw_dir: Path, out_root: Path) -> dict[str, Any]:
     """Ingest pinned IBGE Census 2022 tables into ``out_root / 'census_year=2022'`` atomically."""
+    from scripts._cli_paths import resolve_cli_path  # noqa: PLC0415
     from scripts.audit_datasets import (  # noqa: PLC0415
         audit_ibge_2022_tables,
         classify_sex_censoring,
         format_census_2022_display_name,
     )
 
+    raw_dir = resolve_cli_path(raw_dir)
+    out_root = resolve_cli_path(out_root)
     audit = audit_ibge_2022_tables(raw_dir)
     manifest_path = raw_dir / 'source_manifest.json'
     manifest = json.loads(manifest_path.read_text(encoding='utf-8')) if manifest_path.exists() else {}
@@ -983,8 +986,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    data_dir: Path = args.data_dir
-    out_root: Path = args.out
+    from scripts._cli_paths import resolve_cli_path  # noqa: PLC0415
+
+    data_dir: Path = resolve_cli_path(args.data_dir)
+    out_root: Path = resolve_cli_path(args.out)
     out_root.mkdir(parents=True, exist_ok=True)
 
     vocab: GivenNameVocabulary | None = None

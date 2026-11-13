@@ -109,7 +109,10 @@ def write_dataset_manifest(
     repo_id: str = DEFAULT_REPO_ID,
     revision: str = 'main',
 ) -> Path:
-    artifacts = collect_runtime_artifacts(data_dir)
+    from scripts._cli_paths import resolve_cli_path  # noqa: PLC0415
+
+    safe_data_dir = resolve_cli_path(data_dir)
+    artifacts = collect_runtime_artifacts(safe_data_dir)
     manifest = {
         'schema_version': 1,
         'package_version': ptbr_sampler.__version__,
@@ -117,7 +120,7 @@ def write_dataset_manifest(
         'hf_revision': revision,
         'artifacts': artifacts,
     }
-    out_path = data_dir / 'dataset_manifest.json'
+    out_path = safe_data_dir / 'dataset_manifest.json'
     out_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n', encoding='utf-8')
     return out_path
 
@@ -131,21 +134,33 @@ def publish_to_huggingface(
 ) -> Path:
     from huggingface_hub import HfApi  # noqa: PLC0415
 
-    artifacts = collect_runtime_artifacts(data_dir)
+    from scripts._cli_paths import resolve_cli_path  # noqa: PLC0415
+
+    safe_data_dir = resolve_cli_path(data_dir)
+    artifacts = collect_runtime_artifacts(safe_data_dir)
     api = HfApi(token=token or os.environ.get('HF_TOKEN'))
     api.create_repo(repo_id=repo_id, repo_type='dataset', private=private, exist_ok=True)
 
     with tempfile.TemporaryDirectory(prefix='ptbr_hf_stage_') as tmp:
-        stage = Path(tmp)
+        stage_real = os.path.realpath(tmp)
+        stage = Path(stage_real)
         for rel in artifacts:
-            src = data_dir / rel
-            dst = stage / rel
+            if '..' in Path(rel).parts:
+                raise ValueError(f'Invalid artifact relative path: {rel!r}')
+            src = safe_data_dir / rel
+            dst_real = os.path.realpath(stage / rel)
+            if os.path.commonpath([stage_real, dst_real]) != stage_real:
+                raise ValueError(f'Artifact destination escapes staging directory: {rel!r}')
+            dst = Path(dst_real)
             dst.parent.mkdir(parents=True, exist_ok=True)
             try:
                 os.link(src, dst)
             except OSError:
                 shutil.copy2(src, dst)
-        (stage / 'README.md').write_text(build_dataset_card(repo_id, artifacts), encoding='utf-8')
+        readme_path = Path(os.path.realpath(stage / 'README.md'))
+        if os.path.commonpath([stage_real, str(readme_path)]) != stage_real:
+            raise ValueError('Staging README path escaped staging directory')
+        readme_path.write_text(build_dataset_card(repo_id, artifacts), encoding='utf-8')
 
         commit_info = api.upload_folder(
             repo_id=repo_id,
@@ -158,10 +173,12 @@ def publish_to_huggingface(
     if len(commit_oid) != 40:
         info = api.repo_info(repo_id=repo_id, repo_type='dataset')
         commit_oid = str(info.sha)
-    return write_dataset_manifest(data_dir, repo_id=repo_id, revision=commit_oid)
+    return write_dataset_manifest(safe_data_dir, repo_id=repo_id, revision=commit_oid)
 
 
 def main(argv: list[str] | None = None) -> int:
+    from scripts._cli_paths import resolve_cli_path  # noqa: PLC0415
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument('--repo-id', default=os.environ.get('PTBR_SAMPLER_HF_REPO', DEFAULT_REPO_ID))
@@ -171,12 +188,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--private', action='store_true', help='Create private HF dataset repo if creating new')
     args = parser.parse_args(argv)
 
+    safe_data_dir = resolve_cli_path(args.data_dir)
     if args.publish:
-        out = publish_to_huggingface(args.data_dir, repo_id=args.repo_id, private=args.private)
+        out = publish_to_huggingface(safe_data_dir, repo_id=args.repo_id, private=args.private)
         print(f'Published to {args.repo_id} and pinned manifest: {out}')
-        return 0
-    out = write_dataset_manifest(args.data_dir, repo_id=args.repo_id, revision=args.revision)
-    print(f'Wrote manifest ({out})')
+    else:
+        out = write_dataset_manifest(safe_data_dir, repo_id=args.repo_id, revision=args.revision)
+        print(f'Wrote manifest ({out})')
     return 0
 
 
