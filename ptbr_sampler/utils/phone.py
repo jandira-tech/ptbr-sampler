@@ -56,7 +56,10 @@ class PhoneNumber:
         return self.numerify(self.generator.parse(pattern))
 
 
-def generate_phone_number(ddd=None):
+def generate_phone_number(
+    ddd: str | None = None,
+    rng: random.Random | None = None,
+) -> str:
     """
     Generate a random Brazilian phone number.
     Randomly returns either a landline (8 digits) or a cellphone (9 digits).
@@ -67,7 +70,9 @@ def generate_phone_number(ddd=None):
 
     Args:
         ddd (str, optional): The area code to use. If None, a random one will be selected.
+        rng (random.Random, optional): Optional RNG instance; defaults to module ``random``.
     """
+    r = rng if rng is not None else random
     # Brazilian area codes (DDD)
     area_codes = [
         '11',
@@ -140,31 +145,31 @@ def generate_phone_number(ddd=None):
     ]
 
     # Use provided DDD or generate a random area code
-    area_code = ddd if ddd else random.choice(area_codes)
+    area_code = ddd if ddd else r.choice(area_codes)
 
     # Randomly decide whether to generate a landline or cellphone
-    is_cellphone = random.choice([True, False])
+    is_cellphone = r.choice([True, False])
 
     if is_cellphone:
         # Cellphone: 9 digits starting with 9
         first_digit = '9'
         # Generate the next 4 digits of the first part (total 5 digits for cellphone)
-        rest_first_part = ''.join(random.choices('0123456789', k=4))
+        rest_first_part = ''.join(r.choices('0123456789', k=4))
         first_part = f'{first_digit}{rest_first_part}'
 
         # Generate the second part (4 digits)
-        second_part = ''.join(random.choices('0123456789', k=4))
+        second_part = ''.join(r.choices('0123456789', k=4))
 
         # Format the cellphone number: (XX) 9XXXX-XXXX
         return f'({area_code}) {first_part}-{second_part}'
     # Landline: 8 digits, first digit is never 0
     # Generate the first part (4 digits), first digit is never 0
-    first_digit = random.choice('123456789')
-    rest_first_part = ''.join(random.choices('0123456789', k=3))
+    first_digit = r.choice('123456789')
+    rest_first_part = ''.join(r.choices('0123456789', k=3))
     first_part = f'{first_digit}{rest_first_part}'
 
     # Generate the second part (4 digits)
-    second_part = ''.join(random.choices('0123456789', k=4))
+    second_part = ''.join(r.choices('0123456789', k=4))
 
     # Format the landline number: (XX) XXXX-XXXX
     return f'({area_code}) {first_part}-{second_part}'

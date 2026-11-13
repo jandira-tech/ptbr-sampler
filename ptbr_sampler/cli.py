@@ -52,7 +52,7 @@ app.add_typer(datasets_app, name='datasets')
 DEFAULT_QTY = typer.Option(1, '--qty', '-q', '-n', help='Number of samples to generate', rich_help_panel='Basic Options')
 ALL_DATA = typer.Option(False, '--all', '-a', help='Include all possible data in the generated samples', rich_help_panel='Basic Options')
 SAVE_TO_JSONL = typer.Option(None, '--save-to-jsonl', '-sj', help='Save generated samples to a JSONL file', rich_help_panel='Basic Options')
-APPEND_TO_JSONL = typer.Option(True, '--append', '-ap', help='Append to JSONL file instead of overwriting', rich_help_panel='Basic Options')
+APPEND_TO_JSONL = typer.Option(True, '--append', help='Append to JSONL file instead of overwriting', rich_help_panel='Basic Options')
 OUTPUT_FORMAT = typer.Option(
     'table',
     '--format',
@@ -123,6 +123,12 @@ SEX_CONDITIONING = typer.Option(
 )
 
 # Location options
+UF_FILTER = typer.Option(
+    None,
+    '--uf',
+    help='Restrict location and name/surname sampling to a two-letter Brazilian UF (e.g. SP, RJ).',
+    rich_help_panel='Location Options',
+)
 CITY_ONLY = typer.Option(False, '--city-only', '-c', help='Return only city names', rich_help_panel='Location Options')
 STATE_ABBR_ONLY = typer.Option(
     False, '--state-abbr-only', '-sa', help='Return only state abbreviations', rich_help_panel='Location Options'
@@ -420,6 +426,7 @@ def sample(
     census_year: int = CENSUS_YEAR,
     conditioning_mode: str = CONDITIONING_MODE,
     uf_conditioning: bool = UF_CONDITIONING,
+    uf: str | None = UF_FILTER,
     output_format: str = OUTPUT_FORMAT,
     quiet: bool = QUIET,
 ) -> None:
@@ -611,6 +618,7 @@ def sample(
                                 census_year=census_year,
                                 conditioning_mode=conditioning_mode,
                                 uf_conditioning=uf_conditioning,
+                                uf=uf,
                             )
                             logger.info(f'Batch {batch_num} processed successfully')
                         except Exception as e:
@@ -722,6 +730,7 @@ def sample(
                             census_year=census_year,
                             conditioning_mode=conditioning_mode,
                             uf_conditioning=uf_conditioning,
+                            uf=uf,
                         )
                         logger.info(f'All {qty} samples processed successfully')
                     except Exception as e:
@@ -745,6 +754,40 @@ def sample(
             elif fmt == 'jsonl':
                 for record in records:
                     typer.echo(json.dumps(record, ensure_ascii=False))
+            elif not suppress_ui and records and not use_batches:
+                only_loc = any([city_only, state_abbr_only, state_full_only, only_cep])
+                only_doc = only_document or any([only_cpf, only_pis, only_cnpj, only_cei, only_rg, only_fone])
+                only_nm = return_only_name or only_surname or only_middle
+                table_rows: list[tuple[str | None, NameComponents, dict[str, Any], dict[str, Any]]] = []
+                for rec in records:
+                    if not isinstance(rec, dict):
+                        continue
+                    loc_parts = [p for p in (rec.get('city'), rec.get('state_abbr')) if p]
+                    loc_display = ' / '.join(loc_parts)
+                    if rec.get('cep'):
+                        loc_display = f'{loc_display} ({rec["cep"]})' if loc_display else str(rec['cep'])
+                    nc = NameComponents(
+                        rec.get('name', ''),
+                        rec.get('middle_name') or None,
+                        rec.get('surnames', ''),
+                    )
+                    docs = {k: rec[k] for k in ('cpf', 'rg', 'pis', 'cnpj', 'cei', 'phone') if rec.get(k)}
+                    addr = {
+                        'street': rec.get('street', ''),
+                        'neighborhood': rec.get('neighborhood', ''),
+                        'building_number': rec.get('building_number', ''),
+                    }
+                    table_rows.append((loc_display, nc, docs, addr))
+                if table_rows:
+                    console.print(
+                        create_results_table(
+                            table_rows,
+                            f'ptbr-sampler (Censo {census_year})',
+                            return_only_name=only_nm,
+                            only_location=only_loc,
+                            only_document=only_doc,
+                        )
+                    )
         except Exception as e:
             logger.error(f'Error in sample generation: {e}')
             typer.echo(f'Error: {e!s}', err=True)

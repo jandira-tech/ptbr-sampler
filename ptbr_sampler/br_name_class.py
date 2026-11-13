@@ -16,6 +16,7 @@ import json
 import math
 import os
 import random
+import threading
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -42,6 +43,7 @@ _DEFAULT_PARQUET_ROOT = Path(__file__).resolve().parent / 'data' / 'parquet'
 CENSUS_2022_OBSERVED_MALE_SHARE: float = 92_287_140 / 190_041_904  # 0.4856151515825794
 _SEX_PRIOR_FILE_CACHE_MAX = 4
 _SEX_PRIOR_FILE_CACHE: OrderedDict[tuple[str, int, int], tuple[pa.Array, np.ndarray, np.ndarray]] = OrderedDict()
+_SEX_PRIOR_FILE_CACHE_LOCK = threading.RLock()
 
 
 def _alias_draw(table: AliasTable, n: int, rng: np.random.Generator, *, random_mode: bool) -> np.ndarray:
@@ -135,9 +137,10 @@ class NameComponents:
     surname: str
 
 
-def _rng_from_python_random() -> np.random.Generator:
-    """Return a NumPy ``Generator`` seeded from Python's ``random`` state."""
-    return np.random.default_rng(random.getrandbits(64))
+def _rng_from_python_random(py_rng: random.Random | None = None) -> np.random.Generator:
+    """Return a NumPy ``Generator`` seeded from ``py_rng`` (or global ``random``)."""
+    source = py_rng if py_rng is not None else random
+    return np.random.default_rng(source.getrandbits(64))
 
 
 class BrazilianNameSampler:
@@ -320,6 +323,7 @@ class BrazilianNameSampler:
         self._validate_data()
 
         # Lazy alias-table caches.
+        self._cache_lock = threading.RLock()
         self._first_name_alias: dict[str, AliasTable | None] = {}
         self._first_name_uf_alias: dict[str, AliasTable] = {}
         self._first_name_sex_alias_2022: dict[str, AliasTable] = {}
@@ -405,31 +409,34 @@ class BrazilianNameSampler:
         return self._partition_store.get(spec)
 
     def _load_sex_prior_2022(self) -> tuple[pa.Array, np.ndarray, np.ndarray]:
-        if self._sex_prior_2022 is not None:
-            return self._sex_prior_2022
-        if self.parquet_root is None:
-            raise RuntimeError('Census 2022 sex prior requires parquet_root')
-        raw_path = self.parquet_root / 'sex_prior' / 'scope=national' / 'part.parquet'
-        prior_path = (self._path_resolver(raw_path) if self._path_resolver is not None else raw_path).resolve()
-        st = prior_path.stat()
-        file_key = (str(prior_path), st.st_mtime_ns, st.st_size)
-        cached_prior = _SEX_PRIOR_FILE_CACHE.get(file_key)
-        if cached_prior is not None:
-            _SEX_PRIOR_FILE_CACHE.move_to_end(file_key)
-            self._sex_prior_2022 = cached_prior
-            return cached_prior
+        with self._cache_lock:
+            if self._sex_prior_2022 is not None:
+                return self._sex_prior_2022
+            if self.parquet_root is None:
+                raise RuntimeError('Census 2022 sex prior requires parquet_root')
+            raw_path = self.parquet_root / 'sex_prior' / 'scope=national' / 'part.parquet'
+            prior_path = (self._path_resolver(raw_path) if self._path_resolver is not None else raw_path).resolve()
+            st = prior_path.stat()
+            file_key = (str(prior_path), st.st_mtime_ns, st.st_size)
+            with _SEX_PRIOR_FILE_CACHE_LOCK:
+                cached_prior = _SEX_PRIOR_FILE_CACHE.get(file_key)
+                if cached_prior is not None:
+                    _SEX_PRIOR_FILE_CACHE.move_to_end(file_key)
+                    self._sex_prior_2022 = cached_prior
+                    return cached_prior
 
-        tbl = pq.ParquetFile(prior_path).read(columns=['name', 'p_male', 'p_female'], use_threads=False)
-        prior_names_pa = tbl['name'].combine_chunks()
-        pm_arr = tbl['p_male'].to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
-        pf_arr = tbl['p_female'].to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
-        loaded = (prior_names_pa, pm_arr, pf_arr)
-        _SEX_PRIOR_FILE_CACHE[file_key] = loaded
-        _SEX_PRIOR_FILE_CACHE.move_to_end(file_key)
-        while len(_SEX_PRIOR_FILE_CACHE) > _SEX_PRIOR_FILE_CACHE_MAX:
-            _SEX_PRIOR_FILE_CACHE.popitem(last=False)
-        self._sex_prior_2022 = loaded
-        return loaded
+            tbl = pq.ParquetFile(prior_path).read(columns=['name', 'p_male', 'p_female'], use_threads=False)
+            prior_names_pa = tbl['name'].combine_chunks()
+            pm_arr = tbl['p_male'].to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
+            pf_arr = tbl['p_female'].to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
+            loaded = (prior_names_pa, pm_arr, pf_arr)
+            with _SEX_PRIOR_FILE_CACHE_LOCK:
+                _SEX_PRIOR_FILE_CACHE[file_key] = loaded
+                _SEX_PRIOR_FILE_CACHE.move_to_end(file_key)
+                while len(_SEX_PRIOR_FILE_CACHE) > _SEX_PRIOR_FILE_CACHE_MAX:
+                    _SEX_PRIOR_FILE_CACHE.popitem(last=False)
+            self._sex_prior_2022 = loaded
+            return loaded
 
     def _first_names_table_2022(
         self,
@@ -563,146 +570,160 @@ class BrazilianNameSampler:
         sex: str | None = None,
     ) -> AliasTable:
         """Return the first-name alias table for a given conditioning tuple."""
-        if self.census_year == 2022:
-            return self._first_names_table_2022(time_period, uf=uf, sex=sex)
-
-        resolve_time_period(time_period, 2010)
-        period_key = time_period.value
-
-        if uf is not None and sex is not None and self.parquet_root is not None:
-            cache_key = (uf, period_key, sex)
-            cached_uf = self._first_name_uf_sex_alias.get(cache_key)
-            if cached_uf is not None:
-                return cached_uf
-            spec = PartitionSpec.of(
-                self.parquet_root / 'first_names',
-                uf=uf,
-                period=period_key,
-                sex=sex,
-            )
-            table = self._load_from_parquet(spec)
-            if table is not None:
-                self._first_name_uf_sex_alias[cache_key] = table
-                return table
-            self._first_name_uf_sex_alias[cache_key] = None
-
-        if sex is not None and self.parquet_root is not None:
-            ps_key = (period_key, sex)
-            cached_ps = self._first_name_period_sex_alias.get(ps_key)
-            if cached_ps is not None:
-                return cached_ps
-            spec = PartitionSpec.of(
-                self.parquet_root / 'first_names',
-                period=period_key,
-                sex=sex,
-            )
-            table = self._load_from_parquet(spec)
-            if table is not None:
-                self._first_name_period_sex_alias[ps_key] = table
-                return table
-            self._first_name_period_sex_alias[ps_key] = None
-
-        cached = self._first_name_alias.get(period_key)
-        if cached is not None:
-            return cached
-
-        if self.parquet_root is not None:
-            spec = PartitionSpec.of(self.parquet_root / 'first_names', period=period_key)
-            table = self._load_from_parquet(spec)
-            if table is not None:
-                self._first_name_alias[period_key] = table
-                return table
-
-        period_data = self.name_data[period_key]
-        table = alias_from_mapping(period_data['names'])
-        self._first_name_alias[period_key] = table
-        return table
-
-    def _surnames_table(self, uf: str | None = None) -> AliasTable:
-        if self.census_year == 2022 and uf is not None:
-            cached_uf = self._surname_uf_alias.get(uf)
-            if cached_uf is not None:
-                return cached_uf
-            if self.parquet_root is None:
-                raise RuntimeError('Census 2022 UF surname sampling requires parquet_root')
-            spec = PartitionSpec.of(self.parquet_root / 'surnames', uf=uf)
-            table = self._require_parquet_table(spec)
-            self._surname_uf_alias[uf] = table
-            return table
-
-        if self._surname_alias is not None:
-            return self._surname_alias
-
-        if self.parquet_root is not None:
-            spec = PartitionSpec.of(self.parquet_root / 'surnames', scope='national')
+        with self._cache_lock:
             if self.census_year == 2022:
-                table = self._require_parquet_table(spec)
-                self._surname_alias = table
-                return table
-            table_2010 = self._load_from_parquet(spec)
-            if table_2010 is not None:
-                self._surname_alias = table_2010
-                return table_2010
+                return self._first_names_table_2022(time_period, uf=uf, sex=sex)
 
-        source = {k: v for k, v in self.surname_data.items() if k != 'top_40'}
-        self._surname_alias = alias_from_mapping(source)
-        return self._surname_alias
+            resolve_time_period(time_period, 2010)
+            period_key = time_period.value
 
-    def _top_40_table(self, uf: str | None = None) -> AliasTable:
-        if self.census_year == 2022 and self.parquet_root is not None and not self.top_40_surnames:
-            if uf is not None:
-                cached_uf = self._top_40_uf_alias.get(uf)
+            if uf is not None and sex is not None and self.parquet_root is not None:
+                cache_key = (uf, period_key, sex)
+                cached_uf = self._first_name_uf_sex_alias.get(cache_key)
                 if cached_uf is not None:
                     return cached_uf
-                top_uf = self._surnames_table(uf=uf).top_k(40)
-                self._top_40_uf_alias[uf] = top_uf
-                return top_uf
-            if self._top_40_alias is not None:
-                return self._top_40_alias
-            self._top_40_alias = self._surnames_table().top_k(40)
-            return self._top_40_alias
+                spec = PartitionSpec.of(
+                    self.parquet_root / 'first_names',
+                    uf=uf,
+                    period=period_key,
+                    sex=sex,
+                )
+                table = self._load_from_parquet(spec)
+                if table is not None:
+                    self._first_name_uf_sex_alias[cache_key] = table
+                    return table
+                self._first_name_uf_sex_alias[cache_key] = None
 
-        if self._top_40_alias is not None:
-            return self._top_40_alias
-        if not self.top_40_surnames:
-            return self._surnames_table()
-        self._top_40_alias = alias_from_mapping(self.top_40_surnames)
-        return self._top_40_alias
+            if sex is not None and self.parquet_root is not None:
+                ps_key = (period_key, sex)
+                cached_ps = self._first_name_period_sex_alias.get(ps_key)
+                if cached_ps is not None:
+                    return cached_ps
+                spec = PartitionSpec.of(
+                    self.parquet_root / 'first_names',
+                    period=period_key,
+                    sex=sex,
+                )
+                table = self._load_from_parquet(spec)
+                if table is not None:
+                    self._first_name_period_sex_alias[ps_key] = table
+                    return table
+                self._first_name_period_sex_alias[ps_key] = None
 
-    def _middle_names_table(self) -> AliasTable | None:
-        if self._middle_name_alias is not None:
-            return self._middle_name_alias
+            cached = self._first_name_alias.get(period_key)
+            if cached is not None:
+                return cached
 
-        if self.parquet_root is not None:
-            spec = PartitionSpec(root=self.parquet_root / 'middle_names', filters=())
-            table = self._load_from_parquet(spec)
-            if table is None and self.census_year == 2022 and self._use_shared_middle_parquet:
-                spec_shared = PartitionSpec(root=self.parquet_root.parent / 'middle_names', filters=())
-                table = self._load_from_parquet(spec_shared)
-            if table is not None:
-                self._middle_name_alias = table
+            if self.parquet_root is not None:
+                spec = PartitionSpec.of(self.parquet_root / 'first_names', period=period_key)
+                table = self._load_from_parquet(spec)
+                if table is not None:
+                    self._first_name_alias[period_key] = table
+                    return table
+
+            period_data = self.name_data[period_key]
+            table = alias_from_mapping(period_data['names'])
+            self._first_name_alias[period_key] = table
+            return table
+
+    def _surnames_table(self, uf: str | None = None) -> AliasTable:
+        with self._cache_lock:
+            if self.census_year == 2022 and uf is not None:
+                cached_uf = self._surname_uf_alias.get(uf)
+                if cached_uf is not None:
+                    return cached_uf
+                if self.parquet_root is None:
+                    raise RuntimeError('Census 2022 UF surname sampling requires parquet_root')
+                spec = PartitionSpec.of(self.parquet_root / 'surnames', uf=uf)
+                table = self._require_parquet_table(spec)
+                self._surname_uf_alias[uf] = table
                 return table
 
-        if not self.middle_names_data:
-            return None
-        second_names = self.middle_names_data.get('second_names', {})
-        try:
-            table = alias_from_mapping(second_names)
-        except ValueError:
-            return None
-        self._middle_name_alias = table
-        return table
+            if self._surname_alias is not None:
+                return self._surname_alias
+
+            if self.parquet_root is not None:
+                spec = PartitionSpec.of(self.parquet_root / 'surnames', scope='national')
+                if self.census_year == 2022:
+                    table = self._require_parquet_table(spec)
+                    self._surname_alias = table
+                    return table
+                table_2010 = self._load_from_parquet(spec)
+                if table_2010 is not None:
+                    self._surname_alias = table_2010
+                    return table_2010
+
+            source = {k: v for k, v in self.surname_data.items() if k != 'top_40'}
+            self._surname_alias = alias_from_mapping(source)
+            return self._surname_alias
+
+    def _top_40_table(self, uf: str | None = None) -> AliasTable:
+        with self._cache_lock:
+            if self.census_year == 2022 and self.parquet_root is not None and not self.top_40_surnames:
+                if uf is not None:
+                    cached_uf = self._top_40_uf_alias.get(uf)
+                    if cached_uf is not None:
+                        return cached_uf
+                    top_uf = self._surnames_table(uf=uf).top_k(40)
+                    self._top_40_uf_alias[uf] = top_uf
+                    return top_uf
+                if self._top_40_alias is not None:
+                    return self._top_40_alias
+                self._top_40_alias = self._surnames_table().top_k(40)
+                return self._top_40_alias
+
+            if self._top_40_alias is not None:
+                return self._top_40_alias
+            if not self.top_40_surnames:
+                return self._surnames_table()
+            self._top_40_alias = alias_from_mapping(self.top_40_surnames)
+            return self._top_40_alias
+
+    def _middle_names_table(self) -> AliasTable | None:
+        with self._cache_lock:
+            if self._middle_name_alias is not None:
+                return self._middle_name_alias
+
+            if self.parquet_root is not None:
+                spec = PartitionSpec(root=self.parquet_root / 'middle_names', filters=())
+                table = self._load_from_parquet(spec)
+                if table is None and self.census_year == 2022 and self._use_shared_middle_parquet:
+                    spec_shared = PartitionSpec(root=self.parquet_root.parent / 'middle_names', filters=())
+                    table = self._load_from_parquet(spec_shared)
+                if table is not None:
+                    self._middle_name_alias = table
+                    return table
+
+            if not self.middle_names_data:
+                return None
+            second_names = self.middle_names_data.get('second_names', {})
+            try:
+                table = alias_from_mapping(second_names)
+            except ValueError:
+                return None
+            self._middle_name_alias = table
+            return table
 
     # ------------------------------------------------------------------
     # Middle-name helpers
     # ------------------------------------------------------------------
 
-    def _should_add_middle_name(self) -> bool:
+    def _should_add_middle_name(
+        self,
+        *,
+        rng: random.Random | None = None,
+    ) -> bool:
         if not self.middle_names_data:
             return False
-        return random.random() < (self.middle_names_data['percentage_with_second'] / 100)
+        r = rng if rng is not None else random
+        return r.random() < (self.middle_names_data['percentage_with_second'] / 100)
 
-    def _get_random_middle_name(self, random_mode: bool = False) -> str:
+    def _get_random_middle_name(
+        self,
+        random_mode: bool = False,
+        *,
+        rng: random.Random | None = None,
+    ) -> str:
         """Return one middle name draw using the cached alias table."""
         if not self.middle_names_data or 'second_names' not in self.middle_names_data:
             return ''
@@ -712,8 +733,8 @@ class BrazilianNameSampler:
             raise ValueError(f'Error processing middle names data: {err}') from err
         if table is None:
             return ''
-        rng = _rng_from_python_random()
-        draws = _alias_draw(table, 1, rng, random_mode=random_mode)
+        np_rng = _rng_from_python_random(rng)
+        draws = _alias_draw(table, 1, np_rng, random_mode=random_mode)
         return str(draws[0])
 
     # ------------------------------------------------------------------
@@ -733,10 +754,13 @@ class BrazilianNameSampler:
         random_mode: bool = False,
         uf: str | None = None,
         sex: str | None = None,
+        *,
+        include_middle: bool = True,
+        rng: random.Random | None = None,
     ) -> str | NameComponents:
         """Get a single random name via the unified vectorised draw path."""
         if only_middle:
-            middle_name = self._get_random_middle_name(random_mode=random_mode)
+            middle_name = self._get_random_middle_name(random_mode=random_mode, rng=rng)
             if return_components:
                 return NameComponents('', middle_name, '')
             return middle_name.upper() if raw else middle_name
@@ -747,12 +771,14 @@ class BrazilianNameSampler:
             time_period=resolved_period,
             raw=raw,
             include_surname=include_surname,
+            include_middle=include_middle,
             top_40=top_40,
             with_only_one_surname=with_only_one_surname,
             always_middle=always_middle,
             random_mode=random_mode,
             uf=uf,
             sex=sex,
+            py_rng=rng,
         )[0]
 
         if return_components:
@@ -777,6 +803,8 @@ class BrazilianNameSampler:
         random_mode: bool = False,
         ufs: list[str] | tuple[str, ...] | None = None,
         sexes: list[str] | tuple[str, ...] | None = None,
+        *,
+        rng: random.Random | None = None,
     ) -> list[NameComponents]:
         """Draw ``n`` name components with vectorised alias lookups."""
         if n <= 0:
@@ -793,6 +821,7 @@ class BrazilianNameSampler:
             random_mode=random_mode,
             ufs=ufs,
             sexes=sexes,
+            py_rng=rng,
         )
 
     def get_random_surname(
@@ -802,14 +831,16 @@ class BrazilianNameSampler:
         with_only_one_surname: bool = False,
         random_mode: bool = False,
         uf: str | None = None,
+        *,
+        rng: random.Random | None = None,
     ) -> str:
         """Get random surname(s), optionally from top 40 or conditioned on UF (2022)."""
-        rng = _rng_from_python_random()
+        np_rng = _rng_from_python_random(rng)
         table = self._top_40_table(uf=uf) if top_40 else self._surnames_table(uf=uf)
         s1_list, s2_list = self._draw_surname_pairs_from_table(
             table,
             1,
-            rng=rng,
+            rng=np_rng,
             random_mode=random_mode,
             with_only_one_surname=with_only_one_surname,
         )
@@ -818,6 +849,7 @@ class BrazilianNameSampler:
             s2_list[0],
             raw=raw,
             with_only_one_surname=with_only_one_surname,
+            py_rng=rng,
         )
 
     # ------------------------------------------------------------------
@@ -864,6 +896,7 @@ class BrazilianNameSampler:
         time_period: TimePeriod,
         raw: bool,
         include_surname: bool,
+        include_middle: bool = True,
         top_40: bool,
         with_only_one_surname: bool,
         always_middle: bool,
@@ -872,8 +905,9 @@ class BrazilianNameSampler:
         sex: str | None = None,
         ufs: list[str] | tuple[str, ...] | None = None,
         sexes: list[str] | tuple[str, ...] | None = None,
+        py_rng: random.Random | None = None,
     ) -> list[NameComponents]:
-        rng = _rng_from_python_random()
+        rng = _rng_from_python_random(py_rng)
 
         first_names = self._draw_first_names_conditioned(
             n,
@@ -887,12 +921,16 @@ class BrazilianNameSampler:
             sexes=sexes,
         )
 
-        middle_names: list[str | None] = self._draw_middle_names(
-            n,
-            raw=raw,
-            always_middle=always_middle,
-            rng=rng,
-            random_mode=random_mode,
+        middle_names: list[str | None] = (
+            self._draw_middle_names(
+                n,
+                raw=raw,
+                always_middle=always_middle,
+                rng=rng,
+                random_mode=random_mode,
+            )
+            if include_middle
+            else [None] * n
         )
 
         if not include_surname:
@@ -939,6 +977,7 @@ class BrazilianNameSampler:
                 surname_s2[i],
                 raw=raw,
                 with_only_one_surname=with_only_one_surname,
+                py_rng=py_rng,
             )
             results.append(NameComponents(first_names[i], middle_names[i], surname))
         return results
@@ -1043,47 +1082,55 @@ class BrazilianNameSampler:
         *,
         raw: bool,
         with_only_one_surname: bool,
+        py_rng: random.Random | None = None,
     ) -> str:
         s1 = surname1.upper() if raw else surname1
-        s1 = self._apply_prefix(s1, allow_prefix=True)
+        s1 = self._apply_prefix(s1, allow_prefix=True, py_rng=py_rng)
         if with_only_one_surname:
             return s1
         s2 = surname2.upper() if raw else surname2
         if s2.upper() in ('JUNIOR', 'JR'):
             s2 = 'JR' if raw else 'Jr.'
         else:
-            s2 = self._apply_prefix(s2, allow_prefix=False)
+            s2 = self._apply_prefix(s2, allow_prefix=False, py_rng=py_rng)
         return f'{s1} {s2}'
 
-    def _apply_prefix(self, surname: str, allow_prefix: bool = True) -> str:
+    def _apply_prefix(
+        self,
+        surname: str,
+        allow_prefix: bool = True,
+        *,
+        py_rng: random.Random | None = None,
+    ) -> str:
         """Apply prefix to surname based on complex rules and probabilities."""
         if not allow_prefix:
             return surname
+        r = py_rng if py_rng is not None else random
         is_raw = surname.isupper()
         surname_upper = surname.upper()
 
         if surname_upper in self.SURNAME_PREFIXES:
             if surname_upper in ['SANTOS', 'SILVA']:
-                compound_chance = random.random()
+                compound_chance = r.random()
                 if compound_chance < 0.05:
                     compound_prefix = 'E' if is_raw else 'e'
                     return f'{surname} {compound_prefix}'
                 if compound_chance < 0.15:
-                    compound_prefix = ('DA' if random.random() < 0.7 else 'DO') if is_raw else ('da' if random.random() < 0.7 else 'do')
+                    compound_prefix = ('DA' if r.random() < 0.7 else 'DO') if is_raw else ('da' if r.random() < 0.7 else 'do')
                     return f'{surname} {compound_prefix}'
 
             prefix_options = self.SURNAME_PREFIXES[surname_upper]
             total_weight = sum(weight for _, weight in prefix_options)
-            rand = random.random() * total_weight
+            rand = r.random() * total_weight
 
             cumulative = 0.0
             for candidate_prefix, weight in prefix_options:
                 cumulative += weight
                 if rand <= cumulative:
                     final_prefix = candidate_prefix
-                    if final_prefix in ['da', 'do'] and random.random() < 0.08:
+                    if final_prefix in ['da', 'do'] and r.random() < 0.08:
                         final_prefix = ('DOS' if final_prefix == 'do' else 'DAS') if is_raw else ('dos' if final_prefix == 'do' else 'das')
-                    elif final_prefix == 'de' and surname[0].lower() in 'aeiou' and random.random() < 0.7:
+                    elif final_prefix == 'de' and surname[0].lower() in 'aeiou' and r.random() < 0.7:
                         final_prefix = "D'" if is_raw else "d'"
                         return f'{final_prefix}{surname}'
                     else:

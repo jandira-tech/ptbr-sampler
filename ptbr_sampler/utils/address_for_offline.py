@@ -4,6 +4,9 @@ from pathlib import Path
 
 
 class AddressProvider_for_offline:
+    def __init__(self, rng: random.Random | None = None) -> None:
+        self._rng = rng
+
     city_suffixes = (
         'do Sul',
         'do Norte',
@@ -618,7 +621,8 @@ class AddressProvider_for_offline:
         Returns:
             A random element from the sequence
         """
-        return random.choice(elements)
+        r = self._rng if self._rng is not None else random
+        return r.choice(elements)
 
     def building_number(self) -> str:
         """
@@ -627,7 +631,8 @@ class AddressProvider_for_offline:
         Returns:
             A random building number as a string
         """
-        return str(random.randint(1, 999))
+        r = self._rng if self._rng is not None else random
+        return str(r.randint(1, 999))
 
     def last_name(self) -> str:
         """

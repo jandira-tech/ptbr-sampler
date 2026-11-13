@@ -2,7 +2,7 @@
 
 ## 1. Repository Software License vs. Statistical Data Attribution
 
-The source code of `ptbr-sampler` is governed by the repository [`LICENSE`](LICENSE) file (`All rights reserved.`). The statistical distributions, demographic frequencies, and geographic lookup tables consumed at build time or fetched at runtime originate from official Brazilian public-sector publications and third-party open compilations listed below. Each source retains its own legal status, terms of use, and attribution requirements.
+The source code of `ptbr-sampler` is licensed under the **MIT License** (`Copyright (c) 2026 Jandira Tech`; see [`LICENSE`](LICENSE)). The repository's MIT License governs the software code only and does not claim to relicense third-party or public-sector datasets. The statistical distributions, demographic frequencies, and geographic lookup tables consumed at build time or fetched at runtime originate from official Brazilian public-sector publications and third-party open compilations listed below; each source retains its own legal status, terms of use, and attribution requirements.
 
 ---
 

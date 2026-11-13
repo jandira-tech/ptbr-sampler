@@ -14,6 +14,7 @@ Top-level exports:
 The CLI is installed as the ``ptbr`` console script; see ``pyproject.toml``.
 """
 
+import random as _stdlib_random
 from typing import Any
 
 from ptbr_sampler.br_location_class import BrazilianLocationSampler
@@ -65,6 +66,10 @@ _SAMPLE_DEFAULTS: dict[str, Any] = {
     'conditioning_mode': 'strict',
     'uf_conditioning': False,
     'sex_conditioning': None,
+    'uf': None,
+    'formatted': True,
+    'rng': None,
+    'include_address': True,
 }
 
 
@@ -77,13 +82,16 @@ def sample(
     census_year: int = 2022,
     conditioning_mode: str = 'strict',
     uf_conditioning: bool = False,
+    uf: str | None = None,
+    rng: _stdlib_random.Random | None = None,
     **kwargs: Any,
 ) -> dict | list[dict]:
     """Generate random Brazilian name, location, and document samples.
 
     Defaults to IBGE Censo 2022 (``census_year=2022``, ``TimePeriod.ALL``,
     ``conditioning_mode='strict'``). Pass ``census_year=2010`` to opt into the
-    historical 2010 vintage.
+    historical 2010 vintage, ``uf='SP'`` to restrict draws to a single UF, or
+    ``rng=random.Random(seed)`` for isolated reproducible streams.
     """
     merged = {**_SAMPLE_DEFAULTS, **kwargs}
     merged['q'] = q
@@ -94,6 +102,8 @@ def sample(
     merged['census_year'] = census_year
     merged['conditioning_mode'] = conditioning_mode
     merged['uf_conditioning'] = uf_conditioning
+    merged['uf'] = uf
+    merged['rng'] = rng
     return _sampler_function(**merged)
 
 
