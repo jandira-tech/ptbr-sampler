@@ -46,32 +46,42 @@ def build_alias(weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
     n = w.size
     q_arr = n * (w / total)
-    q = q_arr.tolist()
+    prob = q_arr.tolist()
     comp = [0.0] * n
-    prob = [1.0] * n
     alias = list(range(n))
+    bulk_assigns: list[tuple[list[int], int]] = []
 
     # Plain Python list stacks avoid per-iteration NumPy scalar boxing overhead;
-    # per-bucket Kahan compensation prevents O(M * eps) drift on heavy-tailed
-    # hubs (e.g. 'Silva' absorbing >20k small buckets in 201,601 surnames).
+    # bulk C-level ``math.fsum`` absorption for hub buckets (``ql >= 2.0``, e.g.
+    # 'Silva' absorbing >20k small buckets in 201,601 surnames) plus per-bucket
+    # Kahan compensation on single-step updates eliminates O(M * eps) drift while
+    # cutting Python loop iterations sharply under coverage/profiling.
     small: list[int] = np.flatnonzero(q_arr < 1.0).tolist()
     large: list[int] = np.flatnonzero(q_arr >= 1.0).tolist()
     small_pop = small.pop
     large_pop = large.pop
     small_append = small.append
     large_append = large.append
+    bulk_append = bulk_assigns.append
 
     while small and large:
-        small_idx = small_pop()
         large_idx = large_pop()
-        qs = q[small_idx]
-        prob[small_idx] = qs
-        alias[small_idx] = large_idx
-        ql_prev = q[large_idx]
-        y = (qs - 1.0) - comp[large_idx]
-        ql = ql_prev + y
-        comp[large_idx] = (ql - ql_prev) - y
-        q[large_idx] = ql
+        ql_prev = prob[large_idx]
+        if ql_prev >= 2.0 and len(small) > 1:
+            k_absorb = min(len(small), int(ql_prev) - 1)
+            chunk = small[-k_absorb:]
+            del small[-k_absorb:]
+            bulk_append((chunk, large_idx))
+            delta = math.fsum(prob[s] for s in chunk) - float(k_absorb) - comp[large_idx]
+            ql = ql_prev + delta
+            comp[large_idx] = (ql - ql_prev) - delta
+        else:
+            small_idx = small_pop()
+            alias[small_idx] = large_idx
+            y = (prob[small_idx] - 1.0) - comp[large_idx]
+            ql = ql_prev + y
+            comp[large_idx] = (ql - ql_prev) - y
+        prob[large_idx] = ql
         if ql < 1.0:
             small_append(large_idx)
         else:
@@ -83,7 +93,10 @@ def build_alias(weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     for i in small:
         prob[i] = 1.0
 
-    return np.asarray(prob, dtype=np.float64), np.asarray(alias, dtype=np.int64)
+    alias_arr = np.asarray(alias, dtype=np.int64)
+    for chunk, l_idx in bulk_assigns:
+        alias_arr[chunk] = l_idx
+    return np.asarray(prob, dtype=np.float64), alias_arr
 
 
 def draw(

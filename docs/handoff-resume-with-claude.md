@@ -8,7 +8,8 @@ This document records the reconciled `0.3.0` state for maintainers or coding age
 
 - **Default vintage:** `census_year=2022` (`TimePeriod.ALL`, `conditioning_mode='strict'`) across `sample()`, `BrazilianNameSampler.from_parquet()`, `BrazilianNameSampler.from_bundled_parquet()`, and `ptbr generate`. Historical `census_year=2010` (`TimePeriod.UNTIL_2010`) remains available as an explicit opt-in (`--census-year 2010`).
 - **Upstream Census 2022 source:** [`olob0/ibge-nomes-no-brasil-2022`](https://huggingface.co/datasets/olob0/ibge-nomes-no-brasil-2022) pinned at `05efb85c92af43da2ed4ed088d1e0c9f17160e65` (`5` Parquet files, `8,630,643` bytes; SHA-256 digests verified in `scripts/download_datasets.py` and `scripts/audit_datasets.py`).
-- **Runtime dataset delivery (`< 150 KiB` wheel):** Heavy Parquet and JSON payloads are excluded from the built wheel via `[tool.uv.build-backend]` `wheel-exclude`. Only `ptbr_sampler/data/dataset_manifest.json` ships in the wheel; `ptbr_sampler/datasets.py` resolves partitions lazily from `PTBR_SAMPLER_DATA_DIR`, a local repo checkout, or `~/.cache/ptbr-sampler/<hf_revision>/` backed by [`arthrod/ptbr-sampler-data`](https://huggingface.co/datasets/arthrod/ptbr-sampler-data).
+- **Runtime dataset delivery (`< 150 KiB` wheel):** Heavy Parquet and JSON payloads are excluded from the built wheel via `[tool.uv.build-backend]` `wheel-exclude` (`ptbr_sampler-0.3.0-py3-none-any.whl` = `94,409 bytes` / `92.2 KiB`). Only `ptbr_sampler/data/dataset_manifest.json` ships in the wheel (`195` artifacts pinned at [`arthrod/ptbr-sampler-data`](https://huggingface.co/datasets/arthrod/ptbr-sampler-data) @ `c30ef6ac3dbf2d1508e41dce7b6a6e47d8e6dbde`); `ptbr_sampler/datasets.py` resolves partitions lazily from `PTBR_SAMPLER_DATA_DIR`, a local repo checkout, or `~/.cache/ptbr-sampler/<hf_revision>/`.
+- **Statistical validation & metadata integrity:** Four-layer validation suite (`tests/test_distribution_validation.py`, `scripts/audit_datasets.py`) verifies exact `pa.float64` probability vectors, exact Vose alias reconstruction (`L_inf < 1e-14`), exhaustive multinomial GoF with Holm-Bonferroni FWER (`alpha=0.001`), negative controls, and Layer D cross-table coherence (`uf_weighted_vs_national_given_tvd = 0.030919`, `decade_sum_to_national_given_ratio = 0.978767`). Legacy 2010 `data_origin.json` metadata counts `count=0` Gemini rows as `gemini_classified` (`unmatched_names=0`, `coverage_pct=100.0`).
 
 ---
 
@@ -22,7 +23,7 @@ uv run python -m scripts.download_datasets --fetch-ibge-2022
 uv run python -m scripts.ingest_to_parquet
 uv run python -m scripts.audit_datasets \
   --raw-dir ptbr_sampler/data/raw/ibge_nomes_2022 \
-  --parquet-dir ptbr_sampler/data/parquet/census_year=2022
+  --parquet-dir ptbr_sampler/data/parquet
 
 # 3. Check runtime dataset manifest / cache health
 uv run ptbr datasets status --verify

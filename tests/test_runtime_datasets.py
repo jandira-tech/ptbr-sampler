@@ -210,3 +210,14 @@ def test_normalize_relpath_blocks_traversal():
         ds_mod._normalize_relpath('../secrets.json')
     with pytest.raises(ValueError, match='Invalid'):
         ds_mod._normalize_relpath('/etc/passwd')
+
+
+def test_bundled_manifest_pins_immutable_40_char_hf_revision():
+    import re
+
+    ds_mod.load_dataset_manifest.cache_clear()
+    manifest = ds_mod.load_dataset_manifest()
+    assert manifest.hf_repo_id == 'arthrod/ptbr-sampler-data'
+    assert manifest.package_version == '0.3.0'
+    assert re.fullmatch(r'[0-9a-f]{40}', manifest.hf_revision)
+    assert len(manifest.artifacts) == 195

@@ -227,7 +227,7 @@ def compute_cohort_alignment_tvd(
 
 def audit_cross_table_coherence(raw_dir: Path, parquet_dir: Path) -> dict[str, float]:
     """Layer D: Cross-table marginal coherence diagnostics across 2022 tables."""
-    root_2022 = parquet_dir / 'census_year=2022'
+    root_2022 = parquet_dir if parquet_dir.name == 'census_year=2022' else parquet_dir / 'census_year=2022'
     nat = pq.read_table(root_2022 / 'first_names' / 'scope=national' / 'part.parquet')
     states = pq.read_table(root_2022 / 'states' / 'part.parquet')
     by_decade = pq.read_table(raw_dir / 'name_by_decade.parquet')

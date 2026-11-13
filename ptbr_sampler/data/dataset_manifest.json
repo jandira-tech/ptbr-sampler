@@ -1372,7 +1372,7 @@
     }
   },
   "hf_repo_id": "arthrod/ptbr-sampler-data",
-  "hf_revision": "main",
+  "hf_revision": "c30ef6ac3dbf2d1508e41dce7b6a6e47d8e6dbde",
   "package_version": "0.3.0",
   "schema_version": 1
 }

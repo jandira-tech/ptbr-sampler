@@ -45,7 +45,7 @@ python -m scripts.download_datasets --fetch-ibge-2022
 python -m scripts.ingest_to_parquet
 ```
 
-This atomically stages and swaps `ptbr_sampler/data/parquet/census_year=2022/` (`69` partitions across `first_names`, `sex_prior`, `surnames`, and `states`) alongside the legacy 2010 partitions (`first_names/period=ate*`, `surnames/scope=national`, `middle_names`, `states`).
+This atomically stages and swaps `ptbr_sampler/data/parquet/census_year=2022/` (`70` partitions across `first_names`, `sex_prior`, `surnames`, and `states`) alongside the legacy 2010 partitions (`31` partitions across `first_names/period=ate*`, `sex_prior/scope=national`, `surnames/scope=national`, `middle_names`, and `states` — `101` Parquet partitions total; legacy 2010 Gemini-classified `count=0` rows are counted as `gemini_classified` with `unmatched_names=0`, `coverage_pct=100.0`).
 
 ---
 
@@ -54,10 +54,14 @@ This atomically stages and swaps `ptbr_sampler/data/parquet/census_year=2022/` (
 ```bash
 python -m scripts.audit_datasets \
   --raw-dir ptbr_sampler/data/raw/ibge_nomes_2022 \
-  --parquet-dir ptbr_sampler/data/parquet/census_year=2022
+  --parquet-dir ptbr_sampler/data/parquet
 
 uv run pytest -n auto -q
 ```
+
+Verified Layer D cross-table coherence metrics on `0.3.0`:
+- `uf_weighted_vs_national_given_tvd = 0.030919` (`3.09%`, bounded by `< 15` UF cell suppression)
+- `decade_sum_to_national_given_ratio = 0.978767` (`97.88%`, `186,340,745 / 190,383,184`, bounded by `< 20` per-decade cell suppression)
 
 ---
 
@@ -71,6 +75,8 @@ python -m scripts.publish_hf_dataset --manifest-only
 python -m scripts.publish_hf_dataset --publish --repo-id arthrod/ptbr-sampler-data
 ```
 
+Published `0.3.0` bundle: `arthrod/ptbr-sampler-data` @ `c30ef6ac3dbf2d1508e41dce7b6a6e47d8e6dbde` (`195` runtime files).
+
 ---
 
 ## Step 5 — Verify Slim Wheel (`< 150 KiB`) & Runtime Cache Prefetch
@@ -81,3 +87,5 @@ ptbr datasets prefetch --census-year 2022
 ptbr datasets status --verify
 PTBR_SAMPLER_OFFLINE=1 ptbr generate --qty 5 --uf-conditioning
 ```
+
+Verified `0.3.0` wheel: `ptbr_sampler-0.3.0-py3-none-any.whl` = `94,409 bytes` (`92.2 KiB` `< 150 KiB`), with `ptbr_sampler/data/dataset_manifest.json` as the sole file under `ptbr_sampler/data/`.

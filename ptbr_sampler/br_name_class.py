@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any, ClassVar, Literal
 
 import numpy as np
+import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 from ptbr_sampler.datasets import (
@@ -38,7 +40,7 @@ from ptbr_sampler.sampling.store import PartitionSpec, PartitionStore, alias_fro
 _DEFAULT_PARQUET_ROOT = Path(__file__).resolve().parent / 'data' / 'parquet'
 CENSUS_2022_OBSERVED_MALE_SHARE: float = 92_287_140 / 190_041_904  # 0.4856151515825794
 _SEX_PRIOR_FILE_CACHE_MAX = 4
-_SEX_PRIOR_FILE_CACHE: OrderedDict[tuple[str, int, int], tuple[dict[str, int], np.ndarray, np.ndarray]] = OrderedDict()
+_SEX_PRIOR_FILE_CACHE: OrderedDict[tuple[str, int, int], tuple[pa.Array, np.ndarray, np.ndarray]] = OrderedDict()
 
 
 def _alias_draw(table: AliasTable, n: int, rng: np.random.Generator, *, random_mode: bool) -> np.ndarray:
@@ -320,7 +322,7 @@ class BrazilianNameSampler:
         self._first_name_uf_sex_alias: dict[tuple[str, str, str], AliasTable | None] = {}
         self._first_name_period_sex_alias: dict[tuple[str, str], AliasTable | None] = {}
         self._estimated_2022_alias: dict[tuple[str, str | None, str], AliasTable] = {}
-        self._sex_prior_2022: tuple[dict[str, int], np.ndarray, np.ndarray] | None = None
+        self._sex_prior_2022: tuple[pa.Array, np.ndarray, np.ndarray] | None = None
         self._surname_alias: AliasTable | None = None
         self._surname_uf_alias: dict[str, AliasTable] = {}
         self._top_40_alias: AliasTable | None = None
@@ -398,7 +400,7 @@ class BrazilianNameSampler:
             raise RuntimeError('Census 2022 sampling requires a Parquet partition store')
         return self._partition_store.get(spec)
 
-    def _load_sex_prior_2022(self) -> tuple[dict[str, int], np.ndarray, np.ndarray]:
+    def _load_sex_prior_2022(self) -> tuple[pa.Array, np.ndarray, np.ndarray]:
         if self._sex_prior_2022 is not None:
             return self._sex_prior_2022
         if self.parquet_root is None:
@@ -414,11 +416,10 @@ class BrazilianNameSampler:
             return cached_prior
 
         tbl = pq.ParquetFile(prior_path).read(columns=['name', 'p_male', 'p_female'], use_threads=False)
-        names_arr = tbl['name'].to_numpy(zero_copy_only=False)
+        prior_names_pa = tbl['name'].combine_chunks()
         pm_arr = tbl['p_male'].to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
         pf_arr = tbl['p_female'].to_numpy(zero_copy_only=False).astype(np.float64, copy=False)
-        idx_map = dict(zip(names_arr.tolist(), range(len(names_arr)), strict=True))
-        loaded = (idx_map, pm_arr, pf_arr)
+        loaded = (prior_names_pa, pm_arr, pf_arr)
         _SEX_PRIOR_FILE_CACHE[file_key] = loaded
         _SEX_PRIOR_FILE_CACHE.move_to_end(file_key)
         while len(_SEX_PRIOR_FILE_CACHE) > _SEX_PRIOR_FILE_CACHE_MAX:
@@ -503,6 +504,8 @@ class BrazilianNameSampler:
         if cached_base is None and self._partition_store is not None and base_spec in self._partition_store:
             cached_base = self._partition_store.get(base_spec)
 
+        base_names_pa: pa.Array | None = None
+        base_labels: np.ndarray | None = None
         if cached_base is not None:
             base_labels = cached_base.labels
             base_weights = cached_base.weights
@@ -515,7 +518,7 @@ class BrazilianNameSampler:
             cols_base = set(pf_base.schema_arrow.names)
             want_base = ['name'] + [c for c in ('count', 'weight') if c in cols_base]
             tbl_base = pf_base.read(columns=want_base, use_threads=False)
-            base_labels = tbl_base.column('name').to_numpy(zero_copy_only=False)
+            base_names_pa = tbl_base.column('name').combine_chunks()
             if 'count' in cols_base:
                 counts_f = tbl_base.column('count').to_numpy(zero_copy_only=False).astype(np.float64)
                 total_c = math.fsum(counts_f.tolist())
@@ -532,19 +535,20 @@ class BrazilianNameSampler:
             else:
                 raise ValueError(f'partition at {base_path} has neither count nor weight column')
 
-        idx_map, pm_arr, pf_arr = self._load_sex_prior_2022()
+        prior_names_pa, pm_arr, pf_arr = self._load_sex_prior_2022()
         p_col = pm_arr if sex == 'M' else pf_arr
-        idx_arr = np.fromiter(
-            (idx_map.get(str(label), -1) for label in base_labels.tolist()),
-            dtype=np.int64,
-            count=len(base_labels),
-        )
-        valid = idx_arr >= 0
-        p_vals = np.where(valid, p_col[np.maximum(idx_arr, 0)], 0.0)
+        lookup_pa = base_names_pa if base_names_pa is not None else pa.array(base_labels, type=pa.string())
+        idx_pa = pc.index_in(lookup_pa, value_set=prior_names_pa)
+        valid = ~idx_pa.is_null().to_numpy(zero_copy_only=False)
+        idx_arr = pc.fill_null(idx_pa, 0).to_numpy(zero_copy_only=False)
+        p_vals = np.where(valid, p_col[idx_arr], 0.0)
         keep = valid & np.isfinite(p_vals) & (p_vals > 0.0)
         if not np.any(keep):
             raise ValueError(f'Empty estimated conditional support for {est_key}')
-        est_table = AliasTable.from_weights(base_labels[keep], base_weights[keep] * p_vals[keep])
+        kept_labels = (
+            pc.filter(base_names_pa, pa.array(keep)).to_numpy(zero_copy_only=False) if base_names_pa is not None else base_labels[keep]  # type: ignore[index]
+        )
+        est_table = AliasTable.from_weights(kept_labels, base_weights[keep] * p_vals[keep])
         self._estimated_2022_alias[est_key] = est_table
         return est_table
 

@@ -239,6 +239,8 @@ def test_audit_cross_table_coherence_and_cli_parquet_dir(tmp_path: Path):
     ingest_ibge_2022(raw_dir, parquet_dir)
 
     coherence = audit_cross_table_coherence(raw_dir, parquet_dir)
+    coherence_sub = audit_cross_table_coherence(raw_dir, parquet_dir / 'census_year=2022')
+    assert coherence == coherence_sub
     assert 0.0 <= coherence['uf_weighted_vs_national_given_tvd'] <= 1.0
     assert abs(coherence['decade_sum_to_national_given_ratio'] - (80.0 / 209.0)) < 1e-12
 
