@@ -90,3 +90,13 @@ nav:
       - Genero-Nomes (2010 sex priors): sources/genero-nomes.md
       - Gemini Gender Classifications: sources/gemini-gender-classifications.md
       - Arpen-Brasil 2024 Rankings: sources/arpen-2024-rankings.md
+  - Blog:
+      - Overview: blog/index.md
+      - English:
+          - Census 2022 & Liv102228 censoring: blog/en/01-census-2022-liv102228-censoring.md
+          - Surname slots, alias tables & GoF: blog/en/02-surname-slots-alias-gof.md
+          - The 102.8 KiB wheel: blog/en/03-slim-wheel-hf-faker-rng.md
+      - PT-BR:
+          - "Censo 2022 e censura Liv102228": blog/pt-br/01-censo-2022-liv102228-censura.md
+          - "Sobrenomes: slots, alias e GoF": blog/pt-br/02-sobrenomes-slots-alias-gof.md
+          - "O wheel de 102,8 KiB": blog/pt-br/03-wheel-leve-hf-faker-rng.md

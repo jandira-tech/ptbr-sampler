@@ -13,11 +13,12 @@ from a SHA-256-pinned Hugging Face repository
 ## Quickstart
 
 ```python
+import random
 from ptbr_sampler import sample
 
-# Deterministic, thread-safe, and fully offline-capable (runtime data is cached
-# after the first draw or via `ptbr datasets prefetch`).
-profiles = sample(n=3, uf='SP', sex='F', rng=__import__('random').Random(42))
+# Deterministic and thread-safe (runtime data is cached after the first draw
+# or via `ptbr datasets prefetch`).
+profiles = sample(q=3, all_data=True, uf='SP', rng=random.Random(42))
 for p in profiles:
     print(p['name'], '|', p['cpf'], '|', p['city'], '-', p['state'])
 ```
@@ -53,3 +54,6 @@ are derived in the [Technical Report](technical-report.md).
 - [Data Origins & Provenance](data-origins.md) — per-dataset estimands and license boundaries
 - [Data Sources](sources/bibliography.md) — IBGE, `olob0/ibge-nomes-no-brasil-2022`,
   Brasil.IO `genero-nomes`, Arpen-Brasil, Correios/ViaCEP, Anatel
+- [Blog](blog/index.md) — three-part bilingual (EN/PT-BR) series for data scientists on
+  Census 2022 censoring, surname slot mechanics & alias-table numerics, and the slim
+  HF-backed wheel
