@@ -1,0 +1,1378 @@
+{
+  "artifacts": {
+    "cities_with_ceps.json": {
+      "census_years": [
+        2010,
+        2022
+      ],
+      "sha256": "a7bcc8ae1ff09bbfdb49397fb2e0e0c0e6090c82bac8d168fc176a6e0990f0da",
+      "size_bytes": 28463813
+    },
+    "locations_data.json": {
+      "census_years": [
+        2010,
+        2022
+      ],
+      "sha256": "38e2555746c78942a5b7cd42249e247da67d6e34a0ad25038472fd8f33685554",
+      "size_bytes": 20036510
+    },
+    "middle_names.json": {
+      "census_years": [
+        2010,
+        2022
+      ],
+      "sha256": "7cb454ee9ed1ed9dc77a8706daf470e5074b53c3abf447caa144fd1b5f8540cd",
+      "size_bytes": 144268
+    },
+    "names_data.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "0e3b6c4b9a2aa52753ffb8de7645a4653fb142d4f1566d5385468101203dd10a",
+      "size_bytes": 17320812
+    },
+    "parquet/census_year=2022/first_names/period=2020_2022/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "a296ca1567a505b92a9298c46640d1b82593d83d4d612f5047609cb822d86ef1",
+      "size_bytes": 452
+    },
+    "parquet/census_year=2022/first_names/period=2020_2022/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "466b34b56ef9d7b4706bf297effc9d3600d1ae710e2e0dce4a31d56ee5c4458c",
+      "size_bytes": 70517
+    },
+    "parquet/census_year=2022/first_names/period=ate1940/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "6a3f2c62c889fcc92ebed71e39ba1d3cc1051489aa926626a95c9fbc60b9a3b4",
+      "size_bytes": 450
+    },
+    "parquet/census_year=2022/first_names/period=ate1940/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "42247dae7a943c72df208713cfb982fcd50368a16b0e8d1d0c00e653e91424df",
+      "size_bytes": 46730
+    },
+    "parquet/census_year=2022/first_names/period=ate1950/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "8fa014c19c352188104289a9377e7ce2c960aad4dd9b7088c39e4b3ba179959a",
+      "size_bytes": 451
+    },
+    "parquet/census_year=2022/first_names/period=ate1950/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "6d025d326b4d982d18d1f8e44b8496abbb24b51f0290569916fe21a5c8bd95f6",
+      "size_bytes": 88687
+    },
+    "parquet/census_year=2022/first_names/period=ate1960/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "6d7e929c6dac17bbfcf739a8ae4b084c67549add177cd24928ed001cc6daa608",
+      "size_bytes": 452
+    },
+    "parquet/census_year=2022/first_names/period=ate1960/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "0443cd3dd2aeb35bbc6431d1f58a3405dbd454e21b1a4c29f329bdec282386b3",
+      "size_bytes": 134417
+    },
+    "parquet/census_year=2022/first_names/period=ate1970/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "b55c993b16847da0b35485b0a0320a58f90f18af3c2e2c24529adebdadc22a71",
+      "size_bytes": 452
+    },
+    "parquet/census_year=2022/first_names/period=ate1970/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "1d103c8e0c786bb223274fd15d23d2edf9a4dd999345cb52535be5c4ab2da26f",
+      "size_bytes": 182159
+    },
+    "parquet/census_year=2022/first_names/period=ate1980/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "65e89a14a207870e00093690633dfc85e4dc8296fde9f4eda841541199fb4231",
+      "size_bytes": 452
+    },
+    "parquet/census_year=2022/first_names/period=ate1980/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "75514a36d482aca29bd99a921c59bcd9119ba1c4337938698f2996ce638d3da0",
+      "size_bytes": 222009
+    },
+    "parquet/census_year=2022/first_names/period=ate1990/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "4b6e167c730e87d8211dd11999245dc1e222829d2079e07d5418b54cbe91a6fb",
+      "size_bytes": 452
+    },
+    "parquet/census_year=2022/first_names/period=ate1990/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "f5377dc7cd3dfdbcb52524d6e81ff867e498692fb98cd42118d4b1bd8f51a7ea",
+      "size_bytes": 258912
+    },
+    "parquet/census_year=2022/first_names/period=ate2000/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "b4d28552f0493ecbb3a6e08b635c9f2fb186b0be96dcee2a9738b2a07710db63",
+      "size_bytes": 452
+    },
+    "parquet/census_year=2022/first_names/period=ate2000/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "d67e2a124d890c7c9374ba5bd26d29d5b91951d8168481d880766a1acfa430c5",
+      "size_bytes": 240765
+    },
+    "parquet/census_year=2022/first_names/period=ate2010/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "4f4e239d863a70635d568658265bc5b8dc05e0bf72aa74dc7412b84ed172ef03",
+      "size_bytes": 452
+    },
+    "parquet/census_year=2022/first_names/period=ate2010/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "ae2f305dd8f987312c75efc2c98b7c1d1b60b37d4a24447b5221deedcbb656c2",
+      "size_bytes": 193374
+    },
+    "parquet/census_year=2022/first_names/period=ate2020/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "2112fafe2ea0966442e1cdd67096b07bea3673d7862008c9896229cdf9760794",
+      "size_bytes": 452
+    },
+    "parquet/census_year=2022/first_names/period=ate2020/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "27e45fe528df60d7015ccfd2ca16b7f877531963afe16dbdfba9fea44131096c",
+      "size_bytes": 137921
+    },
+    "parquet/census_year=2022/first_names/scope=national/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "0efd2e5a3d1137704afc8a9d793991abafa3b17f176cbf9c93771114f6751217",
+      "size_bytes": 390
+    },
+    "parquet/census_year=2022/first_names/scope=national/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "683b58903708374a89c571a3959d8562480b3d0d9c83993c5e68045aaa3e2e16",
+      "size_bytes": 816105
+    },
+    "parquet/census_year=2022/first_names/sex=F/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "97eee8cc9e828ea793980b57f2d4c9c64243a9b0a2026d8eb0a4c489ffb80bab",
+      "size_bytes": 485
+    },
+    "parquet/census_year=2022/first_names/sex=F/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "afb00a2a32e926e4da86001f2ba39b442dde719cfb0f05ac34b5e8e47aa2f9b2",
+      "size_bytes": 501162
+    },
+    "parquet/census_year=2022/first_names/sex=M/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "65eea2bd0ed9727465d6e5798943c66a46536a840b7411638a4be3c1e5c0a481",
+      "size_bytes": 485
+    },
+    "parquet/census_year=2022/first_names/sex=M/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "e6d00577a3bc5ff474249fc0043060af53a1a6e2259b8bdf6942ea950a65ed55",
+      "size_bytes": 418076
+    },
+    "parquet/census_year=2022/first_names/uf=AC/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "2aa8f84019879b1a58af0550b372aaaa943547a2f20c76a6a2ab9ba4db0a2707",
+      "size_bytes": 425
+    },
+    "parquet/census_year=2022/first_names/uf=AC/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "5a10223391c1aca37a4c3c979c2edb985c77137abde7e28a79a3415cdd4a28cd",
+      "size_bytes": 30096
+    },
+    "parquet/census_year=2022/first_names/uf=AL/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "c9176f25adb1bba4bd96f18d73bd6af203e4207d792c700dfdc2011f63f82d6b",
+      "size_bytes": 427
+    },
+    "parquet/census_year=2022/first_names/uf=AL/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "f6eaf72dc8615789de41b727fd26dd214e6c1fd99be0829699f0155b28821c73",
+      "size_bytes": 63593
+    },
+    "parquet/census_year=2022/first_names/uf=AM/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "c9b6cf32af8f1901eb2708803fc2b2378adec6a199ba3c481f6172518768ae29",
+      "size_bytes": 428
+    },
+    "parquet/census_year=2022/first_names/uf=AM/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "0adc3522b9cbf37a9ef653739723847ce327591a8208d23c33786a7869e08f2f",
+      "size_bytes": 93935
+    },
+    "parquet/census_year=2022/first_names/uf=AP/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "16ccbda93cb0f66934435790cc0dc049aea34f723ed05ec7fa3684221cdae177",
+      "size_bytes": 425
+    },
+    "parquet/census_year=2022/first_names/uf=AP/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "0cecda52c0f36f3d9e7be85af14b0fb9561f826afc1d0b71d64f87b30fdea330",
+      "size_bytes": 29627
+    },
+    "parquet/census_year=2022/first_names/uf=BA/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "0dbe52a3c6fe5624b8329d05ebbd025171c5edfaf21b46fb3d458ab6954c2ea3",
+      "size_bytes": 430
+    },
+    "parquet/census_year=2022/first_names/uf=BA/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "9c32ae2ca879857176c66b6fa4dd63e49f68ad8bdface671d8194b6b2e78684c",
+      "size_bytes": 194420
+    },
+    "parquet/census_year=2022/first_names/uf=CE/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "1f63e3790fd66a9aadcd788fbef3f7c2fbd886e6a3e87603685dcb6a2543eaaf",
+      "size_bytes": 428
+    },
+    "parquet/census_year=2022/first_names/uf=CE/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "192dc5496ed135c9c7250c7da9d019dabbda93f33fa82ab8b59f86f8534577cc",
+      "size_bytes": 105522
+    },
+    "parquet/census_year=2022/first_names/uf=DF/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "b45649caadb9b2e2161d082958c7d91650b2e76fe9a69801282aa926686189c9",
+      "size_bytes": 427
+    },
+    "parquet/census_year=2022/first_names/uf=DF/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "364e0dfad796779cd94cb15009003843ab47861501fb7bfb07a07d66c2787bdb",
+      "size_bytes": 58875
+    },
+    "parquet/census_year=2022/first_names/uf=ES/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "2f28a5144d3357ea3f6d539ce5b2ad269b9741b0a3c65c31fc7f94e7c0cffc6e",
+      "size_bytes": 428
+    },
+    "parquet/census_year=2022/first_names/uf=ES/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "2f57b1eeffe667254e51cfaa631001e853424941239ba715a12eeeb7652bd7a9",
+      "size_bytes": 80602
+    },
+    "parquet/census_year=2022/first_names/uf=GO/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "ff98e3140547f9db2d1bb628ea498b3e5ac87e70b501b2ea356d044e9da8a287",
+      "size_bytes": 428
+    },
+    "parquet/census_year=2022/first_names/uf=GO/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "a641c8429f3872bb797c37b4aca7930d913677ed7f66961ac164897fe97f9f3b",
+      "size_bytes": 121337
+    },
+    "parquet/census_year=2022/first_names/uf=MA/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "982e960db8f7498d2ddae4bcc386d1fdfb3d905ffb33c0f7d6a3edaa6d5f0ed2",
+      "size_bytes": 428
+    },
+    "parquet/census_year=2022/first_names/uf=MA/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "b9e6042cbaaf89d9677ec617b315a011c7e3bd2839aa7671ede444a1a57707fa",
+      "size_bytes": 121960
+    },
+    "parquet/census_year=2022/first_names/uf=MG/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "9926fea94a1e3186f8c49b89051e052f5367ae6d1d3432a618f4674be413c322",
+      "size_bytes": 430
+    },
+    "parquet/census_year=2022/first_names/uf=MG/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "51ff033885885ead73f81ea0c2f74bf60d83611e1f6b5288567c065af7d12c28",
+      "size_bytes": 203274
+    },
+    "parquet/census_year=2022/first_names/uf=MS/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "f0e8977eb7a4a62fd8509357116223b936057c5bff5e6ff5f2cc04fdf9773c2f",
+      "size_bytes": 427
+    },
+    "parquet/census_year=2022/first_names/uf=MS/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "531f7bde56624578035e98e845c62fbfd63c85d979e8933ad57ef016633fbb02",
+      "size_bytes": 60705
+    },
+    "parquet/census_year=2022/first_names/uf=MT/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "09c2cddf7c43f6c00ecb868dcd2fa4700b2c00f3b48913a4cecf649463a6cbf0",
+      "size_bytes": 428
+    },
+    "parquet/census_year=2022/first_names/uf=MT/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "71aa935872dfcb622df6782167e700bd2517aa86999256ca39d8b824911b1fb0",
+      "size_bytes": 79982
+    },
+    "parquet/census_year=2022/first_names/uf=PA/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "645dc17e10aad036103cfcb8ca07554d15f0f2e5642470d6d044db7d02c79ef2",
+      "size_bytes": 428
+    },
+    "parquet/census_year=2022/first_names/uf=PA/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "52d87a71c53db4891862ceee828e0f7006529c5a4899c149e413d735755dbdf8",
+      "size_bytes": 139901
+    },
+    "parquet/census_year=2022/first_names/uf=PB/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "f5b79e8574590e2c531d7ff31125b17a2c5c97a0713928f8414d6c8e49b49be3",
+      "size_bytes": 428
+    },
+    "parquet/census_year=2022/first_names/uf=PB/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "c372ea75a9d09fba3b5636e4dfc3106f1e038308627f01c5dfae0f7a3b9ac6dc",
+      "size_bytes": 74543
+    },
+    "parquet/census_year=2022/first_names/uf=PE/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "440b61cdc8d162f04409a512f443e236c8feb12dd4d604f44ad3b05fe80c0f93",
+      "size_bytes": 428
+    },
+    "parquet/census_year=2022/first_names/uf=PE/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "5708144c63a6260bc16aff1ff1b37f42dd1d5afcfded4303bb47436ab1bfb107",
+      "size_bytes": 123075
+    },
+    "parquet/census_year=2022/first_names/uf=PI/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "1e8881b2ff6551c4783964d769aeb59313ee2054b34cbe5fea88f59975aba1be",
+      "size_bytes": 427
+    },
+    "parquet/census_year=2022/first_names/uf=PI/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "b22e9cccaa578e1694c1a8472c1da9b931e2b37c0c9d7911c839cb77e34956d8",
+      "size_bytes": 67552
+    },
+    "parquet/census_year=2022/first_names/uf=PR/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "05074b3a5915d85466de81f34d6b1bdce9172cce395a794b0427ffd2f155eea3",
+      "size_bytes": 430
+    },
+    "parquet/census_year=2022/first_names/uf=PR/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "73eaf77d9c86bba7792ac60a6d98a55835b85c3d6580f8cc0c6eb8424f5e501f",
+      "size_bytes": 137080
+    },
+    "parquet/census_year=2022/first_names/uf=RJ/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "3152bd4c0e94f964bd1365f85e4cf16b79dc63bb5b15ffbf0c8f081b6ced7c5f",
+      "size_bytes": 430
+    },
+    "parquet/census_year=2022/first_names/uf=RJ/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "d18921ecb662788ba88a3338617526fb262cec466a49ffd35fff6265bd76af72",
+      "size_bytes": 153842
+    },
+    "parquet/census_year=2022/first_names/uf=RN/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "ec826959edf06aa64e1b54c8c095119de68b09b769f9e461e193a6ffc02376b3",
+      "size_bytes": 427
+    },
+    "parquet/census_year=2022/first_names/uf=RN/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "15ba0604c2c886a851a20b19a0b9c3eea142cec5df1237d1991f73e27afec8e4",
+      "size_bytes": 67538
+    },
+    "parquet/census_year=2022/first_names/uf=RO/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "79ade4bfab7ec644607ef956a3eef179774feb456cb5fa246e97fa1f8cf090f8",
+      "size_bytes": 427
+    },
+    "parquet/census_year=2022/first_names/uf=RO/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "861ebebe251a4287544e657e00205c407f436b12b43b9fcd01d30f788e38f1f6",
+      "size_bytes": 46193
+    },
+    "parquet/census_year=2022/first_names/uf=RR/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "a8a5328a7a8a02c9a077fa7c8427c5558d3d8651b0dd35cd9148142f7bcea469",
+      "size_bytes": 425
+    },
+    "parquet/census_year=2022/first_names/uf=RR/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "64a4d6b466c41c1ac77b4328fca819d7d12481c60b85a266b60aae87c75b3a31",
+      "size_bytes": 27846
+    },
+    "parquet/census_year=2022/first_names/uf=RS/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "f2efcaa32fbe029d164b2fe6ccb0cc93492ed08d289a0d2a199039641a2410c8",
+      "size_bytes": 430
+    },
+    "parquet/census_year=2022/first_names/uf=RS/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "c96ef25fce7e879e484006de61028dfd4b575e2fae31b5a5f5c3a57724d0088c",
+      "size_bytes": 136454
+    },
+    "parquet/census_year=2022/first_names/uf=SC/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "aac2534ab9bd741c2f20887bc9171248d891b3d6a41f0da86c8f14387056c526",
+      "size_bytes": 428
+    },
+    "parquet/census_year=2022/first_names/uf=SC/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "c6063f58c062c6308c976d96b5786b5f7e8423128961aa5a9c4514131ae55a44",
+      "size_bytes": 112447
+    },
+    "parquet/census_year=2022/first_names/uf=SE/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "ccbad7a2310fd356c8561468adcf9f9791245be49ddc7455f2d3cf7d40acf7f9",
+      "size_bytes": 427
+    },
+    "parquet/census_year=2022/first_names/uf=SE/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "986b453d1258762a2c83a864771921aec7f7d4095b78c5539a6e0db8a855e1b1",
+      "size_bytes": 52472
+    },
+    "parquet/census_year=2022/first_names/uf=SP/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "83babfb33bfb26b9295599171957e280094d823e09f227d995ee1f9bdd339a43",
+      "size_bytes": 430
+    },
+    "parquet/census_year=2022/first_names/uf=SP/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "25bc0aa9b51e90242099e00067790f70341bc28af0505dde3bb1c9ebbd565502",
+      "size_bytes": 288205
+    },
+    "parquet/census_year=2022/first_names/uf=TO/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "cd476383305bcb6fd6dd3305d03de84b8205e1d741a1c0bab76b2f2865dfbacc",
+      "size_bytes": 427
+    },
+    "parquet/census_year=2022/first_names/uf=TO/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "82a5529927ec922b66220e5b52db2cbf71637d13ef193df4106681f7f8ef701d",
+      "size_bytes": 46846
+    },
+    "parquet/census_year=2022/sex_prior/scope=national/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "4672b5f11aebd1397af190230ad6ab1decc43cffafb5d62a72c2ba340b238e19",
+      "size_bytes": 356
+    },
+    "parquet/census_year=2022/sex_prior/scope=national/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "15af55e3c07c4160a5156b9b63902b4ac7a313ebe6e47f73cdcbd44460320609",
+      "size_bytes": 2228628
+    },
+    "parquet/census_year=2022/states/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "7a6e5d08a84c58b3a6bf348d33af471e06a2504977cc9cc60eab85060d1e4a3b",
+      "size_bytes": 322
+    },
+    "parquet/census_year=2022/states/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "1b37d79109553e32fde7d45d9c89f96df11051268f054fa88b65d1e3bb5e9a16",
+      "size_bytes": 2102
+    },
+    "parquet/census_year=2022/surnames/scope=national/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "d429aaa65314780993e29e3f7cb014199bacc8efc054d19f9e47ea47c662c4e8",
+      "size_bytes": 404
+    },
+    "parquet/census_year=2022/surnames/scope=national/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "df9b97a441ae2722366209b8f2e1d3d8bc3619e8a395d474dcec6916a1b28606",
+      "size_bytes": 1191337
+    },
+    "parquet/census_year=2022/surnames/uf=AC/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "7009fa85dd5d353688a28dd820492547b29e5f67238543b1b7619189c1c933fc",
+      "size_bytes": 440
+    },
+    "parquet/census_year=2022/surnames/uf=AC/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "65f23c04064c802757da2f40afe8e1072e629d168171d3fee7939d485ceb6ecb",
+      "size_bytes": 22585
+    },
+    "parquet/census_year=2022/surnames/uf=AL/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "ead920034bd279be1ef9e925cb6153e328aa9fdf195cdc97e42cc418a9d52ad0",
+      "size_bytes": 441
+    },
+    "parquet/census_year=2022/surnames/uf=AL/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "d482d63e4805b5390e3d067f2a05a491a2e578a772c67a40db2b43eb94a029e2",
+      "size_bytes": 39006
+    },
+    "parquet/census_year=2022/surnames/uf=AM/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "f07afe7daf42be02d398073067298b476f00b12a6ca4e15f0019d0dce5abafc4",
+      "size_bytes": 441
+    },
+    "parquet/census_year=2022/surnames/uf=AM/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "6f05864d40d0f92ba225641e26f1ad860952a11bd2a74ba2318ec909f54edd43",
+      "size_bytes": 63502
+    },
+    "parquet/census_year=2022/surnames/uf=AP/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "8fccba495baddbcbb58e448ba990903c2b884f5a83a6bfa0c9218f3340031a70",
+      "size_bytes": 440
+    },
+    "parquet/census_year=2022/surnames/uf=AP/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "376a430b47b70c96bfdb964dbafcf78627dff4f14a5ff693e6c6066e2f74a578",
+      "size_bytes": 18294
+    },
+    "parquet/census_year=2022/surnames/uf=BA/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "f9e913e1ac8322cab08152c5f75736e847299e79654eadd5743cbd2f0d5cdb45",
+      "size_bytes": 444
+    },
+    "parquet/census_year=2022/surnames/uf=BA/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "82beb78165a8997b7f9ec84fae0616322ff1c8dc9407aec567294b8b1c0a2855",
+      "size_bytes": 102408
+    },
+    "parquet/census_year=2022/surnames/uf=CE/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "7e4cfdd857590444b77c8664515dcecf78b8f229eee019e50977877116659c6b",
+      "size_bytes": 442
+    },
+    "parquet/census_year=2022/surnames/uf=CE/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "fa47691fc476e883ffbb3d5ae0c719a10eb66349726885a4bddb9242f5085381",
+      "size_bytes": 72851
+    },
+    "parquet/census_year=2022/surnames/uf=DF/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "073daf3cccfbf650a2730da4ef65d86c9e0de36d3ed464c015416137efd5ca53",
+      "size_bytes": 441
+    },
+    "parquet/census_year=2022/surnames/uf=DF/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "40e893683abd2dee3b0651bafdceb1834bc1f0d1f3bbeac3576b6c80a2814a47",
+      "size_bytes": 59395
+    },
+    "parquet/census_year=2022/surnames/uf=ES/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "0b8840ac3600fcf3a46acbe0f49b1ad90b041bf8d0239fcf4b0294d2875aba33",
+      "size_bytes": 442
+    },
+    "parquet/census_year=2022/surnames/uf=ES/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "1d5f2487950d0827b0d2220c3f1729ff13617019a7cbd7133fc4c51574536051",
+      "size_bytes": 108031
+    },
+    "parquet/census_year=2022/surnames/uf=GO/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "bfcb07f6e5a6744f27975d5aa742c9726573250ab7b2dd0b8c022c3abc4f5db7",
+      "size_bytes": 443
+    },
+    "parquet/census_year=2022/surnames/uf=GO/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "bf6a0c666d66ab581ffa0c6ec1a1194acde101c4b393fb83d9551b4abcc0e5e5",
+      "size_bytes": 91061
+    },
+    "parquet/census_year=2022/surnames/uf=MA/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "61ee28d3fa5dcfae62c960cf5a8a228de3359366c0112ce332b84fc73feb593b",
+      "size_bytes": 442
+    },
+    "parquet/census_year=2022/surnames/uf=MA/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "09d061c0be7663d3eac1af210de317d612bc105b726b4784dd9176674a0ee083",
+      "size_bytes": 57674
+    },
+    "parquet/census_year=2022/surnames/uf=MG/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "a75755da522e5740fd3c0eca5e2225da2709d08cd26e3fe29da70e38a0d09794",
+      "size_bytes": 444
+    },
+    "parquet/census_year=2022/surnames/uf=MG/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "b86c3257d0bf5fa57f371b960ea1ec4b8da6905e295c8fae495c4c3092a3aa38",
+      "size_bytes": 220260
+    },
+    "parquet/census_year=2022/surnames/uf=MS/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "8337ab3ccf71b81e2a7f44cd8359e3f12ffd57c10f99777bf7f055da0aa179c5",
+      "size_bytes": 442
+    },
+    "parquet/census_year=2022/surnames/uf=MS/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "3dc7dd6de86a1ed20f94a23b45ae218560adb9d271e486bb2193c95450d9c476",
+      "size_bytes": 84420
+    },
+    "parquet/census_year=2022/surnames/uf=MT/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "07acc14d5410f3e9d971156c5256739de3df7832e609bd4ca41200db3b326c05",
+      "size_bytes": 442
+    },
+    "parquet/census_year=2022/surnames/uf=MT/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "222c8b8457a6ea890fffe7fcd03bc1399a3baa2c3d5c7b9b442f1e2c71e4ce5e",
+      "size_bytes": 102900
+    },
+    "parquet/census_year=2022/surnames/uf=PA/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "fc6401420d369e90e73d57a6e6d20415dc65ef1c42fe622ad12aaadb196bdf36",
+      "size_bytes": 443
+    },
+    "parquet/census_year=2022/surnames/uf=PA/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "0383ba542cb757760643e57b62ca58687a54f6aac8605cb731ae1911050a87f9",
+      "size_bytes": 82467
+    },
+    "parquet/census_year=2022/surnames/uf=PB/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "743fde9ff7510951f50f727943a807d5ceb39a5f075d217d54dc84c3304f192d",
+      "size_bytes": 441
+    },
+    "parquet/census_year=2022/surnames/uf=PB/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "ef1b01d1a7912fe94fec0a369ad0c792c266f75271f43d9a75e6a4eb0c0d5a90",
+      "size_bytes": 48239
+    },
+    "parquet/census_year=2022/surnames/uf=PE/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "76289ba4544a82c5d87a341bdfba428796c4fa21e3aba3ad51ab6ab1a8b0f425",
+      "size_bytes": 443
+    },
+    "parquet/census_year=2022/surnames/uf=PE/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "14d2d1402430e7a5145384762972e1180c25be1cc36368e9b0d5b5ae1217fb05",
+      "size_bytes": 82322
+    },
+    "parquet/census_year=2022/surnames/uf=PI/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "bad2b773fa42a18615518e8da0976973309224f3e64a39c0dc90637711996607",
+      "size_bytes": 441
+    },
+    "parquet/census_year=2022/surnames/uf=PI/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "bdfd07839aa34553dc44526ee45af8aebea5c16a074d70d47d773b981141b142",
+      "size_bytes": 36494
+    },
+    "parquet/census_year=2022/surnames/uf=PR/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "d5f1df320a17c28b55457114516e0d1416a9b8c196210129964a1fca3aa1d5bc",
+      "size_bytes": 444
+    },
+    "parquet/census_year=2022/surnames/uf=PR/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "9e04cb0252f5e18a7c7d1161985811789a0e79eade981e07c6a72d1a121cf28a",
+      "size_bytes": 356343
+    },
+    "parquet/census_year=2022/surnames/uf=RJ/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "24e442427702e036d6ac21808f7b4c64e3728a850bc5f890bf6af8846a159d41",
+      "size_bytes": 444
+    },
+    "parquet/census_year=2022/surnames/uf=RJ/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "98fc87d099e33500010686bf739776e37726426830a707af0becbc86a0233cc5",
+      "size_bytes": 216323
+    },
+    "parquet/census_year=2022/surnames/uf=RN/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "8f81828f0c947c5374908bca57d8d10b79753d8725c3ba6b1d3fd324be054612",
+      "size_bytes": 441
+    },
+    "parquet/census_year=2022/surnames/uf=RN/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "f057b12a1ab837de746917cd8e9fb48b5ddc2a92f4ede583147ffb5f3ae7f6df",
+      "size_bytes": 44170
+    },
+    "parquet/census_year=2022/surnames/uf=RO/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "73e47a60fb12b2518c7f9085cf4bb422653018084f805a94f846b98773302a01",
+      "size_bytes": 441
+    },
+    "parquet/census_year=2022/surnames/uf=RO/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "d3ef15f9988300778ff5599b744181aa813bc71e03deff5f0cb93f07a9d74199",
+      "size_bytes": 53174
+    },
+    "parquet/census_year=2022/surnames/uf=RR/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "a8669e93405370e3c53e38d99544809edc18be6d6064f05b96d3dd9d7bf769ce",
+      "size_bytes": 440
+    },
+    "parquet/census_year=2022/surnames/uf=RR/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "e335f122744a91e9d72455fdaadd8ec4c0ff92faf77dab098d72343d1c374231",
+      "size_bytes": 25396
+    },
+    "parquet/census_year=2022/surnames/uf=RS/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "3d5dd500856110815ec146b5ab67612dc04b98e9251fd6a8960e556991f53758",
+      "size_bytes": 444
+    },
+    "parquet/census_year=2022/surnames/uf=RS/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "4f30a18ba996c0229cb4512d3e7d970c7328cc6429074dec12c96589ba12f8ed",
+      "size_bytes": 288913
+    },
+    "parquet/census_year=2022/surnames/uf=SC/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "265a31382b0fec5c19e80e729f69e7d7227ca6720d04885cc169acfbcf9ef510",
+      "size_bytes": 443
+    },
+    "parquet/census_year=2022/surnames/uf=SC/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "f82bde5112cee2f3cead6c81b85fd3887123e1e15bc4c4e82c5bc7b82afb2d6f",
+      "size_bytes": 236905
+    },
+    "parquet/census_year=2022/surnames/uf=SE/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "c9ee8e1a4e8fc0a8eb284811c73473ac5692896289b8f54498f6792ae661e212",
+      "size_bytes": 441
+    },
+    "parquet/census_year=2022/surnames/uf=SE/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "2db30e7452feac589c0089f09190f18f925c48ea5bc3199744b0413dff7c32e2",
+      "size_bytes": 28140
+    },
+    "parquet/census_year=2022/surnames/uf=SP/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "11e56a3ec7cdd4aa339369af1d795c3afa73f224e7a10ab10ce531f3c94933f9",
+      "size_bytes": 444
+    },
+    "parquet/census_year=2022/surnames/uf=SP/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "a0bf7ac48d67baa4bc358f66bc389aa7b573ed5351703c32492d80151d8586f4",
+      "size_bytes": 665260
+    },
+    "parquet/census_year=2022/surnames/uf=TO/data_origin.json": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "448494f9c5d9601e3973bcf394f685a2a83bf666a5fc87fc5f9f8d475a78437a",
+      "size_bytes": 441
+    },
+    "parquet/census_year=2022/surnames/uf=TO/part.parquet": {
+      "census_years": [
+        2022
+      ],
+      "sha256": "960b4ba5ad4949bc6a1e1700f42f17faf17bef8124ab337e7596aa2d955f96c6",
+      "size_bytes": 29308
+    },
+    "parquet/first_names/period=ate1930/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "255df5dc9bdff2f584c193d9babc93005a7da68fb38737fbe885c049885f1836",
+      "size_bytes": 40437
+    },
+    "parquet/first_names/period=ate1930/sex=F/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "4e8be92c399989af144d4613971feae6a5151b2b81ba95023a51a46c055fba42",
+      "size_bytes": 846
+    },
+    "parquet/first_names/period=ate1930/sex=F/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "d0f9a0e3c80531e0fc2f8593afedabfe839c9004733b2c12551a9954d0676bfd",
+      "size_bytes": 45668
+    },
+    "parquet/first_names/period=ate1930/sex=M/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "10c175fbaf0108c4293a171568616d949d4047af89aded83374eaaef7fa91416",
+      "size_bytes": 846
+    },
+    "parquet/first_names/period=ate1930/sex=M/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "b245a1a7ebb147687f900dd83e6c0294b963bf2482464fae43297db30bf346a0",
+      "size_bytes": 40163
+    },
+    "parquet/first_names/period=ate1940/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "ef06e7a1fb7aabe66feb74fd385bd736431b755a89ea87eba79722cf87d151e3",
+      "size_bytes": 72315
+    },
+    "parquet/first_names/period=ate1940/sex=F/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "e06a6f659969b2b8b48ad0099b2bc7ec63f4e8da9689f8ba660c9f60c4eda7d0",
+      "size_bytes": 846
+    },
+    "parquet/first_names/period=ate1940/sex=F/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "a2b9126175d347147d7dc0dbf530770c189d4c0227b26fb33075b80e9ab143f7",
+      "size_bytes": 75365
+    },
+    "parquet/first_names/period=ate1940/sex=M/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "6e46c5bdb26b87e882eb3f996403d024f14a6c0dabcdb2ea78a34c011b0878f0",
+      "size_bytes": 846
+    },
+    "parquet/first_names/period=ate1940/sex=M/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "48ae339da33a3d8c255d05a54c8b4e7d504d42f20680bb7c2e2b7c421cc113a6",
+      "size_bytes": 69868
+    },
+    "parquet/first_names/period=ate1950/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "7e597939190c59e353b3346e7ce139d88610ca965d7704140357a04517da4082",
+      "size_bytes": 103226
+    },
+    "parquet/first_names/period=ate1950/sex=F/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "28c51912c699dcdbbb5c6197e29fb28e3e8aed307d57fbb49f778ac1f3d221d5",
+      "size_bytes": 847
+    },
+    "parquet/first_names/period=ate1950/sex=F/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "781a7a6c5fbbdb6e7ec830e201cfd734982d0e771c14d4eb0ed7b2cb549ac83d",
+      "size_bytes": 106173
+    },
+    "parquet/first_names/period=ate1950/sex=M/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "aadd771e7998ed05549dfd8e08384b35728628664056a1806dc515aad4280cd8",
+      "size_bytes": 846
+    },
+    "parquet/first_names/period=ate1950/sex=M/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "1019aa5ff92e629304356153956b0772eca1e5b23a350d6bd15a9ea4f22b02b2",
+      "size_bytes": 101977
+    },
+    "parquet/first_names/period=ate1960/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "8cafb7f710f5ba68eb1667773197e0cd191cc81587a4ee87c5ca7e7c229a80c6",
+      "size_bytes": 138098
+    },
+    "parquet/first_names/period=ate1960/sex=F/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "55a790f93ae5be44fd7e7b3c84ba86bc2284201335c25044eb984977ba179573",
+      "size_bytes": 848
+    },
+    "parquet/first_names/period=ate1960/sex=F/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "5ce66275de7360e0bc0f36b0a8a0d68d1e925210e5b8f08c8aee651efb1c228a",
+      "size_bytes": 136647
+    },
+    "parquet/first_names/period=ate1960/sex=M/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "49b4f560a1f973a405fd90466bc18f1ac30819454b4484141ebabe51ba667042",
+      "size_bytes": 848
+    },
+    "parquet/first_names/period=ate1960/sex=M/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "0bc7526a5ca301713293576d1390bb9e123e641efef048ed5ac0bd05439bbeef",
+      "size_bytes": 132111
+    },
+    "parquet/first_names/period=ate1970/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "6e741ce1b85c3daed69704b176d6af5b1aa55bc164346a14f9c38e2ef573ee76",
+      "size_bytes": 182070
+    },
+    "parquet/first_names/period=ate1970/sex=F/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "8de6b96270870f395296f6ed3fd9adeb2325cdb87438142660e2ab48b892e73a",
+      "size_bytes": 848
+    },
+    "parquet/first_names/period=ate1970/sex=F/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "6fd1f7e02042ed6554da28c360785e405fb39ff74caca9d8f1393353136523b9",
+      "size_bytes": 174967
+    },
+    "parquet/first_names/period=ate1970/sex=M/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "6080fdd84352599e2e3ffbf6efdfea99011999d217bbaffb89daa87448f045b7",
+      "size_bytes": 850
+    },
+    "parquet/first_names/period=ate1970/sex=M/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "98778d41bef3cd37b211b1a610f05103b9dee00c69ce14b5e9e299bf2052b468",
+      "size_bytes": 166978
+    },
+    "parquet/first_names/period=ate1980/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "fafdf0418d2a40ee72b9881d05be90a18a792b805fda04cccb674fe22203fba3",
+      "size_bytes": 221410
+    },
+    "parquet/first_names/period=ate1980/sex=F/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "69dd4d53d4e19f10532b7e457b83bd6628b86805c67dbd98655dacb4eb53d3a1",
+      "size_bytes": 848
+    },
+    "parquet/first_names/period=ate1980/sex=F/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "f5ca4f0735c04683285014fe622925778691deb222f5533d98041cb06bc2435f",
+      "size_bytes": 202657
+    },
+    "parquet/first_names/period=ate1980/sex=M/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "da0e88dff4d6ada7a938a17c18bc573b3ab5ee5a6e7c63aa953f2dfc2284be5d",
+      "size_bytes": 850
+    },
+    "parquet/first_names/period=ate1980/sex=M/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "eb84e77cd0498f7b9356f0da9c1cd155309cf40b3f9c4eaaffa812e51e1bd78b",
+      "size_bytes": 195556
+    },
+    "parquet/first_names/period=ate1990/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "f112ee10c538c50937d5a6d80b3b1e93411389d8fd0f0bd48dbae5cbb29c2efe",
+      "size_bytes": 257759
+    },
+    "parquet/first_names/period=ate1990/sex=F/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "90a75f7debe5edd7d38980ff1ae5ac0aba978e52ae35eb82eaedf55896dcaf3e",
+      "size_bytes": 850
+    },
+    "parquet/first_names/period=ate1990/sex=F/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "8e9f7eb119ab1bc2d00cd2d330e7e17640768d9063bf593c4ec57b2ee95e74c8",
+      "size_bytes": 223204
+    },
+    "parquet/first_names/period=ate1990/sex=M/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "18584beddb7cb4df5dcbd12bac678e3897cb54375524ceac3a067bc46e29e5f1",
+      "size_bytes": 850
+    },
+    "parquet/first_names/period=ate1990/sex=M/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "3acfcd3c7a67898ba2270cf3603bf277182a1214181d768c0ad90c688a9ef889",
+      "size_bytes": 210588
+    },
+    "parquet/first_names/period=ate2000/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "5ea062c31050e312658f7b00e2732ef854f69df6f9f24551b7014285af957997",
+      "size_bytes": 246480
+    },
+    "parquet/first_names/period=ate2000/sex=F/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "748fd30555ca414d05046013b4e43c09bc76304b2524d60b78d13e6557e5a140",
+      "size_bytes": 850
+    },
+    "parquet/first_names/period=ate2000/sex=F/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "b81abc892f6a75862ea6a9f2dbb737c3fe795d98a7f7015a37db0362fb764976",
+      "size_bytes": 207472
+    },
+    "parquet/first_names/period=ate2000/sex=M/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "1ed05e304182d524175db5f729fcdf32d6d5214eb9ec9f7ce0a61dee0840b576",
+      "size_bytes": 850
+    },
+    "parquet/first_names/period=ate2000/sex=M/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "f21c86c963cc347efadc1485d887be2f719b10252b7e50a74f09f9a02f77c899",
+      "size_bytes": 196560
+    },
+    "parquet/first_names/period=ate2010/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "fba5ad1f9b8e731ef0112314fdb073d8b0bf75b2c744e27d0b39573073192db9",
+      "size_bytes": 195420
+    },
+    "parquet/first_names/period=ate2010/sex=F/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "45a53d516356c01dcdae9badaf15415983d9cacde54475869292058d3c7a7364",
+      "size_bytes": 850
+    },
+    "parquet/first_names/period=ate2010/sex=F/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "21b7729e208f7289b8e4f7238197612fb4b1b10fb2920623e597c85649237e06",
+      "size_bytes": 166811
+    },
+    "parquet/first_names/period=ate2010/sex=M/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "64dd8d2190522355550d28f54ba81f63007e639776ed4ad00beac68e8b7f6156",
+      "size_bytes": 850
+    },
+    "parquet/first_names/period=ate2010/sex=M/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "a9d26d061ccadc8cba196f39e0738c24423cf721f83765c51bc1907d1c71a72a",
+      "size_bytes": 156816
+    },
+    "parquet/middle_names/part.parquet": {
+      "census_years": [
+        2010,
+        2022
+      ],
+      "sha256": "11a3cf014e8a0bacedce6a95425c723c35cf53e35acfc246155e427e8750e8dd",
+      "size_bytes": 8040
+    },
+    "parquet/sex_prior/scope=national/data_origin.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "586ea5072ed8ce6c6889817b3302eb5e6a7da0a2f1ac5bf5f61367133831c5ef",
+      "size_bytes": 728
+    },
+    "parquet/sex_prior/scope=national/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "a8b79ade1ad2a59507a3a07ee3f7f9c99a86143062ed8cb4cfb3444adb0d5dc3",
+      "size_bytes": 1506013
+    },
+    "parquet/states/part.parquet": {
+      "census_years": [
+        2010,
+        2022
+      ],
+      "sha256": "262071b482a2808c0cb519381738f7ff5379f87c42cbfe4f20dfd6993ffc6050",
+      "size_bytes": 1700
+    },
+    "parquet/surnames/scope=national/part.parquet": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "bb700ddc9145e8f7b5c2a32001dece87bfc1c2611b99731ddd8ef3320e8eae90",
+      "size_bytes": 603713
+    },
+    "surnames_data.json": {
+      "census_years": [
+        2010
+      ],
+      "sha256": "678a69b31fc583a80f34b965f86536004c0b0ab560d88c7774d44463a7f91c20",
+      "size_bytes": 5729300
+    }
+  },
+  "hf_repo_id": "arthrod/ptbr-sampler-data",
+  "hf_revision": "main",
+  "package_version": "0.3.0",
+  "schema_version": 1
+}

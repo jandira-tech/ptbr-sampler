@@ -18,7 +18,7 @@ optionally, ``weight`` (float32). If ``weight`` is absent it is derived from
 from __future__ import annotations
 
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -65,10 +65,15 @@ class PartitionStore:
     through DuckDB directly.
     """
 
-    def __init__(self, max_entries: int = 64) -> None:
+    def __init__(
+        self,
+        max_entries: int = 64,
+        path_resolver: Callable[[Path], Path] | None = None,
+    ) -> None:
         if max_entries < 1:
             raise ValueError('max_entries must be >= 1')
         self._max = max_entries
+        self._path_resolver = path_resolver
         self._cache: OrderedDict[tuple, AliasTable] = OrderedDict()
 
     # ------------------------------------------------------------------
@@ -111,7 +116,8 @@ class PartitionStore:
     # ------------------------------------------------------------------
 
     def _load(self, spec: PartitionSpec) -> AliasTable:
-        path = spec.path()
+        raw_path = spec.path()
+        path = self._path_resolver(raw_path) if self._path_resolver is not None else raw_path
         if not path.exists():
             raise FileNotFoundError(f'partition missing: {path}')
         try:
