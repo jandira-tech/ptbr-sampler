@@ -13,6 +13,7 @@ whole batch of uniforms without Python-level loops.
 
 from __future__ import annotations
 
+import math
 from collections import deque
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -39,7 +40,7 @@ def build_alias(weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         raise ValueError('weights must be non-empty')
     if np.any(w < 0) or not np.all(np.isfinite(w)):
         raise ValueError('weights must be non-negative and finite')
-    total = float(w.sum())
+    total = math.fsum(w.tolist())
     if total <= 0.0:
         raise ValueError('weights must sum to a positive value')
 
@@ -115,7 +116,10 @@ class AliasTable:
             raise ValueError('labels and counts must have the same length')
         if labels_arr.size == 0:
             raise ValueError('alias table must be non-empty')
-        weights = counts_arr.astype(np.float64) / counts_arr.sum()
+        total = int(counts_arr.sum())
+        if total <= 0:
+            raise ValueError('counts must sum to a positive value')
+        weights = counts_arr.astype(np.float64) / float(total)
         prob, alias = build_alias(counts_arr.astype(np.float64))
         return cls(labels=labels_arr, counts=counts_arr, weights=weights, prob=prob, alias=alias)
 
@@ -128,9 +132,30 @@ class AliasTable:
         if labels_arr.size == 0:
             raise ValueError('alias table must be non-empty')
         counts_arr = np.zeros_like(weights_arr, dtype=np.int64)
-        weights_arr = weights_arr / weights_arr.sum()
+        total = math.fsum(weights_arr.tolist())
+        if total <= 0.0:
+            raise ValueError('weights must sum to a positive value')
+        weights_arr = weights_arr / total
         prob, alias = build_alias(weights_arr)
         return cls(labels=labels_arr, counts=counts_arr, weights=weights_arr, prob=prob, alias=alias)
+
+    def induced_probabilities(self) -> np.ndarray:
+        """Return the exact categorical probabilities induced by ``(self.prob, self.alias)``."""
+        from .validation import reconstruct_alias_probabilities  # noqa: PLC0415
+
+        return reconstruct_alias_probabilities(self.prob, self.alias)
+
+    def top_k(self, k: int) -> AliasTable:
+        """Return a renormalised ``AliasTable`` over the top ``k`` entries ranked by weight/count."""
+        if k < 1:
+            raise ValueError('k must be >= 1')
+        if k >= len(self):
+            return self
+        metric = self.counts.astype(np.float64) if int(self.counts.sum()) > 0 else self.weights
+        order = np.argsort(-metric, kind='mergesort')[:k]
+        if int(self.counts.sum()) > 0:
+            return AliasTable.from_counts(self.labels[order].tolist(), self.counts[order].tolist())
+        return AliasTable.from_weights(self.labels[order].tolist(), self.weights[order].tolist())
 
     def sample(self, k: int, rng: np.random.Generator) -> np.ndarray:
         """Draw ``k`` labels. Returns an object ndarray of length ``k``."""
