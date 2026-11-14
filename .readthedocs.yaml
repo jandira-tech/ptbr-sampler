@@ -13,4 +13,10 @@ mkdocs:
 
 python:
   install:
+    # Install the package itself (mkdocstrings imports it to render the API
+    # reference) plus the Faker extra so ptbr_sampler.faker imports cleanly.
+    - method: pip
+      path: .
+      extra_requirements:
+        - faker
     - requirements: docs/requirements.txt

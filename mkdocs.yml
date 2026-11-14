@@ -75,11 +75,21 @@ extra_css:
 
 plugins:
   - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_root_heading: true
+            show_source: false
+            members_order: source
+            show_if_no_docstring: true
 
 nav:
   - Home: index.md
   - Usage: usage.md
   - Uso (PT-BR): uso.md
+  - API Reference: api.md
   - Technical Report: technical-report.md
   - Architecture: architecture.md
   - Data Origins & Provenance: data-origins.md

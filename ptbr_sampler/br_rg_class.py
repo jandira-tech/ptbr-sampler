@@ -81,7 +81,7 @@ class BrazilianRG:
         Initialize the RG generator.
 
         Parameters:
-            state_code (str): A two-letter state code (e.g., "MG", "RJ", "SP", etc.).
+            state (str | None): A two-letter state code (e.g., "MG", "RJ", "SP", etc.). Defaults to "SP".
             include_issuer (bool): If True, the final output will include the issuer's abbreviation.
             include_state_prefix (bool): If True (for non-MG states), the state code will be prefixed.
                                          For MG, this flag is ignored in favor of a random decision.

@@ -1,5 +1,5 @@
-# Documentation build requirements (Read the Docs installs only these; the
-# site is static and does not import the ptbr_sampler package).
+# Documentation build requirements (Read the Docs).
 mkdocs>=1.6
 mkdocs-material>=9.5
 pymdown-extensions>=10.12
+mkdocstrings[python]>=0.24

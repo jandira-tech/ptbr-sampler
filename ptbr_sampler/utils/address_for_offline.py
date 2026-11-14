@@ -1,6 +1,8 @@
 import json
 import random
+from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 
 class AddressProvider_for_offline:
@@ -611,15 +613,15 @@ class AddressProvider_for_offline:
     def neighborhood(self) -> str:
         return self.bairro()
 
-    def random_element(self, elements):
+    def random_element(self, elements: Sequence[Any]) -> Any:
         """
         Returns a random element from a sequence.
 
         Args:
-            elements: A sequence (list, tuple) to pick a random element from
+            elements (Sequence[Any]): A sequence (list, tuple) to pick a random element from
 
         Returns:
-            A random element from the sequence
+            Any: A random element from the sequence
         """
         r = self._rng if self._rng is not None else random
         return r.choice(elements)

@@ -162,6 +162,41 @@ ptbr datasets prefetch --all-vintages          # no build da imagem
 PTBR_SAMPLER_OFFLINE=1 ptbr generate -n 10     # em execução, zero rede
 ```
 
+## Superfície completa do pacote (todas as classes e funções públicas)
+
+Tudo abaixo é documentado automaticamente a partir dos docstrings na
+[Referência de API](api.md) (mkdocstrings):
+
+| Objeto | Módulo | O que faz |
+| --- | --- | --- |
+| `sample()` | `ptbr_sampler` | Gerador de perfis de alto nível (nome + localidade + documentos) |
+| `BrazilianNameSampler` | `ptbr_sampler.br_name_class` | Amostragem de nomes Censo 2010/2022: `from_parquet()`, `get_random_name()`, `batch_sample_names()` |
+| `NameComponents` | `ptbr_sampler.br_name_class` | Dataclass: `first_name`, `middle_name`, `surname` |
+| `TimePeriod` | `ptbr_sampler.br_name_class` | Enum de coortes de nascimento (`ALL`, `ate1930` … `2020_2022`) |
+| `resolve_time_period()` | `ptbr_sampler.br_name_class` | Resolução de coorte |
+| `BrazilianLocationSampler` | `ptbr_sampler.br_location_class` | UF/estado/cidade/CEP: `get_random_location()`, `get_state()`, `get_state_and_city()` |
+| `BrazilianRG` | `ptbr_sampler.br_rg_class` | Gerador de RG por estado (formatos SSP-XX) |
+| `DocumentSampler` | `ptbr_sampler.document_sampler` | Amostrador de documentos sintéticos empacotado |
+| `PTBRProvider` | `ptbr_sampler.faker` | Provider Faker com os formatadores `ptbr_*` |
+| `install_ptbr()` | `ptbr_sampler.faker` | Instala o provider numa instância `Faker` |
+| `DatasetManifest`, `ArtifactEntry` | `ptbr_sampler.datasets` | Manifesto de runtime HF fixado (SHA-256 por artefato) |
+| `ensure_data_file()`, `ensure_parquet_root()`, `resolve_partition_path()`, `resolve_bundled_or_custom_path()` | `ptbr_sampler.datasets` | Resolução em runtime: `PTBR_SAMPLER_DATA_DIR` → checkout → cache HF verificado |
+| `prefetch_datasets()`, `dataset_cache_status()`, `clear_dataset_cache()`, `has_runtime_data_available()`, `get_cache_root()`, `get_revision_cache_dir()` | `ptbr_sampler.datasets` | API de gerenciamento do cache de runtime |
+| `DataOrigin`, `by_kind()` | `ptbr_sampler.data_origins` | Registros de proveniência (alimenta `ptbr sources`) |
+| `AliasTable`, `build_alias()`, `draw()` | `ptbr_sampler.sampling.alias` | Tabelas alias Walker–Vose $O(1)$ compensadas por Kahan |
+| `PartitionSpec`, `PartitionStore`, `alias_from_mapping()` | `ptbr_sampler.sampling.store` | LRU de partições Parquet, preguiçoso e protegido por `RLock` |
+| `MultinomialGoFResult`, `exhaustive_multinomial_gof()`, `holm_bonferroni_reject()`, `reconstruct_alias_probabilities()`, `linf_distance()`, `total_variation_distance()` | `ptbr_sampler.sampling.validation` | Validação de aderência em quatro camadas |
+| `GivenNameVocabulary` | `ptbr_sampler.sampling.vocabulary` | Higiene do vocabulário de registro |
+| `random_cpf()`, `validate_cpf()`, `cpf_check_digits()`, `format_cpf()`, `pad_cpf()` | `ptbr_sampler.utils.cpf` | CPF módulo 11 |
+| `CNPJ`, `random_cnpj()`, `validate_cnpj()`, `cnpj_check_digits()`, `format_cnpj()`, `pad_cnpj()`, `parse_cnpj()`, `cnpj_from_firm_id()` | `ptbr_sampler.utils.cnpj` | CNPJ |
+| `random_pis()`, `validate_pis()`, `pis_check_digit(s)`, `format_pis()`, `pad_pis()` | `ptbr_sampler.utils.pis` | PIS/PASEP |
+| `random_cei()`, `validate_cei()`, `cei_check_digit()`, `format_cei()`, `pad_cei()` | `ptbr_sampler.utils.cei` | CEI |
+| `PhoneNumber`, `generate_phone_number()` | `ptbr_sampler.utils.phone` | DDD + telefone |
+| `AddressProvider_for_offline` | `ptbr_sampler.utils.address_for_offline` | Provider offline de rua/bairro/cidade |
+| `get_cep_data()`, `node_command()`, … | `ptbr_sampler.utils.cep_wrapper` | Ponte opcional ViaCEP/Node |
+| `clean_id()`, `pad_id()` | `ptbr_sampler.utils.util` | Auxiliares de ID |
+| `app`, `main` | `ptbr_sampler.cli` | A CLI Typer `ptbr` |
+
 ## Nota de privacidade
 
 Toda saída é sintética, amostrada de marginais censitárias agregadas (células `>= 20`

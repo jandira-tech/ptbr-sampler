@@ -72,6 +72,7 @@ docs = [
     'mkdocs>=1.6',
     'mkdocs-material>=9.5',
     'pymdown-extensions>=10.12',
+    'mkdocstrings[python]>=0.24',
 ]
 
 test = [
